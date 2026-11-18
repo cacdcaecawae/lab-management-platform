@@ -28,6 +28,7 @@
 步骤：
 
 - **新建。** `mgr` 点 "新建组会"：汇报人选"学生甲"，汇报内容 `相控阵全聚焦成像进展`；纪要随意；点 "添加行动项"，负责人"学生甲"，事项 `整理 TFM 与 PWI 对比数据`，截止日期填一周后（填完点页面空白处收起日历）。点 "保存"，`wait_for` "已保存"。
+- **编辑参数校验。** `mgr` 对已有组会 PATCH `{"agenda":[{"topic":"缺汇报人"}]}` 与 `{"actions":[{"content":"缺负责人"}]}`，均为字段级 400，原议程和行动项不变；分别遗漏 topic/content 也应为 400。正常添加完整议程/行动项成功；已有行动项按 id 只改 content 时保留负责人和完成时间。
 - **汇报人上传。** `s_a` 打开这个组会：没有 "编辑"；对 "上传附件" 用 `upload_file` 传 `slides.pptx`，`wait_for` "slides.pptx"。
 - **其他学生。** `s_b` 打开同一组会：复选框 disabled，没有 "上传附件" 和 "删除"。`evaluate_script` 对 `/api/action-items/<id>/done/` POST、对 `/api/meetings/<id>/files/` 传文件、对 `/api/meetings/<id>/` PATCH、对 `/api/meeting-files/<id>/` DELETE：都是 403（权限反例）。再请求附件下载地址：200，`attachment`，SHA256 与 `slides.pptx` 一致。
 - **工作台。** `s_a` 打开工作台，有 "我的行动项 1" 和事项链接。截图。点链接回到组会。
