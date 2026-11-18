@@ -20,7 +20,7 @@ dashboardApi
   .then((d) => (data.value = d), showError)
   .finally(() => (loading.value = false))
 
-// The API returns at most 20 items per list (core/views.py LIMIT).
+// The API returns at most 20 items per list (workbench/views.py LIMIT).
 const n = (list: unknown[]) => (list.length >= 20 ? '20+' : String(list.length))
 
 const tiles = computed(() => {

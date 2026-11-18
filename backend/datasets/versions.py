@@ -48,3 +48,18 @@ def pin_versions(datasets):
             snapshot.files.set(files)
         pins[str(dataset.pk)] = digest
     return pins
+
+
+def add_pinned_versions(data, record, fields):
+    """Datasets embedded in `fields` get "version" (the code pinned when the record was submitted; None for
+    drafts and records submitted before versions existed) and "changed" (files were added since).
+    shortcut: one query per submitted record, so list pages pay one query per row; fine at page size 20."""
+    pins = record.data_versions or {}
+    current = current_versions([int(pk) for pk in pins]) if pins else {}
+    for field in fields:
+        value = data.get(field)
+        for dataset in value if isinstance(value, list) else [value] if value else []:
+            pinned = pins.get(str(dataset["id"]))
+            dataset["version"] = pinned
+            dataset["changed"] = pinned is not None and current.get(dataset["id"]) != pinned
+    return data

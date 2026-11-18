@@ -2,7 +2,7 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import system_views as views
+from . import views
 
 router = SimpleRouter()
 router.register("groups", views.SystemGroupViewSet, basename="system-group")

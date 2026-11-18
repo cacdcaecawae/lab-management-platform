@@ -4,9 +4,8 @@ from rest_framework import serializers
 from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.permissions import scope_group
-from core.serializers import ProjectBriefSerializer
 from procurement.serializers import ArrivedPurchaseField, PurchaseRefSerializer
-from projects.serializers import GroupProjectField
+from projects.serializers import GroupProjectField, ProjectBriefSerializer
 
 from .models import Consumable, StockTxn
 

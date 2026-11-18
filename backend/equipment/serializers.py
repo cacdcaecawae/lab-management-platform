@@ -8,11 +8,19 @@ from rest_framework import serializers
 from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.permissions import scope_group
-from core.serializers import EquipmentBriefSerializer, ProjectBriefSerializer
 from procurement.serializers import ArrivedPurchaseField, PurchaseRefSerializer
-from projects.serializers import GroupMemberField, GroupProjectField
+from projects.serializers import GroupMemberField, GroupProjectField, ProjectBriefSerializer
 
 from .models import Booking, Equipment, UsageReport
+
+
+class EquipmentBriefSerializer(serializers.ModelSerializer):
+    """Embedded in bookings, experiments, knowledge docs and the workbench."""
+
+    class Meta:
+        model = Equipment
+        fields = ["id", "code", "name", "status"]
+
 
 # A booking may start this much before "now": the time spent filling in the form, and clock differences.
 START_GRACE = timedelta(minutes=5)

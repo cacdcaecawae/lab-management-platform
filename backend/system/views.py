@@ -7,15 +7,15 @@ from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.member_views import ResetPasswordMixin
+from accounts.mixins import ResetPasswordMixin
 from accounts.models import ResearchGroup, User
+from core import mail
+from core.exceptions import Conflict, MailFailed
+from core.history import serialize_history
+from core.models import SiteSettings
+from core.permissions import IsSuperuser
 
-from . import mail
-from .exceptions import Conflict, MailFailed
-from .history import serialize_history
-from .models import SiteSettings
-from .permissions import IsSuperuser
-from .system_serializers import (
+from .serializers import (
     AccountCreateSerializer,
     AccountSerializer,
     MailSettingsSerializer,

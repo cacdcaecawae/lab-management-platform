@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     "knowledge",
     "meetings",
     "achievements",
+    "workbench",
+    "system",
 ]
 
 MIDDLEWARE = [
