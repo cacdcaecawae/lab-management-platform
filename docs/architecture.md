@@ -78,7 +78,8 @@ Django Session（HttpOnly Cookie）+ CSRF。SPA 先 `GET /api/auth/csrf/` 取得
 - PostgreSQL 数据：Docker 卷 `pgdata`。
 - 上传文件：`DATA_ROOT`（生产环境挂载数据盘）。
 - 配置：环境变量（`.env`，不入库）。
-- 备份：每日 `pg_dump` + restic 增量备份 `DATA_ROOT`（脚本在部署阶段提供）。
+- 备份：`scripts/backup.sh` 把 `pg_dump` 的导出和上传文件写进同一个 restic 快照（restic 跑在 Compose 的 `restic` 服务里，profile `ops`），每天一份留 30 天、每月一份留 12 个月；`scripts/restore.sh` 恢复。
+- 发版与更新：推送 `vX.Y.Z` 标签后，GitHub Actions 检查通过再把 backend、web 镜像推到 ghcr.io；服务器 `.env` 的 `APP_VERSION` 选用镜像，`scripts/update.sh` 拉取、备份、切换、检查，失败自动退回。"系统管理 → 版本"只提示，不在网页里更新。方案见[发版、更新与备份](../.agents/notes/implemented/process/2026-11-18-release-update-backup.md)。
 
 ## 前端
 

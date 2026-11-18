@@ -1,6 +1,7 @@
-# Production-style stack: PostgreSQL + Django/Gunicorn + Nginx (serves the Vue build).
-# Usage (from repo root):  docker compose -f infra/docker-compose.prod.yml --env-file .env up -d --build
-# Required in .env: DJANGO_SECRET_KEY, DJANGO_DEBUG=0, DJANGO_ALLOWED_HOSTS, POSTGRES_PASSWORD.
+# Production stack: PostgreSQL + Django/Gunicorn + Nginx (serves the Vue build). See README "服务器部署".
+# Server: APP_VERSION in .env picks the release images (ghcr.io), `up -d` pulls them; scripts/update.sh changes it.
+# Without APP_VERSION the images are "local" and `up -d --build` builds them from this checkout (scripts/trial.ps1).
+# .env template: infra/server.env.example.
 services:
   db:
     image: postgres:17-alpine
@@ -17,10 +18,12 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ${IMAGE_PREFIX:-ghcr.io/cacdcaecawae/lab-management-platform}/backend:${APP_VERSION:-local}
     build:
       context: ..
       dockerfile: infra/backend.Dockerfile
     environment:
+      APP_VERSION: ${APP_VERSION:-local}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost}
@@ -46,6 +49,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${IMAGE_PREFIX:-ghcr.io/cacdcaecawae/lab-management-platform}/web:${APP_VERSION:-local}
     build:
       context: ..
       dockerfile: infra/web.Dockerfile
@@ -56,6 +60,17 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  # Backups only (scripts/backup.sh, restore.sh, update.sh): restic in a container, so the server needs only Docker.
+  restic:
+    image: restic/restic:0.19.1
+    profiles: [ops]
+    environment:
+      RESTIC_REPOSITORY: /repo
+      RESTIC_PASSWORD: ${BACKUP_PASSWORD:-}
+    volumes:
+      - labdata:/data
+      - ${BACKUP_REPO:-./backup-repo-not-set}:/repo   # the scripts refuse to run until BACKUP_REPO is set
 
 volumes:
   pgdata:
