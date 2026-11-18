@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
-import { equipmentApi } from '@/api/equipment'
+import { equipmentApi } from '../api'
 import { membersApi } from '@/api/members'
 import { purchasesApi } from '@/api/procurement'
 import type { Equipment, EquipmentStatus, EquipmentWrite, PurchaseRef, UserBrief } from '@/api/types'

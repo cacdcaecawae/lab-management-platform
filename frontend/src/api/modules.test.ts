@@ -6,7 +6,8 @@ import { datasetsApi } from './datasets'
 import { experimentsApi, runsApi } from './research'
 import { reportsApi } from './reports'
 import { dashboardApi } from './dashboard'
-import { bookingsApi, consumablesApi } from './equipment'
+import { bookingsApi } from '@/modules/equipment/api'
+import { consumablesApi } from './inventory'
 
 let fetchMock: ReturnType<typeof vi.fn>
 

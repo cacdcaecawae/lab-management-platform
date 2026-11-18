@@ -18,18 +18,28 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 ## 后端 Django Apps
 
-| App | 负责人 | 职责 | 依赖 |
-|---|---|---|---|
-| `core` | 主代理 | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、历史记录序列化；工作台汇总接口 | — |
-| `accounts` | 主代理（模型、登录）/ Agent A（成员接口） | 课题组 `ResearchGroup`、自定义用户 `User`、登录/退出/改密、成员管理接口 | core |
-| `projects` | Agent A | 项目、项目成员、项目进展 | accounts |
-| `datasets` | Agent C | 数据集、数据文件、上传/下载、SHA256、不可覆盖 | projects |
-| `research` | Agent B | 实验记录、数据处理记录、提交/退回、修改历史 | projects, datasets |
-| `reports` | Agent D | 周报、反馈、状态流转、未交统计 | research, datasets |
-| `equipment` | 主代理（第二期） | 设备台账、预约（排他约束防冲突）、使用登记与照片、异常邮件 | projects |
-| `inventory` | 主代理（第二期） | 耗材品类、出入库流水（库存由流水汇总） | projects |
+按层排列，下层不引用上层。"可以引用"一列由 `scripts/check_module_deps.py` 检查（后端测试 `backend/tests/test_module_deps.py` 会运行它），新增模块或依赖时同时改脚本和这张表。方案见[模块边界](../.agents/notes/implemented/architecture/2026-11-17-module-boundaries.md)。
 
-模块边界：
+| 层 | App | 职责 | 可以引用 |
+|---|---|---|---|
+| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`） | 只用 Django / DRF |
+| 账号 | `accounts` | 课题组 `ResearchGroup`、自定义用户 `User`、登录/退出/改密、成员管理接口 | core |
+| 项目 | `projects` | 项目、项目成员、项目进展 | accounts、core |
+| 业务 | `datasets` | 数据集、数据文件、上传/下载、SHA256、不可覆盖、版本 | projects 及以下 |
+| 业务 | `procurement` | 经费来源、采购申请与两级审批、报销与统计、财务提醒 | projects 及以下 |
+| 业务 | `meetings` | 组会、议程、行动项、附件 | projects 及以下 |
+| 业务 | `achievements` | 论文、专利、获奖、软著，导出 | projects 及以下 |
+| 业务 | `equipment` | 设备台账、预约（排他约束防冲突）、使用登记与照片、异常邮件 | procurement、projects 及以下 |
+| 业务 | `inventory` | 耗材品类、出入库流水（库存由流水汇总） | procurement、projects 及以下 |
+| 业务 | `research` | 实验记录、数据处理记录、提交/退回、修改历史 | datasets、equipment、projects 及以下 |
+| 业务 | `knowledge` | 知识库文档与版本 | equipment、projects 及以下 |
+| 业务 | `reports` | 周报、反馈、状态流转、未交统计 | research、datasets、projects 及以下 |
+| 汇总 | `workbench` | 工作台汇总接口 `/api/dashboard/`（无模型） | 所有业务模块 |
+| 汇总 | `system` | 系统管理 `/api/system/`：邮件配置、课题组、所有组的账号（无模型） | accounts、core |
+
+模块的对外部分：别的模块只能引用 `models`、`serializers`（简要序列化器、"本组对象"选择字段）、`mixins` 和专门给别人用的文件（`versions.py`、`queries.py`）；`views`、`urls`、`admin` 属于模块内部。被几个模块共用的查询放进 `queries.py`，例如"哪些采购单等我审批"（`procurement/queries.py`）由采购列表和工作台共用。测试、迁移、`conftest.py` 不受这些规则限制。
+
+模块边界（第一期多代理开发时的分工规则）：
 - **第一期全部模型和 0001 迁移由主代理在基线中定义。** 子代理只写序列化器、视图、`urls.py`、业务校验和测试；确需改模型时，只能改自己 app 的 `models.py` 并生成本 app 的迁移，同时在交付说明里写明。
 - 公共文件（`config/*`、`core/*`、`conftest.py`、`accounts/models.py`、`docs/*`、`frontend/src/api/client.ts`）只由主代理修改。
 - 每个 app 在 `config/urls.py` 中已挂载到 `/api/`，子代理只改本 app 的 `urls.py`。
@@ -77,3 +87,4 @@ Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router。
 - `src/api/types.ts`：与 `api-contract.md` 一一对应的类型。
 - `src/stores/auth.ts`：登录状态；路由守卫负责未登录跳转登录页、未改初始密码跳转改密页。
 - 菜单按开发手册 §5，只显示已上线的模块；`meta.supervisor` 只控制界面显示，权限以后端为准。
+- 模块目录 `src/modules/<模块>/`（试点中：`equipment`、`knowledge`，其余页面仍在 `src/views/`）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/`）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。

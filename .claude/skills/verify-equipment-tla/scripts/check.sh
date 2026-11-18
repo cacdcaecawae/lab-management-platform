@@ -14,7 +14,7 @@ COVERED=(
   backend/equipment/serializers.py
   backend/equipment/models.py
   backend/config/settings.py
-  frontend/src/components/EquipmentFormDialog.vue
+  frontend/src/modules/equipment/components/EquipmentFormDialog.vue
 )
 JAR=${TLA2TOOLS:-$HOME/.tlaplus/tla2tools.jar}
 JAR_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88   # TLC 2.19 of 2024-08-08

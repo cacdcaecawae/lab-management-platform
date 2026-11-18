@@ -86,8 +86,8 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend pyt
 ## 目录
 
 ```
-backend/    Django 项目（config/ 配置，core/ 公共权限工具与系统管理，accounts/ projects/ datasets/ research/ reports/ equipment/ inventory/ procurement/ knowledge/ meetings/ achievements/ 业务 app）
-frontend/   Vue 3 SPA
+backend/    Django 项目（config/ 配置，core/ 公共底座：权限、文件、修改历史、邮件，accounts/ projects/ datasets/ research/ reports/ equipment/ inventory/ procurement/ knowledge/ meetings/ achievements/ 业务 app，workbench/ 工作台，system/ 系统管理；模块之间能引用什么见 docs/architecture.md）
+frontend/   Vue 3 SPA（src/modules/<模块>/ 按业务分目录，目前试点设备和知识库，其余页面在 src/views/）
 infra/      Nginx、Dockerfile、生产 Compose，本机试用的 Compose 叠加文件
 docs/       架构、数据库、接口约定、开发计划、邮件配置
 scripts/    开发辅助脚本，本机试用脚本 trial.ps1

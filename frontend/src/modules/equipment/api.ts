@@ -1,19 +1,15 @@
-import { api, type Page } from './client'
+import { api, type Page } from '@/api/client'
 import type {
   Booking,
   BookingWrite,
   Condition,
-  Consumable,
-  ConsumableWrite,
   Equipment,
   EquipmentDetail,
   EquipmentStatus,
   EquipmentWrite,
   HistoryEntry,
   ListQuery,
-  StockTxn,
-  StockTxnWrite,
-} from './types'
+} from '@/api/types'
 
 export const equipmentApi = {
   list: (q?: ListQuery) => api.get<Page<Equipment>>('/api/equipment/', q),
@@ -38,12 +34,4 @@ export const bookingsApi = {
     if (body.photo) form.append('photo', body.photo)
     return api.post<Booking>(`/api/bookings/${id}/report/`, form)
   },
-}
-
-export const consumablesApi = {
-  list: (q?: ListQuery) => api.get<Page<Consumable>>('/api/consumables/', q),
-  create: (body: ConsumableWrite) => api.post<Consumable>('/api/consumables/', body),
-  update: (id: number, body: Partial<ConsumableWrite>) => api.patch<Consumable>(`/api/consumables/${id}/`, body),
-  txns: (id: number, q?: ListQuery) => api.get<Page<StockTxn>>(`/api/consumables/${id}/txns/`, q),
-  addTxn: (id: number, body: StockTxnWrite) => api.post<StockTxn>(`/api/consumables/${id}/txns/`, body),
 }
