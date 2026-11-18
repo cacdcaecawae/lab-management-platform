@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ApiError } from '@/api/client'
 import { consumablesApi } from '@/api/equipment'
 import { purchasesApi } from '@/api/procurement'
 import { projectsApi } from '@/api/projects'
@@ -54,7 +55,7 @@ const txnOpen = ref(false)
 const txnForm = reactive({
   kind: 'out' as TxnKind, quantity: 1, counted: 0, project_id: null as number | null, purchase_id: null as number | null, note: '',
 })
-const txnErrors = useFieldErrors(['kind', 'quantity', 'project_id', 'purchase_id', 'note'])
+const txnErrors = useFieldErrors(['kind', 'quantity', 'stock_version_seen', 'project_id', 'purchase_id', 'note'])
 // Stocktaking: enter what is on the shelf; the API takes the difference from the book stock.
 const diff = computed(() => txnForm.counted - (txnTarget.value?.stock ?? 0))
 
@@ -72,12 +73,18 @@ async function saveTxn() {
   try {
     const quantity = txnForm.kind === 'adjust' ? diff.value : txnForm.quantity
     const purchase_id = txnForm.kind === 'in' ? (txnForm.purchase_id ?? null) : null
-    await consumablesApi.addTxn(c.id, { kind: txnForm.kind, quantity, project_id: txnForm.project_id, purchase_id, note: txnForm.note })
+    const stock_version_seen = txnForm.kind === 'adjust' ? c.stock_version : undefined
+    await consumablesApi.addTxn(c.id, { stock_version_seen, kind: txnForm.kind, quantity, project_id: txnForm.project_id, purchase_id, note: txnForm.note })
     ElMessage.success(`已登记${TXN_KIND_LABELS[txnForm.kind]}`)
     txnOpen.value = false
     load()
   } catch (e) {
-    txnErrors.handle(e)
+    if (e instanceof ApiError && e.status === 409 && e.body.code === 'stale_stock') {
+      // Never rebase and retry the old difference onto a new ledger.
+      txnOpen.value = false
+      ElMessage.warning('库存流水已变化，请重新打开盘点并核对实际数量')
+      load()
+    } else txnErrors.handle(e)
   } finally {
     saving.value = false
   }

@@ -403,6 +403,8 @@ export interface Consumable {
   safety_stock: number
   // sum of all transactions
   stock: number
+  // Latest append-only ledger entry id; 0 before the first entry.
+  stock_version: number
   low: boolean
   notes: string
   created_at: string
@@ -427,6 +429,8 @@ export interface StockTxn {
 
 // quantity: positive for in / out / return; the signed difference for adjust
 export interface StockTxnWrite {
+  // Required for adjust: version shown with the stock used to calculate the difference.
+  stock_version_seen?: number
   kind: TxnKind
   quantity: number
   project_id: number | null

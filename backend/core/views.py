@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import F, Sum
+from django.db.models import F, Max, Sum
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -87,7 +87,7 @@ class DashboardView(APIView):
             to_check = scope_group(Equipment.objects.filter(status=Equipment.Status.NEEDS_CHECK), user)
             low_stock = (
                 scope_group(Consumable.objects.all(), user)
-                .annotate(stock=Sum("txns__quantity", default=0))
+                .annotate(stock=Sum("txns__quantity", default=0), stock_version=Max("txns__id", default=0))
                 .filter(stock__lt=F("safety_stock"))
                 .order_by("name", "spec", "id")
             )

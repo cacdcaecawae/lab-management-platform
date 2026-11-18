@@ -261,7 +261,7 @@
 
 ## 耗材 `/api/consumables/`（第二期）
 
-`Consumable = {id, name, spec, unit, location, safety_stock, stock, low, notes, created_at, updated_at}`；`stock`（只读）为全部流水之和，`low` = `stock < safety_stock`
+`Consumable = {id, name, spec, unit, location, safety_stock, stock, stock_version, low, notes, created_at, updated_at}`；`stock`（只读）为全部流水之和，`low` = `stock < safety_stock`
 `StockTxn = {id, kind, quantity, handler: UserBrief, project: {id,name} | null, purchase: PurchaseRef | null, note, created_at}`
 `kind`: `in` 入库 | `out` 领用 | `return` 退回 | `adjust` 盘点调整；`quantity` 带符号（领用为负）
 
@@ -274,7 +274,9 @@
 | GET | `/api/consumables/{id}/txns/` | 本组全员 | 分页，最新在前 |
 | POST | `/api/consumables/{id}/txns/` | 见说明 | `{kind, quantity, project_id?, purchase_id?, note?}`（`purchase_id` 只用于入库，只能选本组已到货的采购申请，其他类型带了 400） → 201 `StockTxn`。`in`、`adjust` 只限管理员（403）；`out`、`return` 本组全员，经手人为当前用户。`in`/`out`/`return` 的 `quantity` 传正整数，`adjust` 传实际与账面之差（不能为 0）。结果库存小于 0 → 400（`errors.quantity`："库存不足：当前 N 单位"） |
 
-不提供删除；流水不可修改，记错用一笔盘点调整纠正。
+不提供删除；流水不可修改，记错用一笔盘点调整纠正。Django admin 的流水内联也只读，禁止新增/编辑/删除，写流水统一通过上述加锁 API。
+
+`stock_version`（只读）为该耗材最新流水 id，空账本为 0；与 `stock` 在同一查询中读取。`adjust` 必须另传 `stock_version_seen`（打开盘点时看到的版本，非负整数）；缺少/非法返回 400。锁内版本已变则返回 409 `stale_stock`，即使库存先减后增回到原值也拒绝，且不新增流水。客户端必须刷新并重新核对，不能自动重发旧差额。普通 `in/out/return` 无版本要求。旧客户端缺少版本的盘点将安全失败，前后端须同步更新。
 
 ---
 
