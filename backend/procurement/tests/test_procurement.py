@@ -6,6 +6,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.db import connection
+from django.utils import timezone
 from openpyxl import load_workbook
 
 from conftest import enable_mail, make_user
@@ -44,8 +45,12 @@ def submitted(client, fund):
 
 
 def review(client, pid, verdict="approve", comment="", seen=None, total=TOTAL):
-    status_seen = seen or PurchaseRequest.objects.get(pk=pid).status
-    body = {"verdict": verdict, "comment": comment, "status_seen": status_seen, "total_seen": total}
+    purchase = PurchaseRequest.objects.get(pk=pid)
+    status_seen = seen or purchase.status
+    body = {
+        "verdict": verdict, "comment": comment, "status_seen": status_seen, "total_seen": total,
+        "submitted_seen": (purchase.submitted_at or timezone.now()).isoformat(),
+    }
     return client.post(f"/api/purchases/{pid}/review/", body, format="json")
 
 
@@ -162,6 +167,57 @@ def test_review_of_a_changed_request_is_409(api, student_a, manager, manager_b, 
     assert review(api(manager), pid, total="2400.00").data["status"] == "pending_final"
     assert review(api(manager_b), pid, seen="pending_initial", total="2400.00").status_code == 409
     assert Approval.objects.filter(request_id=pid).count() == 1
+
+
+@pytest.mark.parametrize("verdict", ["approve", "return"])
+@pytest.mark.parametrize("stage", ["initial", "final"])
+def test_equal_total_resubmission_rejects_old_review(api, student_a, manager, advisor, fund, verdict, stage):
+    applicant = api(student_a)
+    pid = submitted(applicant, fund)
+    if stage == "final":
+        assert review(api(manager), pid).status_code == 200
+    reviewer = api(manager if stage == "initial" else advisor)
+    old = reviewer.get(f"/api/purchases/{pid}/").data
+    assert applicant.post(f"/api/purchases/{pid}/withdraw/").status_code == 200
+    changed_items = [{**ITEMS[0], "name": "同价不同型号探头"}, ITEMS[1]]
+    assert applicant.patch(f"/api/purchases/{pid}/", {"items": changed_items}, format="json").status_code == 200
+    assert applicant.post(f"/api/purchases/{pid}/submit/").status_code == 200
+    if stage == "final":
+        assert review(api(manager), pid).status_code == 200
+    count = Approval.objects.filter(request_id=pid).count()
+    result = reviewer.post(f"/api/purchases/{pid}/review/", {
+        "verdict": verdict, "comment": "审批意见", "status_seen": old["status"], "total_seen": old["total"],
+        "submitted_seen": old["submitted_at"],
+    }, format="json")
+    assert result.status_code == 409 and result.data["code"] == "stale"
+    assert status_of(pid) == old["status"]
+    assert Approval.objects.filter(request_id=pid).count() == count
+    # Refreshing the page supplies the new submission and permits a deliberate approval.
+    assert review(reviewer, pid).status_code == 200
+
+
+@pytest.mark.parametrize("value", ["missing", None, "not-a-date"])
+def test_review_requires_valid_submission_time(api, student_a, manager, fund, value):
+    pid = submitted(api(student_a), fund)
+    body = {"verdict": "approve", "status_seen": "pending_initial", "total_seen": TOTAL}
+    if value != "missing":
+        body["submitted_seen"] = value
+    result = api(manager).post(f"/api/purchases/{pid}/review/", body, format="json")
+    assert result.status_code == 400 and "submitted_seen" in result.data["errors"]
+    assert not Approval.objects.filter(request_id=pid).exists()
+
+
+def test_attachment_does_not_invalidate_current_submission(api, student_a, manager, fund):
+    applicant = api(student_a)
+    pid = submitted(applicant, fund)
+    reviewer = api(manager)
+    old = reviewer.get(f"/api/purchases/{pid}/").data
+    assert applicant.post(f"/api/purchases/{pid}/attachments/", {"file": pdf()}, format="multipart").status_code == 201
+    result = reviewer.post(f"/api/purchases/{pid}/review/", {
+        "verdict": "approve", "status_seen": old["status"], "total_seen": old["total"],
+        "submitted_seen": old["submitted_at"],
+    }, format="json")
+    assert result.status_code == 200 and result.data["status"] == "pending_final"
 
 
 @pytest.fixture

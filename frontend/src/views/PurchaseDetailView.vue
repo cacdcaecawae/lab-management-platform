@@ -201,8 +201,11 @@ async function review(verdict: 'approve' | 'return') {
   if (commentError.value) return
   busy.value = true
   try {
-    // The decision is about what is on screen: the server refuses it if the status or the total moved since.
-    fill(await purchasesApi.review(r.id, { verdict, comment: comment.value, status_seen: r.status, total_seen: r.total }))
+    // Include the submission: a withdrawal and equal-total resubmission must invalidate the old decision.
+    fill(await purchasesApi.review(r.id, {
+      verdict, comment: comment.value, status_seen: r.status, total_seen: r.total,
+      submitted_seen: r.submitted_at!, // review actions are only shown for submitted requests
+    }))
     comment.value = ''
     ElMessage.success(verdict === 'approve' ? '已通过' : '已退回申请人')
   } catch (e) {

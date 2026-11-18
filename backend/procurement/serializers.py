@@ -176,9 +176,10 @@ class PurchaseDetailSerializer(PurchaseSerializer):
 class ReviewSerializer(serializers.Serializer):
     verdict = serializers.ChoiceField(choices=Approval.Verdict.choices)
     comment = serializers.CharField(required=False, allow_blank=True, default="")
-    # What the reviewer was looking at: a decision is only valid for that state and that total.
+    # What the reviewer was looking at: a decision belongs to that submission, state and total.
     status_seen = serializers.ChoiceField(choices=PurchaseRequest.Status.choices)
     total_seen = serializers.DecimalField(**MONEY)
+    submitted_seen = serializers.DateTimeField()
 
     def validate(self, attrs):
         attrs["comment"] = attrs["comment"].strip()
