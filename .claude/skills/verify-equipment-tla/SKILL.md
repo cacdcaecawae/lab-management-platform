@@ -61,7 +61,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 
 ## 覆盖范围（模型的每一步对应的代码）
 
-截至 `SYNC=643c6b8`。
+截至 `SYNC=d36f7a0`。
 
 | 模型动作 | 代码 | 说明 |
 |---|---|---|
@@ -70,7 +70,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 | `CreateInsertBooking` | `perform_create`：`serializer.save(...)`；`models.py` `Booking.Meta.constraints` 的 `no_overlapping_bookings`；`except IntegrityError` → 409 | 同一时间段有别的事务正在插入或取消预约时先等待，有有效重叠就返回 409 |
 | `ReportStart` | `BookingViewSet.report`：`self.get_object()`、`UsageReportSerializer` 校验 | 非预约人在任何 SQL 之前返回 403 |
 | `ReportLockBooking` | `report`：`lock_booking()`，然后检查类型、未取消、已开始、`UsageReport...exists()` | |
-| `ReportInsert` | `report`：`body.save(booking=booking)`；`UsageReport.booking` 是 `OneToOneField` | 重复插入抛出的 IntegrityError 没有被捕获，返回 500 |
+| `ReportInsert` | `report`：`新建 UsageReport 后调用 report.save()`；`UsageReport.booking` 是 `OneToOneField` | 数据库插入仍在预约行锁内；事务回滚时清理新照片，随后重新抛出原异常 |
 | `ReportMarkEquipment` | `report`：异常时 `Equipment.objects.select_for_update()`，状态为"可用"才改成"待检查"再 `save()` | |
 | `CancelLockBooking` | `BookingViewSet.cancel`：`lock_booking()`，然后检查未取消、学生只能在开始前取消、`UsageReport...exists()` | |
 | `CancelUpdate` | `cancel`：`booking.save(update_fields=["cancelled_at"])` | |
