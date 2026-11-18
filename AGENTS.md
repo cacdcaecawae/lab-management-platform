@@ -1,6 +1,6 @@
 # 给 AI 代理的项目约定
 
-设计文档在 `docs/`，子代理分工和共同规则见 `docs/agent-tasks.md`。
+设计文档在 `docs/`。待开发的功能清单、每项的方案笔记和开发规则见 `docs/backlog.md`；第一期的子代理分工见 `docs/agent-tasks.md`。
 
 ## 浏览器验证
 
