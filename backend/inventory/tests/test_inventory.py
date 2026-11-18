@@ -17,6 +17,8 @@ def cable(group, manager):
 
 
 def txn(client, item, kind, quantity, **extra):
+    if kind == "adjust" and "stock_version_seen" not in extra:
+        extra["stock_version_seen"] = client.get(f"/api/consumables/{item.id}/").data["stock_version"]
     return client.post(f"/api/consumables/{item.id}/txns/", {"kind": kind, "quantity": quantity, **extra})
 
 
