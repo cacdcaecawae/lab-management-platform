@@ -7,9 +7,25 @@ from projects.serializers import AnyGroupMemberField
 from .models import ActionItem, AgendaItem, Meeting, MeetingFile
 
 
+def require_item_fields(serializer, attrs, names):
+    """Root PATCH skips DRF required checks, but newly created children still need them."""
+    errors = {
+        name: [serializer.fields[name].error_messages["required"]]
+        for name in names
+        if serializer.fields[name].source not in attrs
+    }
+    if errors:
+        raise serializers.ValidationError(errors, code="required")
+    return attrs
+
+
 class AgendaItemSerializer(serializers.ModelSerializer):
     presenter = UserBriefSerializer(read_only=True)
     presenter_id = AnyGroupMemberField(source="presenter", write_only=True)
+
+    def validate(self, attrs):
+        # The agenda is replaced, so every row is a new record even on PATCH.
+        return require_item_fields(self, attrs, ("presenter_id", "topic"))
 
     class Meta:
         model = AgendaItem
@@ -20,6 +36,11 @@ class ActionItemSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)  # an existing item when the meeting is edited
     owner = UserBriefSerializer(read_only=True)
     owner_id = AnyGroupMemberField(source="owner", write_only=True)
+
+    def validate(self, attrs):
+        if "id" not in attrs:
+            return require_item_fields(self, attrs, ("owner_id", "content"))
+        return attrs
 
     class Meta:
         model = ActionItem
