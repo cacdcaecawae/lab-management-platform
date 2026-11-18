@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Booking, Equipment, UsageReport
 from .serializers import BookingSerializer, EquipmentSerializer, UsageReportSerializer
+
+logger = logging.getLogger(__name__)
 
 RECENT_USAGE = 20
 MAX_WINDOW = timedelta(days=62)  # the calendar asks for one week; a month view fits too
@@ -174,24 +177,43 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
             raise PermissionDenied("只有预约人可以登记使用结果")
         body = UsageReportSerializer(data=request.data)
         body.is_valid(raise_exception=True)
-        with transaction.atomic():
-            booking = self.lock_booking()
-            if booking.kind != Booking.Kind.USE:
-                raise Conflict("维护时段不需要登记使用结果", code="invalid_state")
-            if booking.cancelled_at:
-                raise Conflict("预约已取消", code="invalid_state")
-            if booking.start_at > timezone.now():
-                raise Conflict("使用开始后才能登记", code="invalid_state")
-            if UsageReport.objects.filter(booking=booking).exists():
-                raise Conflict("已经登记过使用结果", code="invalid_state")
-            report = body.save(booking=booking)
-            if report.condition == UsageReport.Condition.ABNORMAL:
-                equipment = Equipment.objects.select_for_update().get(pk=booking.equipment_id)
-                if equipment.status == Equipment.Status.AVAILABLE:
-                    equipment.status = Equipment.Status.NEEDS_CHECK
-                    equipment._change_reason = f"{request.user.display_name} 登记使用异常：{report.description}"
-                    equipment.save()
-                transaction.on_commit(lambda: notify_managers(report))
+        report = None
+        committed = False
+
+        def mark_committed():
+            nonlocal committed
+            committed = True
+
+        try:
+            with transaction.atomic():
+                booking = self.lock_booking()
+                if booking.kind != Booking.Kind.USE:
+                    raise Conflict("维护时段不需要登记使用结果", code="invalid_state")
+                if booking.cancelled_at:
+                    raise Conflict("预约已取消", code="invalid_state")
+                if booking.start_at > timezone.now():
+                    raise Conflict("使用开始后才能登记", code="invalid_state")
+                if UsageReport.objects.filter(booking=booking).exists():
+                    raise Conflict("已经登记过使用结果", code="invalid_state")
+                report = UsageReport(booking=booking, **body.validated_data)
+                report.save()
+                transaction.on_commit(mark_committed)
+                if report.condition == UsageReport.Condition.ABNORMAL:
+                    equipment = Equipment.objects.select_for_update().get(pk=booking.equipment_id)
+                    if equipment.status == Equipment.Status.AVAILABLE:
+                        equipment.status = Equipment.Status.NEEDS_CHECK
+                        equipment._change_reason = f"{request.user.display_name} 登记使用异常：{report.description}"
+                        equipment.save()
+                    transaction.on_commit(lambda: notify_managers(report))
+        except Exception:
+            # FileField writes before the database INSERT. Keep the instance even if save() fails.
+            # A post-commit callback failure must never delete a committed report's photo.
+            if not committed and report and report.photo and report.photo._committed:
+                try:
+                    report.photo.delete(save=False)
+                except Exception:
+                    logger.exception("Failed to clean up rolled-back usage photo %s", report.photo.name)
+            raise
         return Response(self.get_serializer(self.get_object()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True)
