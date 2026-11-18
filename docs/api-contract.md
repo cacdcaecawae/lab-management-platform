@@ -314,7 +314,7 @@
 | DELETE | `/api/purchases/{id}/` | 本人 | 只能删从未提交过的草稿，否则 409；有报销关联这张草稿时 409 `in_use` |
 | POST | `/api/purchases/{id}/submit/` | 本人 | 草稿 → 待初审；管理员本人的申请 → 待终审。用途、经费来源、至少 1 条明细、合计大于 0，缺了 400；经费已停用 400 |
 | POST | `/api/purchases/{id}/withdraw/` | 本人 | 审批中 → 草稿 |
-| POST | `/api/purchases/{id}/review/` | 见说明 | `{verdict, comment, status_seen, total_seen}`。初审只能管理员、终审只能导师，都不能审自己的（403）。退回必须写意见（400）。锁下的状态或合计与 `status_seen`、`total_seen` 不同 → 409 `stale`；状态不需要审批 → 409 `invalid_state`。初审通过 → 待终审（导师本人的申请直接已批准）；终审通过 → 已批准；退回 → 草稿 |
+| POST | `/api/purchases/{id}/review/` | 见说明 | `{verdict, comment, status_seen, total_seen, submitted_seen}`。初审只能管理员、终审只能导师，都不能审自己的（403）。退回必须写意见（400）。`submitted_seen` 必填，为详情的 `submitted_at`（缺失、null 或格式错误 → 400）；锁下的状态、合计或提交时间与 `status_seen`、`total_seen`、`submitted_seen` 不同 → 409 `stale`；状态不需要审批 → 409 `invalid_state`。初审通过 → 待终审（导师本人的申请直接已批准）；终审通过 → 已批准；退回 → 草稿 |
 | POST | `/api/purchases/{id}/purchased/` | 管理员 | 已批准 → 已采购，否则 409 |
 | POST | `/api/purchases/{id}/arrived/` | 管理员 | 已采购 → 已到货，否则 409 |
 | POST | `/api/purchases/{id}/attachments/` | 本人或管理员 | `multipart/form-data`：`file`、`kind`（`quote` 报价单 \| `invoice` 发票 \| `other`）→ 201 `Attachment` |

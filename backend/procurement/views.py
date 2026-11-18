@@ -255,10 +255,13 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("不能审批自己的申请")
             if not user.is_supervisor:
                 raise PermissionDenied("只有管理员和导师可以审批")
-            # A decision is about what the reviewer saw. If the state or the total moved since (a withdrawal, an edit,
-            # another reviewer), it does not apply to the current request.
-            if purchase.status != body.validated_data["status_seen"] or purchase.total != body.validated_data["total_seen"]:
-                raise Conflict("单据已变化（状态或金额与你看到的不同），请刷新后再审", code="stale")
+            # Compare the submission as well: withdrawal + equal-total edits can restore the same state/total.
+            if (
+                purchase.status != body.validated_data["status_seen"]
+                or purchase.total != body.validated_data["total_seen"]
+                or purchase.submitted_at != body.validated_data["submitted_seen"]
+            ):
+                raise Conflict("单据已变化（状态、金额或提交批次与你看到的不同），请刷新后再审", code="stale")
             stage = STAGE_OF.get(purchase.status)
             if not stage:
                 raise Conflict(f"当前为“{purchase.get_status_display()}”，不需要审批", code="invalid_state")

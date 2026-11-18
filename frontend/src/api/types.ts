@@ -534,12 +534,13 @@ export interface PurchaseWrite {
   items: PurchaseItemWrite[]
 }
 
-// status_seen / total_seen: what the reviewer looked at; 409 `stale` if either moved since
+// The submission, status and total on screen; 409 `stale` if any changed since
 export interface ReviewWrite {
   verdict: 'approve' | 'return'
   comment: string
   status_seen: PurchaseStatus
   total_seen: string
+  submitted_seen: string
 }
 
 export type ReimbursementCategory = 'equipment' | 'consumable' | 'travel' | 'ai_tool' | 'other'
