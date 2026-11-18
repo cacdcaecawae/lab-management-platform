@@ -22,6 +22,16 @@ for arg in "$@"; do
     *) die "不认识的参数：$arg" ;;
   esac
 done
+# Resolve the moving alias once: a cron backup can finish between restoring the DB and the files.
+# restic's snapshots JSON has a top-level full "id" per snapshot. Match that field, not the human table's
+# short ID; escaped quotes inside JSON strings cannot match. Reject zero/multiple IDs before stopping anything.
+if [ "$snap" = latest ]; then
+  snapshot_json=$(restic snapshots --json --host lab latest) || die "无法查询 latest，未停止网站"
+  snap=$(printf '%s\n' "$snapshot_json" | \
+    grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-f]{64}"' | \
+    sed -E 's/.*"([0-9a-f]{64})"/\1/') || die "无法确定 latest 的快照编号，未停止网站"
+  [[ "$snap" =~ ^[0-9a-f]{64}$ ]] || die "需要唯一的 lab 备份快照，未停止网站"
+fi
 if [ -z "$yes" ]; then
   what=数据库
   [ -n "$db_only" ] || what=数据库和上传的文件

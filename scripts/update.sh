@@ -31,8 +31,8 @@ main() {
   echo "== 切换到 $target"
   git checkout --quiet "$target"
   setenv APP_VERSION "$target"
-  dc up -d || true  # a failed start is handled below like any unhealthy one
-  if healthy; then
+  # Old containers can still answer after a failed recreation. A healthy response alone is not an update.
+  if dc up -d && healthy; then
     echo "已更新到 $target。更新前的备份是快照 $snap"
     exit 0
   fi
