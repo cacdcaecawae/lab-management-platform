@@ -112,7 +112,9 @@ class RecordViewSet(viewsets.ModelViewSet):
 
 
 class ExperimentViewSet(RecordViewSet):
-    queryset = Experiment.objects.select_related("owner", "project", "equipment_item").prefetch_related("datasets")
+    queryset = Experiment.objects.select_related("owner", "project", "equipment_item").prefetch_related(
+        "datasets", "specimen_items"
+    )
     serializer_class = ExperimentSerializer
 
     def submit_errors(self, experiment):

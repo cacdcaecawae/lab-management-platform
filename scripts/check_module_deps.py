@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = {"projects", "accounts", "core"}
-BUSINESS = {"datasets", "procurement", "meetings", "achievements", "equipment", "inventory", "research", "knowledge",
-            "reports"}
+BUSINESS = {"datasets", "procurement", "meetings", "achievements", "specimens", "equipment", "inventory", "research",
+            "knowledge", "reports"}
 ALLOWED = {
     "core": set(),
     "accounts": {"core"},
@@ -25,9 +25,10 @@ ALLOWED = {
     "procurement": BASE,
     "meetings": BASE,
     "achievements": BASE,
+    "specimens": BASE,
     "equipment": BASE | {"procurement"},
     "inventory": BASE | {"procurement"},
-    "research": BASE | {"datasets", "equipment"},
+    "research": BASE | {"datasets", "equipment", "specimens"},
     "knowledge": BASE | {"equipment"},
     "reports": BASE | {"datasets", "research"},
     "workbench": BASE | BUSINESS,

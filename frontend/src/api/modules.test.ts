@@ -95,7 +95,7 @@ describe.each([
 describe('experiment write body', () => {
   it('uses the contract field names', async () => {
     const body = {
-      project_id: 1, title: 'T', date: '2026-11-16', equipment_item_id: 4, equipment: '', specimen: '',
+      project_id: 1, title: 'T', date: '2026-11-16', equipment_item_id: 4, equipment: '', specimen: '', specimen_item_ids: [5],
       params: { 频率: '5 MHz' }, steps: '', anomalies: '', dataset_ids: [3],
     }
     await experimentsApi.create(body)

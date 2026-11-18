@@ -11,6 +11,16 @@ const ops: Me = {
   email: '', phone: '', research_direction: '', must_change_password: true,
 }
 
+// A detail URL typed or pasted must open its page: navigating by name does not check the :id pattern, a full load does.
+it('resolves every detail URL by path', () => {
+  const details = router.getRoutes().filter((r) => r.path.includes(':id'))
+  expect(details.length).toBeGreaterThan(5)
+  for (const r of details) {
+    const path = r.path.replace(/:id\([^)]*\)/, '7')
+    expect(router.resolve(path).name, path).toBe(r.name)
+  }
+})
+
 describe('route guard', () => {
   beforeEach(() => {
     setActivePinia(createPinia()) // a fresh auth store: the next navigation loads the user from the mock

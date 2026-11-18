@@ -158,6 +158,7 @@ export interface Experiment {
   equipment_item: EquipmentBrief | null
   equipment: string
   specimen: string
+  specimen_items: SpecimenBrief[]
   params: Record<string, unknown>
   steps: string
   anomalies: string
@@ -175,6 +176,7 @@ export interface ExperimentWrite {
   equipment_item_id: number | null
   equipment: string
   specimen: string
+  specimen_item_ids: number[]
   params: Record<string, unknown>
   steps: string
   anomalies: string
@@ -314,6 +316,72 @@ export interface Dashboard {
 }
 
 // ---- equipment & bookings ----
+
+// 试样与标准件. defects is null when hidden: a blind test's answer, for students until a manager makes it public.
+export type SpecimenKind = 'standard' | 'reference' | 'sample' | 'other'
+export type SpecimenStatus = 'available' | 'damaged' | 'retired'
+export type DefectKind = 'fbh' | 'sdh' | 'notch' | 'crack' | 'delamination' | 'other'
+
+export interface Defect {
+  kind: DefectKind
+  size_mm: string | number | null // the server returns "2.00"
+  depth_mm: string | number | null
+  position: string
+  note: string
+}
+
+export interface SpecimenLoan {
+  id: number
+  borrower: UserBrief
+  project: ProjectBrief | null
+  purpose: string
+  due_date: string | null
+  borrowed_at: string
+  returned_at: string | null
+  returned_by: UserBrief | null
+  return_note: string
+}
+
+export interface LoanWrite {
+  project_id?: number | null
+  purpose?: string
+  due_date?: string | null
+}
+
+export interface SpecimenBrief {
+  id: number
+  code: string
+  name: string
+  status: SpecimenStatus
+}
+
+export interface Specimen extends SpecimenBrief {
+  kind: SpecimenKind
+  material: string
+  dimensions: string
+  location: string
+  custodian: UserBrief | null
+  defects_public: boolean
+  defects: (Defect & { id: number })[] | null
+  current_loan: SpecimenLoan | null
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SpecimenWrite {
+  code: string
+  name: string
+  kind: SpecimenKind
+  material: string
+  dimensions: string
+  location: string
+  custodian_id: number | null
+  status: SpecimenStatus
+  defects_public: boolean
+  notes: string
+  defects: Defect[]
+}
 
 export type EquipmentStatus = 'available' | 'needs_check' | 'repair' | 'retired'
 

@@ -16,6 +16,7 @@ export const STATUS: Record<string, { label: string; type: TagType }> = {
   needs_check: { label: '待检查', type: 'warning' },
   repair: { label: '维修', type: 'danger' },
   retired: { label: '停用', type: 'info' },
+  damaged: { label: '损坏', type: 'danger' },
   pending_initial: { label: '待初审', type: 'warning' },
   pending_final: { label: '待终审', type: 'warning' },
   approved: { label: '已批准', type: 'success' },
@@ -73,6 +74,11 @@ export const VENUE_LABELS: Record<string, string> = {
 }
 
 export const EQUIPMENT_STATUSES = ['available', 'needs_check', 'repair', 'retired']
+export const SPECIMEN_STATUSES = ['available', 'damaged', 'retired']
+export const SPECIMEN_KIND_LABELS: Record<string, string> = { standard: '标准试块', reference: '对比试块', sample: '试样', other: '其他' }
+export const DEFECT_KIND_LABELS: Record<string, string> = {
+  fbh: '平底孔', sdh: '横通孔', notch: '刻槽', crack: '裂纹', delamination: '分层', other: '其他',
+}
 export const BOOKING_KIND_LABELS: Record<string, string> = { use: '使用', maintenance: '维护' }
 export const CONDITION_LABELS: Record<string, string> = { normal: '正常', abnormal: '异常' }
 export const TXN_KIND_LABELS: Record<string, string> = { in: '入库', out: '领用', return: '退回', adjust: '盘点调整' }
