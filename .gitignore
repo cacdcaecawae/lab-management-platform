@@ -1,0 +1,31 @@
+# secrets / local config
+.env
+*.env.local
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# runtime data (uploaded files, db dumps, logs)
+backend/var/
+var/
+*.log
+*.sqlite3
+*.dump
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# editors / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# generated decision board (see AGENTS.md)
+/board.html

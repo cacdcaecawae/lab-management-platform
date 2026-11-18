@@ -1,0 +1,20 @@
+# 本机试用：叠加在 docker-compose.prod.yml 上，由 scripts/trial.ps1 调用（见 README"本机试用"）。
+# 和服务器上是同一套（Nginx + Gunicorn + PostgreSQL），只是端口只开在本机，另加一个 Mailpit 收件箱：
+# 在"系统管理 → 邮件"里填 mailpit / 1025 / 不加密，平台发出的每封邮件都能在 http://localhost:8025 看到。
+# 不要用在服务器上。
+name: lab-trial
+
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-8090}:80"
+
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    environment:
+      # 账号和授权码填不填、填什么都能发，方便先把通知流程走通
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped

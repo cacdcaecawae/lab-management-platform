@@ -1,0 +1,99 @@
+from django.contrib.auth import password_validation
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
+from rest_framework import serializers
+
+from core.exceptions import Conflict
+
+from .models import User
+
+PRIVATE_FIELDS = ["username", "email", "phone", "must_change_password"]
+
+
+class MemberSerializer(serializers.ModelSerializer):
+    """Member for everyone in the group; MemberDetail (private fields too) for supervisors and the member."""
+
+    class Meta:
+        model = User
+        fields = ["id", "name", "role", "research_direction", "is_active", *PRIVATE_FIELDS]
+        read_only_fields = ["username", "must_change_password"]
+        extra_kwargs = {"name": {"allow_blank": False}}
+
+    def to_representation(self, member):
+        data = super().to_representation(member)
+        viewer = self.context["request"].user
+        if not (viewer.is_supervisor or viewer.pk == member.pk):
+            for field in PRIVATE_FIELDS:
+                data.pop(field)
+        return data
+
+    def validate_role(self, value):
+        user = self.context["request"].user
+        if self.instance == user:
+            if value != user.role:
+                raise serializers.ValidationError("不能修改自己的角色")
+        elif value != User.Role.STUDENT:
+            raise serializers.ValidationError("管理员只能设置学生账号；导师和管理员账号请联系运维在“系统管理”里设置")
+        return value
+
+    def validate_is_active(self, value):
+        if not value and self.instance == self.context["request"].user:
+            raise serializers.ValidationError("不能停用自己的账号")
+        return value
+
+
+class NewAccountMixin:
+    """Creating an account, shared by the members page (a manager adds a student) and 系统管理 (ops adds any account):
+    username taken -> 409, Django's password rules, and the initial password must be changed at the first login."""
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise Conflict("用户名已存在")
+        return value
+
+    def validate(self, attrs):
+        # Pass an unsaved user so UserAttributeSimilarityValidator can compare against username/name.
+        candidate = User(**{k: v for k, v in attrs.items() if k != "password"})
+        try:
+            password_validation.validate_password(attrs["password"], candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": exc.messages})
+        return attrs
+
+    def create(self, validated_data):
+        try:
+            with transaction.atomic():
+                return User.objects.create_user(**validated_data, must_change_password=True)
+        except IntegrityError:  # a concurrent request took the username after validate_username
+            raise Conflict("用户名已存在")
+
+
+class MemberCreateSerializer(NewAccountMixin, MemberSerializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    class Meta(MemberSerializer.Meta):
+        fields = [*MemberSerializer.Meta.fields, "password"]
+        read_only_fields = ["is_active", "must_change_password"]
+        # Keep the format check but drop DRF's UniqueValidator: duplicates are a 409, not a 400.
+        extra_kwargs = {
+            "name": {"required": True, "allow_blank": False},
+            "role": {"required": True},
+            "username": {"validators": [User.username_validator]},
+        }
+
+    def create(self, validated_data):
+        return super().create({**validated_data, "group": self.context["request"].user.group})
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    password = serializers.CharField(trim_whitespace=False)
+
+    def validate_password(self, value):
+        password_validation.validate_password(value, self.instance)
+        return value
+
+    def update(self, user, validated_data):
+        user.set_password(validated_data["password"])
+        user.must_change_password = True  # a reset password is a new initial password
+        user.save(update_fields=["password", "must_change_password"])
+        return user

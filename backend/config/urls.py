@@ -1,0 +1,24 @@
+from django.contrib import admin
+from django.urls import include, path
+
+from core.views import DashboardView
+
+admin.site.site_header = admin.site.site_title = "课题组管理平台 后台"
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("api/auth/", include("accounts.urls")),
+    path("api/dashboard/", DashboardView.as_view()),
+    path("api/members/", include("accounts.member_urls")),
+    path("api/system/", include("core.system_urls")),
+    path("api/", include("projects.urls")),
+    path("api/", include("datasets.urls")),
+    path("api/", include("research.urls")),
+    path("api/", include("reports.urls")),
+    path("api/", include("equipment.urls")),
+    path("api/", include("inventory.urls")),
+    path("api/", include("procurement.urls")),
+    path("api/", include("knowledge.urls")),
+    path("api/", include("meetings.urls")),
+    path("api/", include("achievements.urls")),
+]
