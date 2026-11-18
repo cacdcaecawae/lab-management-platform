@@ -29,7 +29,7 @@
 - **新增。** `mgr` 登录，进入"试样与标准件"，点 "新增试件"。textbox "*编号" 填 `CSK-IA-01`，"*名称" 填 `CSK-IA 标准试块`，"材料" 填 `20 钢`，"存放位置" 填 `A305 试块柜`。点 "添加缺陷" 两次，spinbutton "第 1 个缺陷的尺寸" 填 `2`、"埋深" 填 `15`，textbox "第 1 个缺陷的位置" 填 `距左端 50 mm`；第 2 个尺寸 `3`、埋深 `40`。点 "保存"，`wait_for` "借用记录"。截图。
 - **学生看不到。** 新的 isolatedContext 用 `s_a` 登录，直接打开 `/specimens/1`，`wait_for` "未公开"。`evaluate_script` 读 `/api/specimens/1/` 和 `/api/specimens/` 的 `defects`，都是 `null`。截图。
 - **借用。** 点 "借用"，combobox "项目" 用 ArrowDown、Enter 选"导波螺栓松动"，"用途"填一句，combobox "预计归还日期" 用 `fill` 填昨天的日期再按 Enter，点 dialog 里的 "借用"，`wait_for` "已登记借用"。截图。
-- **别人借不了。** 用 `s_b` 登录打开列表，`wait_for` "借用中"；打开详情，`evaluate_script` 读 `main` 里的按钮文字（只有"修改历史"），并带 `X-CSRFToken` POST `borrow/`（409 `on_loan`）和 `return/`（403）。
+- **别人借不了。** 用 `s_b` 登录打开列表，`wait_for` "借用中"；打开详情，`evaluate_script` 读 `main` 里的按钮文字（只有"修改历史"），并带 `X-CSRFToken` POST `borrow/`（409 `on_loan`）和携带当前 `loan_id_seen` 的 `return/`（403）。
 - **归还。** 回到 `s_a`，点 "登记归还"，提示框里 `fill` "完好"，点 "确定"，`wait_for` "已登记归还"。
 - **公开和历史。** `mgr` 刷新详情，点 "编辑试件"，改第 2 个缺陷的位置后保存。再点 "编辑试件"，打开 switch（见 Gotchas），点 "保存"，`wait_for` "学生可见"。点 "修改历史"，`wait_for` "修改了缺陷参数"。截图。`s_a` 刷新详情，缺陷表格出现。
 - **实验记录。** `s_a` 打开 `/experiments/new`，选项目、填名称，combobox "台账试件" 用 ArrowDown、Enter 选中，按 Escape 收起，点 "保存草稿"，`wait_for` "EX-"。截图。
@@ -40,3 +40,9 @@
 - Element Plus 的 switch 和 checkbox 把真正的 input 藏起来了：`click`、`fill` 对 switch "缺陷参数对学生公开" 都会超时。用 `evaluate_script` 点可见的部分：`document.querySelector('.public-switch .el-switch__core').click()`，再读 `.public-switch` 是否有 `is-checked`。列表的两个 checkbox 也是同样的问题，点它们旁边的文字。
 - 缺陷的尺寸、埋深是 spinbutton，页面显示两位小数（"2.00"）。
 - 预计归还日期允许填过去的日期，"已逾期"按浏览器本地日期判断。
+
+## 归还批次与缺陷校验回归
+
+- 管理员打开 A 的归还弹窗后保留；A 在独立会话归还，B 借走同一试件；管理员提交旧弹窗应提示借用记录变化并刷新，B 仍借用中。再次打开确认框才可归还 B。另检查同一人归还后重新借用。
+- 正常归还需携带页面看到的 loan_id_seen；检查请求体及归还人、说明。取消弹窗不发请求。旧客户端省略该字段返回 400，需更新并刷新页面。
+- 缺陷整体替换遗漏类型、空条目应为字段级 400；无效请求不得改变原缺陷或修改历史。这些恶意/不完整请求由 API 回归验证，不在浏览器里通过写 fetch 伪造用户路径。

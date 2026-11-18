@@ -101,6 +101,8 @@ class SpecimenViewSet(
             loan = open_loans().select_for_update().filter(specimen=specimen).first()
             if loan is None:
                 raise Conflict("试件没有借出", code="not_on_loan")
+            if loan.pk != body.validated_data["loan_id_seen"]:
+                raise Conflict("借用记录已变化，请刷新后重新核对", code="stale_loan")
             if loan.borrower_id != request.user.id and not is_manager(request.user):
                 raise PermissionDenied("只有借用人或管理员能登记归还")
             loan.returned_at = timezone.now()

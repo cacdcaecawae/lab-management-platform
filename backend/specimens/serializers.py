@@ -25,6 +25,12 @@ class GroupSpecimenField(serializers.PrimaryKeyRelatedField):
 
 
 class DefectSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        # Every supplied row replaces a whole defect, even when the parent request is PATCH.
+        if "kind" not in attrs:
+            raise serializers.ValidationError({"kind": [self.fields["kind"].error_messages["required"]]}, code="required")
+        return attrs
+
     class Meta:
         model = Defect
         fields = ["id", "kind", "size_mm", "depth_mm", "position", "note"]
@@ -46,6 +52,7 @@ class LoanSerializer(serializers.ModelSerializer):
 
 
 class ReturnSerializer(serializers.Serializer):
+    loan_id_seen = serializers.IntegerField(min_value=1)
     note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
 
 

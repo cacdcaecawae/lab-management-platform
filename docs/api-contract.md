@@ -298,7 +298,7 @@
 | GET | `/api/specimens/{id}/history/` | 本组全员 | `[HistoryEntry]` |
 | GET | `/api/specimens/{id}/loans/` | 本组全员 | 分页，最新在前 |
 | POST | `/api/specimens/{id}/borrow/` | 本组全员 | `{project_id?, purpose?, due_date?}` → 201 `Loan`，借用人是当前用户。状态不是"可用" → 409 `not_available`；已借出 → 409 `on_loan`（同一试件同时只有一条未归还的借用，数据库约束） |
-| POST | `/api/specimens/{id}/return/` | 借用人或管理员 | `{note?}` → `Loan`；没借出 → 409 `not_on_loan`；别人借的 → 403 |
+| POST | `/api/specimens/{id}/return/` | 借用人或管理员 | `{loan_id_seen, note?}` → `Loan`；`loan_id_seen` 为打开归还确认框时的借用 id（必填正整数）；当前借用不同 → 409 `stale_loan`，刷新后重新核对；没借出 → 409 `not_on_loan`；别人借的 → 403。旧客户端缺少该字段返回 400，前后端须同步更新 |
 
 不提供删除；不再使用的改为"停用"。
 
