@@ -14,6 +14,8 @@ def test_backend_rules():
     assert deps.backend_violations("knowledge", "knowledge/x.py", "from datasets.views import x")  # not in table
     assert deps.backend_violations("system", "system/x.py", "from accounts.member_views import X")  # private
     assert deps.backend_violations("workbench", "workbench/x.py", "def f():\n    from reports.views import x")
+    assert deps.backend_violations("workbench", "workbench/x.py", "from reports import queries, views")  # submodule
+    assert len(deps.backend_violations("core", "core/x.py", "from equipment.models import A, B")) == 1
     assert not deps.backend_violations("research", "research/x.py", "from datasets.versions import pin_versions")
     assert not deps.backend_violations("workbench", "workbench/x.py", "from procurement.queries import x\nimport django")
 

@@ -46,7 +46,8 @@ def backend_violations(app, rel, source):
     found = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names = [node.module]
+            # `from reports import views` names the submodule only in the alias
+            names = [f"{node.module}.{a.name}" for a in node.names]
         elif isinstance(node, ast.Import):
             names = [a.name for a in node.names]
         else:
@@ -58,8 +59,8 @@ def backend_violations(app, rel, source):
             if top not in ALLOWED[app]:
                 found.append(f"{rel}:{node.lineno} {app} → {top}（分层表里没有这条依赖）")
             elif rest and PRIVATE.search(rest[0]):
-                found.append(f"{rel}:{node.lineno} {app} → {name}（{rest[0]} 是模块内部）")
-    return found
+                found.append(f"{rel}:{node.lineno} {app} → {top}.{rest[0]}（{rest[0]} 是模块内部）")
+    return list(dict.fromkeys(found))  # `from x import a, b` breaking the layer table is one violation
 
 
 IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
