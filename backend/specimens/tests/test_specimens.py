@@ -1,6 +1,7 @@
 import pytest
+from django.db import connection
 
-from specimens.models import Specimen, SpecimenLoan
+from specimens.models import Defect, Specimen, SpecimenLoan
 
 pytestmark = pytest.mark.django_db
 
@@ -53,6 +54,26 @@ def test_defects_hidden_from_students_until_public(api, student_a, advisor, mana
     assert api(student_a).get(URL, {"search": "距左端"}).json()["count"] == 0
     api(manager).patch(f"{URL}{sid}/", {"defects_public": True}, format="json")
     assert len(api(student_a).get(f"{URL}{sid}/").json()["defects"]) == 2
+
+
+@pytest.mark.parametrize("detail", [True, False])
+def test_hiding_defects_between_the_two_queries_never_shows_new_values(api, student_a, manager, detail):
+    sid = create(api, manager, defects_public=True)["id"]
+    hidden = []
+
+    def manager_hides_in_between(execute, sql, params, many, context):
+        # Just before the defects are read (a query after the specimen's), a manager switches back to a blind test.
+        if '"specimens_defect"' in sql and not hidden:
+            hidden.append(True)
+            Specimen.objects.filter(pk=sid).update(defects_public=False)
+            Defect.objects.filter(specimen_id=sid).delete()
+            Defect.objects.create(specimen_id=sid, kind="notch", size_mm="7.77", depth_mm="3.33")
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(manager_hides_in_between):
+        r = api(student_a).get(f"{URL}{sid}/" if detail else URL)
+    assert hidden and r.status_code == 200
+    assert "7.77" not in str(r.json()) and "notch" not in str(r.json())
 
 
 def test_defects_replaced_and_history_keeps_no_values(api, student_a, manager):
