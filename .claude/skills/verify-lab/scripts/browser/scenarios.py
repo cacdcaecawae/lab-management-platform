@@ -408,5 +408,31 @@ def members(stack):
 if __name__ == "__main__":
     assert settings.DATABASES["default"]["NAME"] == "lab_verify"
     assert settings.DATABASES["default"]["HOST"] == "127.0.0.1"
+    ui = sys.modules[__name__]
+    sys.modules.setdefault("scenarios", ui)
+    from processing import processing
+    from responsive import responsive
+    from specimen_filters import check_specimen_filters
+    import phase4
+
+    scenario = sys.argv[1]
+    ordinary = {
+        "experiments": experiments, "reports": reports, "login": login_logout,
+        "members": members, "processing": processing,
+    }
+    phase_four = {"meetings": phase4.meetings, "achievements": phase4.achievements, "knowledge": phase4.knowledge}
     with ExitStack() as stack:
-        {"experiments": experiments, "reports": reports, "login": login_logout, "members": members}[sys.argv[1]](stack)
+        if scenario in ordinary:
+            ordinary[scenario](stack)
+        elif scenario in phase_four:
+            phase_four[scenario](ui, stack)
+        elif scenario == "responsive":
+            responsive(stack, ui)
+        elif scenario == "specimen_filters":
+            check_specimen_filters(
+                stack, browser=browser, login=login, visit=visit, visible=visible, button=button,
+                label_input=label_input, body_has=body_has, record_path=record_path,
+                screenshot=screenshot, evidence=evidence,
+            )
+        else:
+            raise SystemExit("Unknown synthetic browser scenario")
