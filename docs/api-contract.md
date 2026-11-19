@@ -443,7 +443,7 @@
 
 ## 系统管理 `/api/system/`
 
-- `GET /storage/`：仅运维，返回 `{primary: "local" | "nas", nas_ready: boolean | null}`。只读取当前后端所见的专用目录身份；不写文件、不暴露路径或凭据，也不表示备份成功。其他账号 403。NAS 文件操作不能完成时，可返回 503 `storage_unavailable`。
+- `GET /storage-status/`：仅运维，返回 `{primary: "local" | "nas", nas_ready: boolean | null}`。只读取当前后端所见的专用目录身份；不写文件、不暴露路径或凭据，也不表示备份成功。其他账号 403。NAS 文件操作不能完成时，可返回 503 `storage_unavailable`。
 
 
 只有运维账号（Django 超级用户，通常不属于任何课题组）可用；未改初始密码时 403 `password_change_required`，其他账号 403。

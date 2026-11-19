@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from core.nas_storage import MARKER, NasFileStorage, StorageUnavailable
 
-URL = "/api/system/storage/"
+URL = "/api/system/storage-status/"
 IDENTITY = "isolated-synthetic-test"
 
 

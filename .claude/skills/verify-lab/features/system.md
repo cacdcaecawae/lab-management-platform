@@ -46,7 +46,7 @@
 - **课题组。** 点 tab "课题组"，点 "新建课题组"，名称填 `外组` → "保存"，`wait_for` "已有同名的课题组"；改成 `相控阵课题组`，财务邮箱填 `finance-pa@example.edu`，保存后列表多一行，在籍成员 0。
 - **新建账号。** 点 tab "账号"，确认没有 `ops`。点 "新建账号"：`t_new` / `新导师`，课题组选"相控阵课题组"，角色选"导师"，初始密码 `Init-2026-pass!`，点 "保存"，`wait_for` "已新建，对方首次登录时需修改密码"。截图。新开 `isolatedContext: "t_new"` 用这个账号登录，页面跳到 `/password`，显示"首次登录，请先修改初始密码。"
 - **停用。** 回到 `ops`，在"新导师"那一行点 "停用" → 确定，`wait_for` "已停用"。刷新 `t_new` 的页面，回到登录页。
-- **存储状态。** 在隔离实例点「存储与备份」，默认应显示「服务器本地卷」；启用合成 NAS 后检查身份，替换测试标识后刷新，应显示「不可用」。同时核对普通成员请求 `/api/system/storage/` 得到 403。
+- **存储状态。** 在隔离实例点「存储与备份」，默认应显示「服务器本地卷」；启用合成 NAS 后检查身份，替换测试标识后刷新，应显示「不可用」。同时核对普通成员请求 `/api/system/storage-status/` 得到 403。
 - **其他人进不来。** 以 `mgr` 登录，打开 `/system`，回到 `/`；`evaluate_script` 读菜单文字和 `fetch('/api/system/mail/')`、`fetch('/api/system/accounts/')` 的状态码：菜单没有"系统管理"，两个都是 403。
 - **财务邮箱。** `mgr` 打开"报销与统计"，点 tab "统计"，点 "发送财务提醒"，`wait_for` "请先点“财务邮箱”填写"。点 "财务邮箱"，填 `finance`，点 "保存"，`wait_for` "请输入有效的邮箱地址"；改填 `finance@example.edu` 保存，`wait_for` "财务邮箱已设为 finance@example.edu"。再点 "发送财务提醒"，提示"没有已交财务、尚未到账的报销，没有发送"。
 - **第二视角。** 用 query.sh 读 `core.models.SiteSettings`（启用、服务器、端口、加密方式、`last_mail_error` 为空）、它的历史表字段里没有 `mail_password`、各课题组的财务邮箱，以及 `t_new` 的角色、课题组、`is_active=False`、`must_change_password=True`。
