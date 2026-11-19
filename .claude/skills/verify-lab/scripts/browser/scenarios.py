@@ -89,11 +89,13 @@ def login(session, who):
 
 
 def option(session, label, value):
+    # Element Plus hides an empty multiple-select input until its visible wrapper is focused.
+    # Click the real wrapper first; do not wait for the hidden combobox or use a JS click.
+    field_control(session, label, "div[contains(@class,'el-select__wrapper')]").click()
     combo = field_control(session, label, "input[@role='combobox']")
     listbox = combo.get_attribute("aria-controls")
     assert listbox
-    # The display placeholder is a span, and options are teleported outside the form.
-    combo.click()
+    # Options are teleported outside the form, so scope them to this select's listbox.
     visible(session, By.XPATH, f"//*[@id='{listbox}']//*[@role='option'][contains(normalize-space(.),'{value}')]").click()
 
 
