@@ -9,9 +9,9 @@ from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.history import serialize_history
-from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
+from core.permissions import IsActiveMember, IsManager, is_manager, is_supervisor, scope_group
 
-from .models import Specimen, SpecimenLoan
+from .models import Defect, Specimen, SpecimenLoan
 from .serializers import LoanSerializer, ReturnSerializer, SpecimenSerializer
 
 
@@ -41,9 +41,14 @@ class SpecimenViewSet(
         return [IsActiveMember()]
 
     def get_queryset(self):
+        defects = Defect.objects.all()
+        if not is_supervisor(self.request.user):
+            # The prefetch is a second query: it checks the flag itself, or a manager switching back to a blind test
+            # in between would send the new values under the "public" flag read by the first.
+            defects = defects.filter(specimen__defects_public=True)
         specimens = scope_group(
             Specimen.objects.select_related("custodian").prefetch_related(
-                "defects",
+                Prefetch("defects", queryset=defects),
                 Prefetch("loans", queryset=open_loans().select_related("borrower", "project"), to_attr="open_loans"),
             ),
             self.request.user,
@@ -101,6 +106,8 @@ class SpecimenViewSet(
             loan = open_loans().select_for_update().filter(specimen=specimen).first()
             if loan is None:
                 raise Conflict("试件没有借出", code="not_on_loan")
+            if loan.pk != body.validated_data["loan_id_seen"]:
+                raise Conflict("借用记录已变化，请刷新后重新核对", code="stale_loan")
             if loan.borrower_id != request.user.id and not is_manager(request.user):
                 raise PermissionDenied("只有借用人或管理员能登记归还")
             loan.returned_at = timezone.now()

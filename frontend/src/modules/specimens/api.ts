@@ -10,5 +10,5 @@ export const specimensApi = {
   history: (id: number) => api.get<HistoryEntry[]>(`/api/specimens/${id}/history/`),
   loans: (id: number, q?: ListQuery) => api.get<Page<SpecimenLoan>>(`/api/specimens/${id}/loans/`, q),
   borrow: (id: number, body: LoanWrite) => api.post<SpecimenLoan>(`/api/specimens/${id}/borrow/`, body),
-  giveBack: (id: number, note: string) => api.post<SpecimenLoan>(`/api/specimens/${id}/return/`, { note }),
+  giveBack: (id: number, loanIdSeen: number, note: string) => api.post<SpecimenLoan>(`/api/specimens/${id}/return/`, { loan_id_seen: loanIdSeen, note }),
 }

@@ -69,6 +69,8 @@ async function borrow() {
 }
 
 async function giveBack() {
+  const loanIdSeen = loan.value?.id // capture before the asynchronous confirmation, not when it resolves
+  if (!loanIdSeen) return
   let note = ''
   try {
     ;({ value: note } = await ElMessageBox.prompt('归还时试件的状况，例如"完好""表面有划痕"，可不填。', `归还 ${specimen.value!.code}`, {
@@ -79,7 +81,7 @@ async function giveBack() {
     return
   }
   try {
-    await specimensApi.giveBack(id, (note ?? '').trim())
+    await specimensApi.giveBack(id, loanIdSeen, (note ?? '').trim())
     ElMessage.success('已登记归还')
   } catch (e) {
     showError(e)
