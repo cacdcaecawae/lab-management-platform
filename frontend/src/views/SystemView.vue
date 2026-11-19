@@ -6,6 +6,7 @@ import SystemAccounts from '@/components/SystemAccounts.vue'
 import SystemGroups from '@/components/SystemGroups.vue'
 import SystemMail from '@/components/SystemMail.vue'
 import SystemVersion from '@/components/SystemVersion.vue'
+import StorageUsage from '@/components/StorageUsage.vue'
 import { showError } from '@/utils/errors'
 
 const tab = ref('mail')
@@ -29,6 +30,7 @@ onMounted(async () => {
       <el-tab-pane :label="version?.update_available ? '版本 · 有更新' : '版本'" name="version">
         <SystemVersion v-if="version" :info="version" />
       </el-tab-pane>
+      <el-tab-pane label="存储" name="storage" lazy><StorageUsage ops /></el-tab-pane>
     </el-tabs>
   </el-card>
 </template>

@@ -310,7 +310,9 @@ def test_photo_upload_and_scoped_download(api, student_a, student_b, other_manag
     r = report(api(student_a), booking, condition="abnormal", description="外壳裂了", photo=photo)
     url = r.data["report"]["photo_url"]
     assert url == f"/api/bookings/{booking.id}/photo/"
-    stored = UsageReport.objects.get(booking=booking).photo.name
+    saved_report = UsageReport.objects.get(booking=booking)
+    assert saved_report.photo_size == len(b"\xff\xd8fake-jpeg")
+    stored = saved_report.photo.name
     assert stored.startswith("usage-photos/") and stored.endswith(".jpg") and "现场" not in stored
     download = api(student_b).get(url)
     assert download.status_code == 200 and b"".join(download.streaming_content) == b"\xff\xd8fake-jpeg"

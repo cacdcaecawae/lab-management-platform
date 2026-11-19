@@ -196,6 +196,8 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                 if UsageReport.objects.filter(booking=booking).exists():
                     raise Conflict("已经登记过使用结果", code="invalid_state")
                 report = UsageReport(booking=booking, **body.validated_data)
+                if photo := body.validated_data.get("photo"):
+                    report.photo_size = photo.size
                 report.save()
                 transaction.on_commit(mark_committed)
                 if report.condition == UsageReport.Condition.ABNORMAL:

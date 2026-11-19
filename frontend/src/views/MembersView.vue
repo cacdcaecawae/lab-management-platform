@@ -7,8 +7,10 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { ROLE_LABELS } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import StorageUsage from '@/components/StorageUsage.vue'
 
 const auth = useAuthStore()
+const storageOpen = ref(false)
 const isManager = computed(() => auth.user?.role === 'manager')
 
 const filters = reactive({ search: '', role: '' })
@@ -91,6 +93,7 @@ async function doReset() {
 <template>
   <el-card class="card">
     <div class="page-toolbar">
+      <el-button v-if="auth.isSupervisor" @click="storageOpen = true">本组存储用量</el-button>
       <el-input v-model="keyword" :placeholder="auth.isSupervisor ? '搜索姓名、学号、研究方向' : '搜索姓名、研究方向'" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.role" aria-label="角色" placeholder="全部角色" clearable>
         <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
@@ -181,5 +184,8 @@ async function doReset() {
       <el-button @click="resetVisible = false">取消</el-button>
       <el-button type="primary" @click="doReset">重置</el-button>
     </template>
+  </el-dialog>
+  <el-dialog v-model="storageOpen" title="本组存储用量" width="min(720px, 95vw)" destroy-on-close>
+    <StorageUsage v-if="storageOpen" />
   </el-dialog>
 </template>

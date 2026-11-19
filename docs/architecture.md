@@ -35,7 +35,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 | 业务 | `research` | 实验记录（可关联台账设备和试件）、数据处理记录、提交/退回、修改历史 | datasets、equipment、specimens、projects 及以下 |
 | 业务 | `knowledge` | 知识库文档与版本 | equipment、projects 及以下 |
 | 业务 | `reports` | 周报、反馈、状态流转、未交统计 | research、datasets、projects 及以下 |
-| 汇总 | `workbench` | 工作台汇总接口 `/api/dashboard/`（无模型） | 所有业务模块 |
+| 汇总 | `workbench` | 工作台与存储汇总接口（无模型） | 所有业务模块 |
 | 汇总 | `system` | 系统管理 `/api/system/`：邮件配置、课题组、所有组的账号（无模型） | accounts、core |
 
 模块的对外部分：别的模块只能引用 `models`、`serializers`（简要序列化器、"本组对象"选择字段）、`mixins` 和专门给别人用的文件（`versions.py`、`queries.py`）；`views`、`urls`、`admin` 属于模块内部。被几个模块共用的查询放进 `queries.py`，例如"哪些采购单等我审批"（`procurement/queries.py`）由采购列表和工作台共用。测试、迁移、`conftest.py` 不受这些规则限制。
