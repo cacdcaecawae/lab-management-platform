@@ -55,9 +55,35 @@ elif args[-2:] == ['up', '-d']:
         line.split('=', 1)[1] for line in (root / '.env').read_text().splitlines() if line.startswith('APP_VERSION=')][-1]
     (root / 'backend').write_text(version)
     (root / 'web').write_text('v0.9.9' if mode == 'wrong-web' or (mode == 'stale-web' and n == 1) else version)
-elif 'wget' in args:
-    if mode == 'unhealthy' and (root / 'up_count').read_text() == '1':
-        sys.exit(1)
+elif 'nc' in args or 'curl' in args:
+    tls = 'curl' in args
+    request = args[-1] if tls else ''
+    if not tls:
+        for line in sys.stdin:
+            if not line.strip():
+                break
+            request += line
+    with (root / 'health_requests').open('a') as f:
+        f.write(json.dumps(request) + '\n')
+    count = int((root / 'up_count').read_text()) if (root / 'up_count').exists() else 0
+    path = '/api/auth/csrf/' if ' /api/auth/csrf/ ' in request else '/healthz'
+    code = '204'
+    if mode == 'unhealthy' and count == 1:
+        code = '502'
+    elif mode == 'redirect':
+        code = '301'
+    elif mode == 'tls-cert-failure':
+        assert tls
+        print('204', end='')  # even if a transport failure yields output, it must not pass
+        sys.exit(60)
+    elif mode in ('legacy-http', 'spa-only'):
+        code = '200' if path == '/healthz' or mode == 'spa-only' else '204'
+    if tls:
+        print(code, end='')
+    else:
+        print('HTTP/1.1 ' + code + ' Test\r\nConnection: close\r\n')
+        if code == '301':
+            print('HTTP/1.1 204 Not the first status')
 '''
 
 
@@ -84,7 +110,7 @@ class ServerScripts(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
                         TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A}]))
         # Do not inherit an operator's target-stack overrides.
-        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE'):
+        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS'):
             self.env.pop(key, None)
 
     def executable(self, name, text):
@@ -107,12 +133,70 @@ class ServerScripts(unittest.TestCase):
         self.assertEqual((self.root / 'up_count').read_text(), '2')
         calls = self.calls()
         up = [i for i, c in enumerate(calls) if c[-2:] == ['up', '-d']]
-        self.assertFalse(any('wget' in c for c in calls[up[0] + 1:up[1]]))
+        self.assertFalse(any('nc' in c for c in calls[up[0] + 1:up[1]]))
 
     def test_successful_start_and_health_still_succeed(self):
         r = self.run_script('update.sh', 'v0.2.0')
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn('已更新到 v0.2.0', r.stdout)
+
+    def health_requests(self):
+        return [json.loads(line) for line in (self.root / 'health_requests').read_text().splitlines()]
+
+    def enable_tls(self):
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.https.yml'
+        with (self.root / '.env').open('a') as f:
+            f.write('HTTPS_DOMAIN=lab.synthetic.test\nDJANGO_ALLOWED_HOSTS=legacy.test\n')
+
+    def test_tls_update_and_restore_probe_real_https_listener_using_certificate_name(self):
+        self.enable_tls()
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.run_script('restore.sh', A, '--db-only', '--yes')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.health_requests(), ['https://lab.synthetic.test/healthz'] * 2)
+        probes = [c for c in self.calls() if 'curl' in c]
+        self.assertEqual(len(probes), 2)
+        for probe in probes:
+            self.assertIn('lab.synthetic.test:443:127.0.0.1', probe)
+            self.assertNotIn('--insecure', probe)
+            self.assertNotIn('-L', probe)
+
+    def test_tls_missing_target_config_is_rejected_before_pull_backup_or_stop(self):
+        self.enable_tls()
+        # Simulate a tag that has the overlay but lacks a bind-mounted template.
+        self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\n'
+                        '[[ "$*" != cat-file*"infra/nginx.https.conf.template" ]]\n')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertIn('未停止网站', r.stderr)
+        self.assertFalse((self.root / 'calls').exists())
+        self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
+
+    def test_redirect_is_never_a_healthy_response_or_legacy_fallback(self):
+        r = self.run_script('restore.sh', A, '--db-only', '--yes', mode='redirect')
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertTrue(self.health_requests())
+        self.assertTrue(all(x.startswith('GET /healthz HTTP/1.1') for x in self.health_requests()))
+
+    def test_tls_never_falls_back_to_plain_http_or_ignores_transport_errors(self):
+        self.enable_tls()
+        for mode in ('redirect', 'tls-cert-failure', 'spa-only'):
+            with self.subTest(mode=mode):
+                (self.root / 'health_requests').unlink(missing_ok=True)
+                r = self.run_script('restore.sh', A, '--db-only', '--yes', mode=mode)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                self.assertTrue(self.health_requests())
+                self.assertEqual(set(self.health_requests()), {'https://lab.synthetic.test/healthz'})
+
+    def test_legacy_plain_http_rollback_needs_backend_204_not_spa_200(self):
+        for mode, result in [('legacy-http', 0), ('spa-only', 1)]:
+            with self.subTest(mode=mode):
+                (self.root / 'health_requests').unlink(missing_ok=True)
+                r = self.run_script('restore.sh', A, '--db-only', '--yes', mode=mode)
+                self.assertEqual(r.returncode, result, r.stderr)
+                self.assertEqual([line.split()[1] for line in self.health_requests()[:2]],
+                                 ['/healthz', '/api/auth/csrf/'])
 
     def test_site_is_stopped_before_the_rollback_backup(self):
         # A change saved after the backup would be lost when the rollback restores that backup.
@@ -256,7 +340,7 @@ class ServerScripts(unittest.TestCase):
         calls = [' '.join(c) for c in self.calls()]
         self.assertIn('dropdb', calls[-1])
         self.assertIn('"$OLD"', calls[-1])
-        self.assertTrue(any('wget' in c for c in calls[:-1]))
+        self.assertTrue(any('nc' in c for c in calls[:-1]))
         self.assertFalse(any('IF EXISTS' in c or '--if-exists' in c for c in calls))  # never drop a kept database
 
     def test_failed_database_restore_never_stops_site(self):

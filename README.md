@@ -106,9 +106,9 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 
 - 不设 `APP_VERSION` 时镜像名是 `local`，`up -d --build` 从当前代码构建，本机试用（`scripts/trial.ps1`）就是这样。
 - 数据：数据库在卷 `pgdata`，上传文件在卷 `labdata`，`scripts/backup.sh` 备份这两个。
-- 目前只配置了 HTTP。没有 HTTPS 时必须设 `DJANGO_SECURE_COOKIES=0` 才能登录，且只能在校内网 / VPN 内使用；确定域名后在 `infra/nginx.conf` 加证书和 443。
+- 默认只启用 HTTP。没有 HTTPS 时必须设 `DJANGO_SECURE_COOKIES=0` 才能登录，且只能在校内网 / VPN 内使用；不要把这套默认配置直接开放到公网。正式 HTTPS 见下文。
 - 上传上限 2GB（`MAX_UPLOAD_SIZE` 与 Nginx `client_max_body_size` 需同时调整）。
-- 登录限速按"账号 + 来源地址"计数，来源地址取 Nginx 追加在 `X-Forwarded-For` 末尾的那一段（`config/settings.py` 的 `REST_FRAMEWORK["NUM_PROXIES"] = 1`）。如果在 Nginx 前面再加一层反向代理（例如学校的 HTTPS 网关），要改成 2，否则所有人会被当成同一个地址。
+- 登录限速按"账号 + 来源地址"计数，来源地址取 Nginx 追加在 `X-Forwarded-For` 末尾的那一段（`config/settings.py` 的 `REST_FRAMEWORK["NUM_PROXIES"] = 1`）。学校统一 HTTPS 网关或其他多层代理不适用下面的直连配置，由网络管理员核实可信代理链、正确传递 HTTPS 和客户端地址，并按实际跳数配置；不要直接照搬。
 - 邮件（设备异常、采购审批、财务提醒）：运维账号在"系统管理 → 邮件"里填 SMTP，点"发送测试邮件"确认能发，再打开"启用邮件"。没启用时只有工作台提醒。授权码存在数据库里（页面和接口都不返回），数据库备份里也带着它。学校邮箱怎么填、发不出去怎么查，见 [docs/mail-setup.md](docs/mail-setup.md)。
 - 每周一 9:00 的财务提醒由宿主机定时任务触发，应用里没有常驻调度进程。先填好财务邮箱（运维在"系统管理 → 课题组"，或各组管理员在"报销与统计 → 统计 → 财务邮箱"），然后在宿主机 `crontab -e` 加一行（路径换成实际的仓库目录）：
 
@@ -117,6 +117,51 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
   ```
 
   忘了配置也不会出错，只是没有每周提醒；管理员可以在"报销与统计 → 统计"里点"发送财务提醒"手动发。
+
+### 正式域名 HTTPS（可选）
+
+这套配置用于 **单台 Linux 服务器直连公网、由自带 Nginx 终止 TLS**。运维先确认域名、主机位置和网络策略，按部署地及校方要求确认是否需备案和办理手续。让所用域名只解析到能到达该服务器的地址（配置了 AAAA 就必须同时验证 IPv6）。HTTP-01 时外部须能访问 TCP 80，正式网站还须能访问 443；若学校网关终止 TLS 或不能开放 80，先由网络管理员确定替代方案，不要执行下列步骤。域名和网络未落实前，继续使用私网 HTTP 或 VPN。
+
+1. **只启动 ACME 引导页。** 使用已经包含本节配置的新版本。复制模板，在 `.env` 设置 `HTTPS_DOMAIN`（完整域名、不含协议或端口）和 `HTTP_PORT=80`。下面的 `domain` 必须与 `HTTPS_DOMAIN` 一致。默认 `ACME_WEBROOT=/srv/lab-certbot/www` 和 `ACME_CERT_ROOT=/etc/letsencrypt`，先创建 webroot；已有站点应安排维护窗口，切到引导期间只对外提供挑战文件，其他 URL 返回 503，不曝光 HTTP 登录。若曾导出 TLS 的 `COMPOSE_FILE`，引导时以这里显式的两个 `-f` 为准。
+
+   ```bash
+   domain='你的正式域名'
+   sudo install -d -m 0755 /srv/lab-certbot/www/.well-known/acme-challenge
+   docker compose --env-file .env -f infra/docker-compose.prod.yml -f infra/docker-compose.acme.yml up -d --no-deps web
+   sudo certbot certonly --webroot -w /srv/lab-certbot/www --cert-name "$domain" -d "$domain"
+   ```
+
+   签发前可放一个无敏感数据的测试文件，由独立网络检查 `http://<域名>/.well-known/acme-challenge/<文件名>` 能取到，而非应用主页。如果改用非默认目录，Certbot 的 `-w`（以及必要时 `--config-dir` 和续期配置）必须与 Compose 挂载一致。证书私钥不要复制到仓库或放到 webroot。
+
+2. **证书存在后启用 HTTPS。** 必须有 `live/<域名>/fullchain.pem` 和 `privkey.pem`，仅该域名的 `live/` 和 `archive/` 目录只读挂载（保留 Certbot 管理的符号链接，不挂载账户凭据）。不要同时叠加 ACME 引导和 HTTPS。HTTPS 配置自动用 `HTTPS_DOMAIN` 限制 Django 的 Host/CSRF Origin、开启 Secure Cookie，HTTP 只保留挑战文件，其他业务路径跳固定域名。变量不加引号，避免 Bash 运维脚本读取 `.env` 时将引号视为域名的一部分。
+
+   ```bash
+   export COMPOSE_FILE=infra/docker-compose.prod.yml:infra/docker-compose.https.yml
+   docker compose --env-file .env config --quiet
+   docker compose --env-file .env up -d
+   curl --fail --silent --show-error -o /dev/null "https://$domain/api/auth/csrf/"
+   ```
+
+   运维用外部真实网络检查证书链、域名、时钟、HTTP 固定跳转、TLS 和登录的 Secure Cookie。从容器外访问 `/healthz` 应拒绝；更新/恢复在 web 容器内以证书域名及系统信任链校验真实 HTTPS 监听，要求 Django 返回 204，不能代替外部网络或浏览器验收。默认 HSTS 300 秒，确认稳定后再评估升至一年（31536000）；不要贸然加 `includeSubDomains` 或 preload。发布前可做公开 TLS 评级检查，先取得对该域名执行第三方检测的许可。
+
+3. **让 Certbot 续期并重载 Nginx。** 使用宿主机安装的 Certbot 自带 timer 或已有的等效定时任务，不要重复开多个。用只针对该证书的可执行 deploy hook：放在默认 `/etc/letsencrypt/renewal-hooks/deploy/lab-nginx`，按实际绝对路径和正式域名替换；自定义 Certbot 配置目录时应使用对应 hook 目录。仅成功续期后重载，先 `nginx -t`；将续期失败/证书到期纳入运维告警。
+
+   ```sh
+   #!/bin/sh
+   set -eu
+   case " ${RENEWED_DOMAINS:-} " in
+     *" 你的正式域名 "*) ;;
+     *) exit 0 ;;
+   esac
+   cd /srv/lab-management-platform
+   export COMPOSE_FILE=infra/docker-compose.prod.yml:infra/docker-compose.https.yml
+   docker compose --env-file .env exec -T web nginx -t
+   docker compose --env-file .env exec -T web nginx -s reload
+   ```
+
+   配置后由运维运行 `sudo certbot renew --cert-name "$domain" --dry-run --run-deploy-hooks` 验证挑战和重载；成功后再看实际 timer 日志，检查线上仍提供期望的证书。参见 [Certbot 续期与钩子文档](https://eff-certbot.readthedocs.io/en/stable/using.html)。
+
+HTTPS 启用后，**备份、恢复、更新、运维 Compose 和续期钩子始终带上同一套 `COMPOSE_FILE` 和项目名**；定时任务需要单独写明，不能依赖交互式 shell 的 export。先在已支持本配置的版本上开启 HTTPS，更新脚本在停站前拒绝缺少 HTTPS 配置的目标版本，自动回退只面向支持该覆盖文件的版本。要跨过第一个支持 HTTPS 的版本，须提前安排维护窗口，先备份，手工准备旧版兼容的 TLS 终止/恢复方案（或暂时关闭外部入口，仅在私网恢复），不要自动降级成公开 HTTP。此前在浏览器启用的 HSTS 仍会生效。
 
 ## 目录
 

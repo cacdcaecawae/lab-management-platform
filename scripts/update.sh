@@ -6,6 +6,7 @@
 set -euo pipefail
 
 main() {
+  local file
   source "$(dirname "$0")/server-env.sh"
   need_backup_settings
   git diff --quiet HEAD || die "仓库里有未提交的改动（git status 查看），处理后再更新"
@@ -17,6 +18,14 @@ main() {
   target=${1:-$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)}
   [ -n "$target" ] && git rev-parse -q --verify "refs/tags/$target" >/dev/null || die "没有这个版本：${target:-（还没有发布过）}"
   [ "$target" != "$current" ] || { echo "已经是 $current"; exit 0; }
+
+  if tls_mode; then
+    for file in infra/docker-compose.https.yml infra/nginx.https.conf.template infra/nginx.acme.inc \
+      infra/nginx.health.inc infra/nginx.site.inc; do
+      git cat-file -e "refs/tags/$target:$file" 2>/dev/null ||
+        die "$target 不支持当前的 HTTPS 配置（缺少 $file），未停止网站；跨旧版本请按 README 手动处理"
+    done
+  fi
 
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web

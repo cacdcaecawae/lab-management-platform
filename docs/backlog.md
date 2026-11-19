@@ -23,7 +23,7 @@
 | 13 | 全站搜索 | [feature/…-global-search](../.agents/notes/proposed/feature/2026-11-18-global-search.md) | M | 最好在 2 之后 | 否 |
 | 14 | 耗材批次与有效期 | [feature/…-consumable-batches](../.agents/notes/proposed/feature/2026-11-18-consumable-batches.md) | L | 需要用户确认哪些耗材按批次管 | 否 |
 | 15 | 设备与试件二维码标签 | [feature/…-qr-labels](../.agents/notes/proposed/feature/2026-11-18-qr-labels.md) | S | 正式域名定下来之后再大量打印 | 否 |
-| 16 | 正式域名的 HTTPS | [process/…-https](../.agents/notes/proposed/process/2026-11-18-https.md) | M | 用户提供域名并完成 ICP 备案 | 否 |
+| 16 | 正式域名的 HTTPS | [process/…-https](../.agents/notes/implemented/process/2026-11-18-https.md) | M | 用户提供域名并完成 ICP 备案 | 是（配置实现；正式部署验收待做） |
 
 会议明确暂缓、不要做的：AI 额度与 Magpie 对接、培训授权与毕业交接、分片上传与断点续传、在服务器上运行 MATLAB/Python、SOP 学习考核、图表证据卡、对接学校财务系统（见开发手册第 1 节和 `docs/development-plan.md`）。
 
