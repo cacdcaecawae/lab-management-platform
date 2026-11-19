@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib import admin
 from django.core.files.uploadedfile import UploadedFile
+from django.utils import timezone
 from simple_history.admin import SimpleHistoryAdmin
 
 from .models import Booking, Equipment, UsageReport
@@ -23,8 +24,10 @@ class UsageReportInlineForm(forms.ModelForm):
         photo = self.cleaned_data.get("photo")
         if isinstance(photo, UploadedFile):
             obj.photo_size = photo.size
+            obj.photo_uploaded_at = timezone.now()
         elif photo is False:
             obj.photo_size = None
+            obj.photo_uploaded_at = None
         if commit:
             obj.save()
             self.save_m2m()

@@ -312,6 +312,8 @@ def test_photo_upload_and_scoped_download(api, student_a, student_b, other_manag
     assert url == f"/api/bookings/{booking.id}/photo/"
     saved_report = UsageReport.objects.get(booking=booking)
     assert saved_report.photo_size == len(b"\xff\xd8fake-jpeg")
+    assert saved_report.photo_uploaded_at is not None
+    assert saved_report.photo_uploaded_at <= saved_report.reported_at
     stored = saved_report.photo.name
     assert stored.startswith("usage-photos/") and stored.endswith(".jpg") and "现场" not in stored
     download = api(student_b).get(url)

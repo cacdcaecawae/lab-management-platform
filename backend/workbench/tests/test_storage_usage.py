@@ -90,7 +90,7 @@ def test_all_recorded_attachment_sources(api, group, manager, other_manager, mon
     assert by_group[other_manager.group_id]["modules"]["procurement"]["known_bytes"] == 7
 
 
-def test_admin_photo_replacement_clear_and_unchanged(tmp_path, settings, group, student_a):
+def test_admin_photo_replacement_clear_and_unchanged(tmp_path, settings, group, student_a, monkeypatch):
     from django.core.files.uploadedfile import SimpleUploadedFile
     from equipment.admin import UsageReportInlineForm
 
@@ -101,12 +101,28 @@ def test_admin_photo_replacement_clear_and_unchanged(tmp_path, settings, group, 
     report = UsageReport.objects.create(
         booking=booking, condition="normal", photo="synthetic/old.jpg", photo_size=800,
     )
+    now = datetime(2026, 12, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(storage.timezone, "now", lambda: now)
+    monkeypatch.setattr(storage.shutil, "disk_usage", Mock(side_effect=OSError))
     assert "photo_size" not in UsageReportInlineForm.base_fields
+    assert "photo_uploaded_at" not in UsageReportInlineForm.base_fields
+
+    def amounts():
+        group_row = next(g for g in storage.ops_summary()["groups"] if g["id"] == group.pk)
+        return (group_row["modules"]["equipment"]["known_bytes"], group_row["months"]["2026-11"],
+                group_row["months"]["2026-12"])
+
+    assert amounts() == (800, 0, 0)  # historical known size, no proven month
+    report.photo_uploaded_at = datetime(2026, 11, 30, 15, 59, tzinfo=timezone.utc)
+    report.save(update_fields=["photo_uploaded_at"])
+    previous_upload = report.photo_uploaded_at
+    assert amounts() == (800, 800, 0)
     unchanged = UsageReportInlineForm(data={"condition": "normal", "photo_size": 1}, instance=report)
     assert unchanged.is_valid(), unchanged.errors
     unchanged.save()
     report.refresh_from_db()
     assert report.photo.name == "synthetic/old.jpg" and report.photo_size == 800
+    assert report.photo_uploaded_at == previous_upload
 
     replacement = UsageReportInlineForm(data={"condition": "normal"},
         files={"photo": SimpleUploadedFile("new.jpg", b"test-image")}, instance=report)
@@ -117,9 +133,12 @@ def test_admin_photo_replacement_clear_and_unchanged(tmp_path, settings, group, 
     pending.save()
     report.refresh_from_db()
     assert report.photo.name.endswith(".jpg") and report.photo_size == 10
+    assert report.photo_uploaded_at == now
+    assert amounts() == (10, 0, 10)
 
     clear = UsageReportInlineForm(data={"condition": "normal", "photo-clear": "on"}, instance=report)
     assert clear.is_valid(), clear.errors
     clear.save()
     report.refresh_from_db()
-    assert not report.photo and report.photo_size is None
+    assert not report.photo and report.photo_size is None and report.photo_uploaded_at is None
+    assert amounts() == (0, 0, 0)

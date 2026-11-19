@@ -485,7 +485,7 @@
 
 ### 存储用量
 
-- `GET /api/system/storage/` 仅运维。返回 `{disk, groups, month_keys, projection}`。组内有 `id, name, known_bytes, unknown_files, modules, months`；月份为北京时间的 `YYYY-MM`，字节统计仅含仍在账、大小已知的文件。
+- `GET /api/system/storage/` 仅运维。返回 `{disk, groups, month_keys, projection}`。组内有 `id, name, known_bytes, unknown_files, modules, months`；月份为北京时间的 `YYYY-MM`，总字节统计仅含仍在账、大小已知的文件；按月统计还要求上传时间已知。设备照片更换按当前文件上传时间计，旧照片不以登记日期补造上传时间。
 - `disk.kind` 为 `local` 或 `non_local`；本地且取值成功时 `disk.filesystem` 含总量、已用、可用字节，其他场景为 `null`。文件系统统计不等于平台文件合计。
 - `projection` 可空；最近 3 个完整月份均有已知大小的文件时包含 `basis_months` 和 `annual_retained_known_bytes`，是对当前仍有记录的文件的同口径粗估，不是磁盘净增长或寿命。
 - `GET /api/storage-usage/` 本组管理员与导师。仅原始数据，返回 `{by_member, by_project}`，每行 `id, label, known_bytes, unknown_files`。不能归属本组身份的记录不返回外组标识。

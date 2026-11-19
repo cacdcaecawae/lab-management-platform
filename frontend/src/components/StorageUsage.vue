@@ -58,7 +58,7 @@ onMounted(load)
         <el-table-column prop="unknown_files" label="大小未知的文件数" />
       </el-table>
       <h3>近 12 个月上传且仍在账的已知大小（北京时间）</h3>
-      <p>不含已删除或未登记大小的文件，不代表当时上传总量、净增长或磁盘变化。</p>
+      <p>不含已删除、大小未知或上传时间未知的文件，不代表当时上传总量、净增长或磁盘变化。</p>
       <el-table :data="monthRows">
         <el-table-column prop="group" label="课题组" />
         <el-table-column prop="month" label="月份" />

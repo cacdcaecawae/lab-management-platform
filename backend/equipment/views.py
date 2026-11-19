@@ -198,6 +198,7 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                 report = UsageReport(booking=booking, **body.validated_data)
                 if photo := body.validated_data.get("photo"):
                     report.photo_size = photo.size
+                    report.photo_uploaded_at = timezone.now()
                 report.save()
                 transaction.on_commit(mark_committed)
                 if report.condition == UsageReport.Condition.ABNORMAL:

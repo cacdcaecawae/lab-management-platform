@@ -81,7 +81,7 @@ def ops_summary():
         ("procurement", Attachment.objects.exclude(file=""), Case(
             When(purchase__isnull=False, then=F("purchase__owner__group_id")), default=F("reimbursement__owner__group_id")
         ), "created_at", "size"),
-        ("equipment", UsageReport.objects.exclude(photo=""), "booking__equipment__group_id", "reported_at", "photo_size"),
+        ("equipment", UsageReport.objects.exclude(photo=""), "booking__equipment__group_id", "photo_uploaded_at", "photo_size"),
     )
     month_observations = defaultdict(int)
     for module, queryset, group, ts, size in sources:
