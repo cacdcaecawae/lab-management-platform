@@ -99,6 +99,9 @@ DATABASES = {
 # Shared by all Gunicorn workers (login throttle counts). The table is created by core/migrations/0001.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.db.DatabaseCache", "LOCATION": "django_cache"}}
 
+# Enable only after the independent retention job is installed; see README.
+LOGIN_AUDIT_ENABLED = os.environ.get("LOGIN_AUDIT_ENABLED", "0") == "1"
+
 AUTH_USER_MODEL = "accounts.User"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

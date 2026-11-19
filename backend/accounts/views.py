@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from .login_audit import record_attempt, record_throttle_minute, source_address
 from .serializers import LoginSerializer, MeSerializer, PasswordChangeSerializer
 
 
@@ -31,6 +32,9 @@ class LoginRateThrottle(SimpleRateThrottle):
 
     rate = "5/min"
 
+    def get_ident(self, request):
+        return source_address(request) or ""
+
     def get_cache_key(self, request, view):
         username = request.data.get("username", "") if isinstance(request.data, dict) else ""
         key = f"{str(username).strip().lower()}|{self.get_ident(request)}"
@@ -43,13 +47,19 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [LoginRateThrottle]
 
+    def throttled(self, request, wait):
+        record_throttle_minute()
+        super().throttled(request, wait)
+
     def post(self, request):
         data = LoginSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         user = authenticate(request, **data.validated_data)
         if user is None:
+            record_attempt(request, candidate=data.validated_data["username"])
             raise AuthenticationFailed("用户名或密码错误", code="invalid_credentials")
         login(request, user)
+        record_attempt(request, user=user)
         return Response(MeSerializer(user).data)
 
 

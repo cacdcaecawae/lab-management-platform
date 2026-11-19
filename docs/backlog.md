@@ -18,7 +18,7 @@
 | 8 | 每月自动恢复演练 | [process/…-restore-drill](../.agents/notes/proposed/process/2026-11-18-restore-drill.md) | M | — | 否 |
 | 9 | 设备使用统计与导出 | [feature/…-equipment-usage-stats](../.agents/notes/proposed/feature/2026-11-18-equipment-usage-stats.md) | M | — | 否（视图放在新文件） |
 | 10 | 存储用量统计 | [feature/…-storage-usage](../.agents/notes/proposed/feature/2026-11-18-storage-usage.md) | M | — | 否 |
-| 11 | 登录记录 | [feature/…-login-records](../.agents/notes/proposed/feature/2026-11-18-login-records.md) | S | — | 否 |
+| 11 | 登录记录（已实现） | [feature/…-login-records](../.agents/notes/implemented/feature/2026-11-18-login-records.md) | S | — | 否 |
 | 12 | 成果统计 | [feature/…-achievement-stats](../.agents/notes/proposed/feature/2026-11-18-achievement-stats.md) | S | — | 否 |
 | 13 | 全站搜索 | [feature/…-global-search](../.agents/notes/proposed/feature/2026-11-18-global-search.md) | M | 最好在 2 之后 | 否 |
 | 14 | 耗材批次与有效期 | [feature/…-consumable-batches](../.agents/notes/proposed/feature/2026-11-18-consumable-batches.md) | L | 需要用户确认哪些耗材按批次管 | 否 |

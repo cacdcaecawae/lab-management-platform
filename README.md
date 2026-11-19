@@ -130,3 +130,15 @@ scripts/    开发辅助脚本（check.sh 完整检查），本机试用 trial.p
 .agents/notes/   技术决策笔记（看板生成方式见 AGENTS.md）
 .claude/skills/  决策笔记 Skill 与校验脚本
 ```
+
+### 登录记录保留
+
+运维「系统管理 → 登录记录」仅显示近 180 天的应用记录。认证事件记录已有账号归属（若可识别）和来源 IP，不保存表单的原样登录名、密码或浏览器标识。限流只保留应用 DRF 层的发生分钟，不记录来源或被拦次数；Nginx 等代理独自拒绝的请求不计。后端必须保持在受信任代理后，不应直接暴露，且代理跳数必须与实际部署一致。
+
+新采集默认关闭。启用前，部署负责人必须先安装并验证每日清理任务（宿主机 crontab 示例；更换路径，并让日志/失败告警有人检查）：
+
+```cron
+15 3 * * * cd /srv/lab-management-platform && docker compose -f infra/docker-compose.prod.yml --env-file .env exec -T backend python manage.py purge_login_events >> /var/log/lab-login-events-purge.log 2>&1
+```
+
+可以先在明确选定的部署运行 `python manage.py purge_login_events --dry-run`，只计数不删除。一次计划任务成功且失败告警可见后，再设 `LOGIN_AUDIT_ENABLED=1`，按部署流程用 `docker compose -f infra/docker-compose.prod.yml --env-file .env up -d backend` 使新环境变量生效。清理任务未运行或失败时，接口仍隐藏过期记录，但数据库仍可能保有过期行；关闭采集并不删除旧记录，需继续清理。备份、代理访问日志和数据库日志由部署单独管理。本改动不启用生产采集或任务。
