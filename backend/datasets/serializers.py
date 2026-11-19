@@ -3,11 +3,19 @@ from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
 from core.permissions import scope_group
-from core.serializers import ProjectBriefSerializer
 from projects.models import Project
+from projects.serializers import ProjectBriefSerializer
 
 from .models import DataFile, Dataset
 from .versions import current_version
+
+
+class DatasetBriefSerializer(serializers.ModelSerializer):
+    """Embedded in experiments, runs and reports; see versions.add_pinned_versions."""
+
+    class Meta:
+        model = Dataset
+        fields = ["id", "code", "name", "kind"]
 
 
 class DatasetSerializer(serializers.ModelSerializer):

@@ -90,6 +90,26 @@
 验证范围（2026-11-17）：在本机试用栈上用浏览器走了首次使用的完整路径（运维建课题组和账号 → 管理员建学生 → 学生登录），512 MB 文件经 Nginx 上传、SHA256 一致，采购提交后通知邮件进了本机收件箱；SSL、STARTTLS、不加密三种方式各实际发送成功一次（加密的两种连的是带自签名证书的临时测试服务器）。
 未验证：学校真实的 SMTP 服务器、HTTPS、宿主机定时任务、2 GB 上传。
 
+## 模块边界（2026-11-18）
+
+方案见[模块边界](../.agents/notes/implemented/architecture/2026-11-17-module-boundaries.md)。`core` 不再引用业务模块，工作台、系统管理拆成 `workbench`、`system`；前端试点按模块分目录（设备、知识库）；`scripts/check_module_deps.py` 检查依赖方向，由后端测试运行。
+
+## 发版、更新与备份（2026-11-18）
+
+方案见[发版、更新与备份](../.agents/notes/implemented/process/2026-11-18-release-update-backup.md)。
+
+- GitHub Actions：推送 `main` 和每个 PR 跑 `scripts/check.sh`；推送 `vX.Y.Z` 标签时先跑同样的检查，再从这条提交构建镜像推到 ghcr.io，并生成发布说明。
+- 服务器：`.env` 的 `APP_VERSION` 选用镜像；`scripts/update.sh` 拉取 → 备份 → 切换 → 健康检查，失败自动退回（新版本改过数据库结构时先恢复数据库）；`scripts/backup.sh`、`restore.sh` 用 restic，每天一份留 30 天、每月一份留 12 个月。
+- "系统管理 → 版本"：当前版本、GitHub 上的最新版本和更新命令，有新版本时标签页写"有更新"。
+
+验证范围（2026-11-18）：后端 370 个、前端 66 个测试和生产构建通过；"系统管理 → 版本"在浏览器里看过（从源码运行、仓库还没有正式发布时的显示，GitHub 实际返回 404）。在本机用一个本地镜像仓库代替 ghcr.io，造了三个测试版本，用真实的 Docker 和 restic 走过：
+- 服务器上没有镜像时，`up -d` 自己拉取，健康检查通过；
+- 备份后删组、删文件、加文件，`restore.sh latest` 把数据库和文件都恢复回来，多出的文件被删掉；
+- `update.sh` 正常升级；
+- 坏版本先改数据库结构再崩溃，`update.sh` 自动退回、恢复数据库，更新前刚建的数据还在。
+
+未验证：GitHub Actions 两个工作流还没在 GitHub 上跑过（要推送后才会跑）；ghcr.io 上镜像的公开设置；Linux 服务器上的实际运行（本机是 Windows 上的 Git Bash 加 Docker Desktop）；几百 GB 数据量下的备份时长。
+
 ## 不做 / 暂缓
 
 AI 额度与 Magpie 对接；团队培养与毕业交接；分片上传与断点续传；服务器端运行 MATLAB/Python。

@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -7,19 +5,18 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from accounts.models import User
 from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.history import serialize_history
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_group, scope_private
+from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
 from datasets.versions import pin_versions
 
 from .models import WeeklyReport
+from .queries import current_week_start, missing_students
 from .serializers import FeedbackSerializer, ReportQuerySerializer, WeeklyReportSerializer
 
 Status = WeeklyReport.Status
 EDITABLE = (Status.DRAFT, Status.NEEDS_REVISION)
-HANDED_IN = (Status.SUBMITTED, Status.NEEDS_REVISION, Status.REVIEWED)
 
 
 class WeeklyReportViewSet(viewsets.ModelViewSet):
@@ -106,15 +103,3 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
         query.is_valid(raise_exception=True)
         week_start = query.validated_data.get("week_start", current_week_start())
         return Response(UserBriefSerializer(missing_students(request.user, week_start), many=True).data)
-
-
-def current_week_start():
-    today = timezone.localdate()
-    return today - timedelta(days=today.weekday())
-
-
-def missing_students(user, week_start):
-    """Active students in the user's group without a handed-in report for that week (also used by the dashboard)."""
-    handed_in = WeeklyReport.objects.filter(week_start=week_start, status__in=HANDED_IN).values("owner_id")
-    students = scope_group(User.objects.filter(role=User.Role.STUDENT, is_active=True), user)
-    return students.exclude(pk__in=handed_in).order_by("username")

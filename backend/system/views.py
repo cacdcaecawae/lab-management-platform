@@ -1,21 +1,29 @@
 """系统管理, for the ops account (Django superuser) only. It grants no access to research data: the business
 endpoints still answer `no_group` to an ops account."""
 
+import json
+import re
+import urllib.error
+import urllib.request
+
+from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Count, Q
+from django.utils import timezone
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.member_views import ResetPasswordMixin
+from accounts.mixins import ResetPasswordMixin
 from accounts.models import ResearchGroup, User
+from core import mail
+from core.exceptions import Conflict, MailFailed
+from core.history import serialize_history
+from core.models import SiteSettings
+from core.permissions import IsSuperuser
 
-from . import mail
-from .exceptions import Conflict, MailFailed
-from .history import serialize_history
-from .models import SiteSettings
-from .permissions import IsSuperuser
-from .system_serializers import (
+from .serializers import (
     AccountCreateSerializer,
     AccountSerializer,
     MailSettingsSerializer,
@@ -61,6 +69,50 @@ class MailTestView(APIView):
         except Exception as exc:
             raise MailFailed(f"发送失败：{mail.describe(exc)}") from exc
         return Response({"to": to})
+
+
+RELEASE_CACHE = "system:latest-release"
+
+
+def parse_version(tag):
+    """(major, minor, patch) of a release tag like v1.2.3; None for "local" builds and anything else."""
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag or "")
+    return tuple(map(int, match.groups())) if match else None
+
+
+def latest_release():
+    """The newest GitHub release, cached for 6 hours, or 10 minutes after a failure (the server may not reach GitHub)."""
+    release = cache.get(RELEASE_CACHE)
+    if release is None:
+        release = {"latest": None, "url": "", "error": "", "checked_at": timezone.localtime()}
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{settings.UPDATE_REPO}/releases/latest",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "lab-management-platform"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.load(response)
+            release.update(latest=data["tag_name"], url=data["html_url"])
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:  # 404: nothing has been released yet
+                release["error"] = f"GitHub 返回 {exc.code}"
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            release["error"] = f"连不上 GitHub：{getattr(exc, 'reason', exc)}"
+        cache.set(RELEASE_CACHE, release, 600 if release["error"] else 6 * 3600)
+    return release
+
+
+class VersionView(APIView):
+    """The running version and the latest release; updating is scripts/update.sh on the server, not a button."""
+
+    permission_classes = [IsSuperuser]
+
+    def get(self, request):
+        release = latest_release()
+        current, latest = parse_version(settings.APP_VERSION), parse_version(release["latest"])
+        return Response(
+            {"current": settings.APP_VERSION, **release, "update_available": bool(current and latest and latest > current)}
+        )
 
 
 class SystemGroupViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

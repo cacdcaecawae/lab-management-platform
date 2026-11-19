@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { equipmentApi } from '@/api/equipment'
-import { docsApi } from '@/api/knowledge'
+import { equipmentApi } from '../api'
+import { docsApi } from '@/modules/knowledge/api'
 import type { Doc, EquipmentDetail } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { CONDITION_LABELS, DOC_CATEGORY_LABELS, formatPeriod, formatTime } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
-import EquipmentFormDialog from '@/components/EquipmentFormDialog.vue'
+import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
 
 const auth = useAuthStore()
 const route = useRoute()

@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     "knowledge",
     "meetings",
     "achievements",
+    "workbench",
+    "system",
 ]
 
 MIDDLEWARE = [
@@ -125,6 +127,11 @@ FILE_UPLOAD_TEMP_DIR = os.environ.get("FILE_UPLOAD_TEMP_DIR") or None
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Mail (SMTP account, on/off) is set in the web UI, 系统管理 → 邮件, and read per message by core/mail.py.
+
+# The release tag of the running images (APP_VERSION in the server's .env picks them); "local" for a build from source.
+APP_VERSION = os.environ.get("APP_VERSION") or "local"
+# GitHub repository whose latest release 系统管理 → 版本 compares against (a fork sets its own).
+UPDATE_REPO = os.environ.get("UPDATE_REPO") or "cacdcaecawae/lab-management-platform"
 
 # History change reasons (e.g. why a record was returned) can exceed the default 100 chars.
 SIMPLE_HISTORY_HISTORY_CHANGE_REASON_USE_TEXT_FIELD = True

@@ -1,12 +1,27 @@
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
-from core.serializers import DatasetBriefSerializer, EquipmentBriefSerializer, ProjectBriefSerializer, add_pinned_versions
 from datasets.models import Dataset
-from equipment.serializers import GroupEquipmentField
-from projects.serializers import GroupProjectField
+from datasets.serializers import DatasetBriefSerializer
+from datasets.versions import add_pinned_versions
+from equipment.serializers import EquipmentBriefSerializer, GroupEquipmentField
+from projects.serializers import GroupProjectField, ProjectBriefSerializer
 
 from .models import Experiment, ProcessingRun
+
+
+class ExperimentBriefSerializer(serializers.ModelSerializer):
+    """Embedded in weekly reports and the workbench."""
+
+    class Meta:
+        model = Experiment
+        fields = ["id", "code", "title", "status"]
+
+
+class RunBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProcessingRun
+        fields = ["id", "code", "title", "status"]
 
 
 class OwnDatasetField(serializers.PrimaryKeyRelatedField):

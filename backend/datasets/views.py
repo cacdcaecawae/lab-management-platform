@@ -1,40 +1,20 @@
-import hashlib
-
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, ProtectedError, Sum
 from django.http import FileResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.filters import SearchFilter
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
+from core.files import FileTooLarge, clean_file_name, sha256_of
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private
 
 from .models import DataFile, Dataset
 from .serializers import DataFileSerializer, DatasetSerializer
-
-
-class FileTooLarge(APIException):
-    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
-    default_detail = "文件超过大小上限"
-    default_code = "file_too_large"
-
-
-def clean_file_name(raw):
-    """Last path component of a client-supplied name, for either separator; "" if unusable."""
-    name = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
-    return "" if name in (".", "..") else name
-
-
-def sha256_of(uploaded):
-    digest = hashlib.sha256()
-    for chunk in uploaded.chunks():
-        digest.update(chunk)
-    return digest.hexdigest()
 
 
 def save_uploads(dataset, user, uploads, client_sha256):

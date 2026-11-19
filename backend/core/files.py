@@ -1,15 +1,35 @@
 """Stored uploads of the knowledge base, meetings and achievements: server-generated storage names, downloads that
 cannot run in the browser, and file cleanup after the rows are gone."""
 
+import hashlib
 import uuid
 from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
 from django.http import FileResponse
-from rest_framework.exceptions import ValidationError
+from rest_framework import status
+from rest_framework.exceptions import APIException, ValidationError
 
-from datasets.views import FileTooLarge, clean_file_name
+
+class FileTooLarge(APIException):
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = "文件超过大小上限"
+    default_code = "file_too_large"
+
+
+def clean_file_name(raw):
+    """Last path component of a client-supplied name, for either separator; "" if unusable."""
+    name = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return "" if name in (".", "..") else name
+
+
+def sha256_of(uploaded):
+    digest = hashlib.sha256()
+    for chunk in uploaded.chunks():
+        digest.update(chunk)
+    return digest.hexdigest()
+
 
 # Opened in the browser; anything else (HTML, SVG, scripts...) is sent as a download so it never runs on this site.
 INLINE_TYPES = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}

@@ -2,6 +2,9 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authRequired } from '@/api/client'
 import AppLayout from '@/layouts/AppLayout.vue'
+// Business modules (src/modules/<module>/); the pages still in src/views/ move in once the pilot is confirmed.
+import * as equipment from '@/modules/equipment'
+import * as knowledge from '@/modules/knowledge'
 
 const ExperimentEdit = () => import('@/views/ExperimentEditView.vue')
 const RunEdit = () => import('@/views/RunEditView.vue')
@@ -39,14 +42,7 @@ export const appRoutes: RouteRecordRaw[] = [
   { path: 'reports', name: 'reports', component: () => import('@/views/ReportsView.vue'), meta: { title: '周报' } },
   { path: 'reports/new', name: 'report-new', component: ReportEdit, meta: { title: '写周报', menu: 'reports' } },
   { path: 'reports/:id(\\d+)', name: 'report-edit', component: ReportEdit, meta: { title: '周报', menu: 'reports' } },
-  { path: 'equipment', name: 'equipment', component: () => import('@/views/EquipmentView.vue'), meta: { title: '设备台账' } },
-  {
-    path: 'equipment/:id(\\d+)',
-    name: 'equipment-detail',
-    component: () => import('@/views/EquipmentDetailView.vue'),
-    meta: { title: '设备', menu: 'equipment' },
-  },
-  { path: 'bookings', name: 'bookings', component: () => import('@/views/BookingsView.vue'), meta: { title: '设备预约' } },
+  ...equipment.routes,
   { path: 'consumables', name: 'consumables', component: () => import('@/views/ConsumablesView.vue'), meta: { title: '耗材库存' } },
   { path: 'purchases', name: 'purchases', component: Purchases, meta: { title: '采购申请' } },
   { path: 'purchases/reviews', name: 'purchase-reviews', component: Purchases, meta: { title: '我的审批', supervisor: true } },
@@ -58,7 +54,7 @@ export const appRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/ReimbursementsView.vue'),
     meta: { title: '报销与统计' },
   },
-  { path: 'knowledge', name: 'knowledge', component: () => import('@/views/KnowledgeView.vue'), meta: { title: '知识库' } },
+  ...knowledge.routes,
   { path: 'achievements', name: 'achievements', component: () => import('@/views/AchievementsView.vue'), meta: { title: '成果归档' } },
   { path: 'meetings', name: 'meetings', component: () => import('@/views/MeetingsView.vue'), meta: { title: '组会' } },
   { path: 'meetings/new', name: 'meeting-new', component: MeetingDetail, meta: { title: '新建组会', menu: 'meetings', manager: true } },

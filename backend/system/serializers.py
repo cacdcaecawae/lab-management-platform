@@ -5,8 +5,7 @@ from rest_framework.validators import UniqueValidator
 
 from accounts.member_serializers import NewAccountMixin
 from accounts.models import ResearchGroup, User
-
-from .models import SiteSettings
+from core.models import SiteSettings
 
 
 class MailSettingsSerializer(serializers.ModelSerializer):

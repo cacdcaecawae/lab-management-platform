@@ -61,16 +61,51 @@ cd frontend && npm test && npm run build
 
 浏览器里的端到端验证（隔离实例，给 AI 代理用）：见 `.claude/skills/verify-lab/SKILL.md`。
 
-## 生产式部署（单机）
+## 服务器部署（单机）
+
+前置：Linux 服务器，装好 Docker（带 compose 插件）和 git。镜像由 GitHub 在每次发版时构建，放在 ghcr.io，服务器上不用编译。
+
+首次安装（版本号见 GitHub 的 Releases 页）：
 
 ```bash
-# .env 中至少设置：DJANGO_SECRET_KEY（长随机串）、DJANGO_DEBUG=0、DJANGO_ALLOWED_HOSTS、
-# DJANGO_CSRF_TRUSTED_ORIGINS（如 https://lab.example.edu.cn）、POSTGRES_PASSWORD
-docker compose -f infra/docker-compose.prod.yml --env-file .env up -d --build
+git clone https://github.com/cacdcaecawae/lab-management-platform.git /srv/lab-management-platform
+cd /srv/lab-management-platform
+git checkout v0.1.0                     # 要安装的版本
+cp infra/server.env.example .env        # 逐项填写；APP_VERSION 写上一行的版本
+docker compose -f infra/docker-compose.prod.yml --env-file .env up -d          # 拉取该版本的镜像并启动
 docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend python manage.py createsuperuser
 ```
 
-- 数据：数据库在卷 `pgdata`，上传文件在卷 `labdata`，两个都要备份。
+更新：运维账号在"系统管理 → 版本"看到新版本后，在服务器上运行：
+
+```bash
+cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版本号就更新到最新版本
+```
+
+- 更新会先拉取镜像，再停站备份。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
+- 新版本起不来就自动退回原版本；如果新版本已经改了数据库结构，先用刚才的备份恢复数据库。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
+- 如果断电或脚本被强制终止，先看更新日志。确认新版本**尚未启动**时，切回更新前的 Git 版本，把 `.env` 的 `APP_VERSION` 改回原值，在仓库根目录执行 `env -u APP_VERSION docker compose -f infra/docker-compose.prod.yml --env-file .env up -d`。如果新版本可能已启动，先核对迁移状态；需要回退数据库时，切回原版本并改回 `.env` 后，运行 `env -u APP_VERSION bash scripts/restore.sh <更新日志中的快照编号> --db-only`。恢复会覆盖备份之后的数据库写入。
+- 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
+
+备份与恢复：
+
+- `.env` 里设 `BACKUP_REPO`（另一块硬盘上的目录）和 `BACKUP_PASSWORD`。备份用 restic，在容器里运行，服务器不用另装；加密、增量、去重。**密码丢了备份就打不开**，要另外抄一份保存。
+- 每天备份一次，保留每天一份 30 天、每月一份 12 个月。在宿主机 `crontab -e` 加一行：
+
+  ```cron
+  30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
+  ```
+
+- 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站换上它。原来的数据库改名为 `before_restore_<时间>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
+- 开发手册要求每月在测试机上还原一次，抽查几条记录和文件。没有还原验证过的备份不算可靠。
+- 每天的备份里，数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。更新前的那次备份是停了网站做的，没有这个问题。
+
+发版（维护者）：在 `main` 上打标签并推送，例如 `git tag v0.2.0 && git push origin v0.2.0`。GitHub Actions 先在这条提交上跑完整检查，再构建 backend、web 两个镜像推到 `ghcr.io/cacdcaecawae/lab-management-platform/`，并生成发布说明。第一次发版后，到 GitHub 的 Packages 页确认两个镜像是 Public，否则服务器拉取前要先 `docker login ghcr.io`。
+
+其他：
+
+- 不设 `APP_VERSION` 时镜像名是 `local`，`up -d --build` 从当前代码构建，本机试用（`scripts/trial.ps1`）就是这样。
+- 数据：数据库在卷 `pgdata`，上传文件在卷 `labdata`，`scripts/backup.sh` 备份这两个。
 - 目前只配置了 HTTP。没有 HTTPS 时必须设 `DJANGO_SECURE_COOKIES=0` 才能登录，且只能在校内网 / VPN 内使用；确定域名后在 `infra/nginx.conf` 加证书和 443。
 - 上传上限 2GB（`MAX_UPLOAD_SIZE` 与 Nginx `client_max_body_size` 需同时调整）。
 - 登录限速按"账号 + 来源地址"计数，来源地址取 Nginx 追加在 `X-Forwarded-For` 末尾的那一段（`config/settings.py` 的 `REST_FRAMEWORK["NUM_PROXIES"] = 1`）。如果在 Nginx 前面再加一层反向代理（例如学校的 HTTPS 网关），要改成 2，否则所有人会被当成同一个地址。
@@ -86,11 +121,12 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend pyt
 ## 目录
 
 ```
-backend/    Django 项目（config/ 配置，core/ 公共权限工具与系统管理，accounts/ projects/ datasets/ research/ reports/ equipment/ inventory/ procurement/ knowledge/ meetings/ achievements/ 业务 app）
-frontend/   Vue 3 SPA
-infra/      Nginx、Dockerfile、生产 Compose，本机试用的 Compose 叠加文件
+backend/    Django 项目（config/ 配置，core/ 公共底座：权限、文件、修改历史、邮件，accounts/ projects/ datasets/ research/ reports/ equipment/ inventory/ procurement/ knowledge/ meetings/ achievements/ 业务 app，workbench/ 工作台，system/ 系统管理；模块之间能引用什么见 docs/architecture.md）
+frontend/   Vue 3 SPA（src/modules/<模块>/ 按业务分目录，目前试点设备和知识库，其余页面在 src/views/）
+infra/      Nginx、Dockerfile、生产 Compose、服务器 .env 模板，本机试用的 Compose 叠加文件
 docs/       架构、数据库、接口约定、开发计划、邮件配置
-scripts/    开发辅助脚本，本机试用脚本 trial.ps1
+scripts/    开发辅助脚本（check.sh 完整检查），本机试用 trial.ps1，服务器上的 update.sh、backup.sh、restore.sh
+.github/    GitHub Actions：推送和 PR 时跑完整检查，推送 vX.Y.Z 标签时发版
 .agents/notes/   技术决策笔记（看板生成方式见 AGENTS.md）
 .claude/skills/  决策笔记 Skill 与校验脚本
 ```

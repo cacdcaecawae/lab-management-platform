@@ -1,7 +1,7 @@
 import re
 
 from django.db import transaction
-from django.db.models import BooleanField, Count, Exists, ExpressionWrapper, F, OuterRef, ProtectedError, Q, Sum
+from django.db.models import Count, F, ProtectedError, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
@@ -25,6 +25,7 @@ from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager
 
 from .mail import notify, send_finance_reminder
 from .models import Approval, Attachment, Fund, PurchaseRequest, Reimbursement
+from .queries import awaiting_review, returned_flag
 from .serializers import (
     AdvanceSerializer,
     AttachmentSerializer,
@@ -49,22 +50,6 @@ STAGE_OF = {S.PENDING_INITIAL: Approval.Stage.INITIAL, S.PENDING_FINAL: Approval
 def first_review(owner):
     """A manager's own request skips the initial review (managers do initial reviews)."""
     return S.PENDING_FINAL if owner.role == User.Role.MANAGER else S.PENDING_INITIAL
-
-
-def returned_flag():
-    """True for a draft whose latest submission was sent back (a withdrawal is not a return)."""
-    sent_back = Approval.objects.filter(
-        request=OuterRef("pk"), verdict=Approval.Verdict.RETURN, created_at__gte=OuterRef("submitted_at")
-    )
-    return ExpressionWrapper(Q(status=S.DRAFT) & Exists(sent_back), output_field=BooleanField())
-
-
-def awaiting_review(purchases, user):
-    """The part of an (already scoped) queryset that waits for `user`'s review."""
-    stage_status = {User.Role.MANAGER: S.PENDING_INITIAL, User.Role.ADVISOR: S.PENDING_FINAL}.get(user.role)
-    if not stage_status:
-        return purchases.none()
-    return purchases.filter(status=stage_status).exclude(owner=user)
 
 
 def item_lines(items):

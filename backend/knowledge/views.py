@@ -9,10 +9,9 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
-from core.files import checked_upload, delete_on_commit, download
+from core.files import checked_upload, delete_on_commit, download, sha256_of
 from core.history import serialize_history
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
-from datasets.views import sha256_of
 
 from .models import Doc, DocVersion
 from .serializers import DocDetailSerializer, DocSerializer, DocVersionSerializer

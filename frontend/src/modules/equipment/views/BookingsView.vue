@@ -7,14 +7,14 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
 import type { CalendarOptions, EventInput, EventSourceFuncArg } from '@fullcalendar/core'
-import { bookingsApi, equipmentApi } from '@/api/equipment'
+import { bookingsApi, equipmentApi } from '../api'
 import { projectsApi } from '@/api/projects'
 import type { Booking, Condition } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
-import BookingFormDialog from '@/components/BookingFormDialog.vue'
+import BookingFormDialog from '../components/BookingFormDialog.vue'
 
 const auth = useAuthStore()
 const route = useRoute()

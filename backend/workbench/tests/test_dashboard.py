@@ -2,7 +2,7 @@ import pytest
 
 from conftest import make_user
 from reports.models import WeeklyReport
-from reports.views import current_week_start
+from reports.queries import current_week_start
 from research.models import Experiment
 
 pytestmark = pytest.mark.django_db

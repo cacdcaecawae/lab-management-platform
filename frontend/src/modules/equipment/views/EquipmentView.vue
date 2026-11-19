@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { equipmentApi } from '@/api/equipment'
+import { equipmentApi } from '../api'
 import type { Equipment } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { EQUIPMENT_STATUSES, STATUS } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
-import EquipmentFormDialog from '@/components/EquipmentFormDialog.vue'
+import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
 
 const auth = useAuthStore()
 const route = useRoute()

@@ -600,6 +600,16 @@ export interface MailSettingsWrite {
   mail_password?: string // write-only; leave out (or blank) to keep the stored one
 }
 
+// GET /api/system/version/ — current: APP_VERSION of the running images ("local" for a build from source)
+export interface VersionInfo {
+  current: string
+  latest: string | null // null: nothing released yet, or GitHub unreachable (error)
+  url: string
+  error: string
+  checked_at: string
+  update_available: boolean
+}
+
 export interface MailSettings extends Omit<MailSettingsWrite, 'mail_password'> {
   password_set: boolean
   last_mail_error: string

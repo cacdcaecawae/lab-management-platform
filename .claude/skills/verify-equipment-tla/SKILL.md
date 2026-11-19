@@ -61,7 +61,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 
 ## 覆盖范围（模型的每一步对应的代码）
 
-截至 `SYNC=d36f7a0`。
+截至 `SYNC=b291d6c`。
 
 | 模型动作 | 代码 | 说明 |
 |---|---|---|
@@ -74,7 +74,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 | `ReportMarkEquipment` | `report`：异常时 `Equipment.objects.select_for_update()`，状态为"可用"才改成"待检查"再 `save()` | |
 | `CancelLockBooking` | `BookingViewSet.cancel`：`lock_booking()`，然后检查未取消、学生只能在开始前取消、`UsageReport...exists()` | |
 | `CancelUpdate` | `cancel`：`booking.save(update_fields=["cancelled_at"])` | |
-| `EditOpenForm` | `frontend/src/components/EquipmentFormDialog.vue`：打开时记下表单值（`opened`），保存时只 PATCH 和它不同的字段；改了状态时带上 `status_seen: opened.status` | 状态没改就不带（`"omit"`），所以只能带和打开时不同的状态；`status_seen` 就是 `formSeen` |
+| `EditOpenForm` | `frontend/src/modules/equipment/components/EquipmentFormDialog.vue`：打开时记下表单值（`opened`），保存时只 PATCH 和它不同的字段；改了状态时带上 `status_seen: opened.status` | 状态没改就不带（`"omit"`），所以只能带和打开时不同的状态；`status_seen` 就是 `formSeen` |
 | `EditRead` | `EquipmentViewSet.partial_update` → DRF `UpdateModelMixin.update` → `get_object()` | 普通 SELECT，不加锁；读到的值只在 `edit_writes_stale_status` 变体里用 |
 | `EditUpdate` | `EquipmentSerializer.save()`：`transaction.atomic()` 内 `EquipmentSerializer.update()` 先 `Equipment.objects.select_for_update().get(pk=...)` 重读；带了状态而锁下的状态既不是 `status_seen` 也不是新状态时 `Conflict`（409 `stale_status`），否则写上请求里的字段并 `save()` | 等行锁；没带状态时写锁下读到的最新状态 |
 | `*Commit` / `Rollback` | `transaction.atomic()` 结束或抛异常 | |
@@ -117,7 +117,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 - 表单只提交改过的字段，状态没改就不带。
 - `EquipmentSerializer.update()` 在行锁下重读设备，没提交的字段保留最新值。
 
-回归测试：`backend/equipment/tests/test_equipment.py` 的 `test_patch_racing_abnormal_report_keeps_needs_check`（两个数据库连接，异常登记在 `get_object()` 和保存之间提交），以及 `frontend/src/components/components.test.ts` 的 `EquipmentFormDialog`。
+回归测试：`backend/equipment/tests/test_equipment.py` 的 `test_patch_racing_abnormal_report_keeps_needs_check`（两个数据库连接，异常登记在 `get_object()` 和保存之间提交），以及 `frontend/src/modules/equipment/components/EquipmentFormDialog.test.ts`。
 
 ## 问题 R1（已修复）：旧表单里主动选的状态，会盖掉期间的"待检查"
 

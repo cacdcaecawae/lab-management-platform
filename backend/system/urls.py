@@ -2,7 +2,7 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import system_views as views
+from . import views
 
 router = SimpleRouter()
 router.register("groups", views.SystemGroupViewSet, basename="system-group")
@@ -12,5 +12,6 @@ urlpatterns = [
     path("mail/", views.MailSettingsView.as_view()),
     path("mail/history/", views.MailHistoryView.as_view()),
     path("mail/test/", views.MailTestView.as_view()),
+    path("version/", views.VersionView.as_view()),
     *router.urls,
 ]

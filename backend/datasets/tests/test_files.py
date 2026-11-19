@@ -5,7 +5,7 @@ import pytest
 
 from datasets import views
 from datasets.models import DataFile
-from datasets.views import clean_file_name
+from core.files import clean_file_name
 
 pytestmark = pytest.mark.django_db
 

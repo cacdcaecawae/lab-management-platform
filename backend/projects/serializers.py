@@ -9,6 +9,14 @@ from core.permissions import scope_group
 from .models import Project, ProjectLog
 
 
+class ProjectBriefSerializer(serializers.ModelSerializer):
+    """Embedded in other modules' records. See docs/api-contract.md."""
+
+    class Meta:
+        model = Project
+        fields = ["id", "name"]
+
+
 class ProjectLogSerializer(serializers.ModelSerializer):
     author = UserBriefSerializer(read_only=True)
 

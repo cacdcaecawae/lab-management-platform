@@ -1,24 +1,12 @@
 from django.db.models import Q
-from rest_framework import mixins, serializers, status, viewsets
-from rest_framework.decorators import action
+from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import SearchFilter
-from rest_framework.response import Response
 
 from core.permissions import IsManager, scope_group
 
-from .member_serializers import MemberCreateSerializer, MemberSerializer, PasswordResetSerializer
+from .member_serializers import MemberCreateSerializer, MemberSerializer
+from .mixins import ResetPasswordMixin
 from .models import User
-
-
-class ResetPasswordMixin:
-    """POST {id}/reset-password/ {password}. The viewset's queryset decides whose password may be reset."""
-
-    @action(detail=True, methods=["post"], url_path="reset-password")
-    def reset_password(self, request, pk=None):
-        serializer = PasswordResetSerializer(self.get_object(), data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MemberViewSet(

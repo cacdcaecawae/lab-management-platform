@@ -1,8 +1,7 @@
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
-from core.serializers import EquipmentBriefSerializer
-from equipment.serializers import GroupEquipmentField
+from equipment.serializers import EquipmentBriefSerializer, GroupEquipmentField
 
 from .models import Doc, DocVersion
 

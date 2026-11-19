@@ -7,19 +7,20 @@ from rest_framework.views import APIView
 
 from accounts.serializers import UserBriefSerializer
 from core.permissions import is_manager, is_supervisor, scope_group, scope_private
-from core.serializers import EquipmentBriefSerializer, ExperimentBriefSerializer, WeeklyReportBriefSerializer
 from equipment.models import Booking, Equipment
-from equipment.serializers import BookingSerializer
+from equipment.serializers import BookingSerializer, EquipmentBriefSerializer
 from inventory.models import Consumable
 from inventory.serializers import ConsumableSerializer
 from meetings.models import ActionItem
 from meetings.serializers import MyActionItemSerializer
 from procurement.models import PurchaseRequest
+from procurement.queries import awaiting_review, returned_flag
 from procurement.serializers import PurchaseSerializer
-from procurement.views import awaiting_review, returned_flag
 from reports.models import WeeklyReport
-from reports.views import current_week_start, missing_students
+from reports.queries import current_week_start, missing_students
+from reports.serializers import WeeklyReportBriefSerializer
 from research.models import Experiment, RecordStatus
+from research.serializers import ExperimentBriefSerializer
 
 LIMIT = 20  # the workbench shows the most recent items only; full lists live on each page
 UNREPORTED_DAYS = timedelta(days=14)  # older unreported bookings are no longer worth a reminder

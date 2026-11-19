@@ -1,11 +1,23 @@
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
-from core.serializers import DatasetBriefSerializer, ExperimentBriefSerializer, RunBriefSerializer, add_pinned_versions
 from datasets.models import Dataset
+from datasets.serializers import DatasetBriefSerializer
+from datasets.versions import add_pinned_versions
 from research.models import Experiment, ProcessingRun
+from research.serializers import ExperimentBriefSerializer, RunBriefSerializer
 
 from .models import ReportFeedback, WeeklyReport
+
+
+class WeeklyReportBriefSerializer(serializers.ModelSerializer):
+    """Embedded in the workbench."""
+
+    owner = UserBriefSerializer(read_only=True)
+
+    class Meta:
+        model = WeeklyReport
+        fields = ["id", "owner", "week_start", "status", "submitted_at"]
 
 
 def validate_monday(value):

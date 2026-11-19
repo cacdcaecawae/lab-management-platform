@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { bookingsApi } from '@/api/equipment'
+import { bookingsApi } from '../api'
 import type { Booking, BookingKind, Equipment, ProjectBrief } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { STATUS } from '@/utils/format'

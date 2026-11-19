@@ -9,6 +9,7 @@ import type {
   MailSettingsWrite,
   SystemGroup,
   SystemGroupWrite,
+  VersionInfo,
 } from './types'
 
 export const systemApi = {
@@ -16,6 +17,7 @@ export const systemApi = {
   saveMail: (body: MailSettingsWrite) => api.put<MailSettings>('/api/system/mail/', body),
   mailHistory: () => api.get<HistoryEntry[]>('/api/system/mail/history/'),
   testMail: (to: string) => api.post<{ to: string }>('/api/system/mail/test/', { to }),
+  version: () => api.get<VersionInfo>('/api/system/version/'),
   groups: (q?: ListQuery) => api.get<Page<SystemGroup>>('/api/system/groups/', q),
   createGroup: (body: SystemGroupWrite) => api.post<SystemGroup>('/api/system/groups/', body),
   updateGroup: (id: number, body: SystemGroupWrite) => api.patch<SystemGroup>(`/api/system/groups/${id}/`, body),

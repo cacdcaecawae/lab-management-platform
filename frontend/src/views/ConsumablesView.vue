@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
-import { consumablesApi } from '@/api/equipment'
+import { consumablesApi } from '@/api/inventory'
 import { purchasesApi } from '@/api/procurement'
 import { projectsApi } from '@/api/projects'
 import type { Consumable, ConsumableWrite, StockTxn, TxnKind } from '@/api/types'
