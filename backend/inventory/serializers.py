@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
@@ -7,17 +8,49 @@ from core.permissions import scope_group
 from procurement.serializers import ArrivedPurchaseField, PurchaseRefSerializer
 from projects.serializers import GroupProjectField, ProjectBriefSerializer
 
-from .models import Consumable, StockTxn
+from .models import Batch, Consumable, StockTxn
+
+
+class BatchSerializer(serializers.ModelSerializer):
+    stock = serializers.IntegerField(read_only=True)
+    can_issue = serializers.SerializerMethodField()
+
+    def get_can_issue(self, batch):
+        return batch.stock > 0 and (batch.expires_on is None or batch.expires_on >= timezone.localdate())
+
+    class Meta:
+        model = Batch
+        fields = ["id", "batch_no", "expires_on", "stock", "can_issue"]
+
+
+class OpeningBatchSerializer(serializers.Serializer):
+    batch_no = serializers.CharField(max_length=50)
+    expires_on = serializers.DateField(allow_null=True, required=False)
+
+
+class BatchModeSerializer(serializers.Serializer):
+    tracks_batches = serializers.BooleanField()
+    stock_version_seen = serializers.IntegerField(min_value=0)
+    opening_batch = OpeningBatchSerializer(required=False)
 
 
 class ConsumableSerializer(serializers.ModelSerializer):
     stock = serializers.SerializerMethodField()
     stock_version = serializers.IntegerField(read_only=True, default=0)
     low = serializers.SerializerMethodField()
+    batches = BatchSerializer(source="stock_batches", many=True, read_only=True, default=list)
+    nearest_expiry = serializers.SerializerMethodField()
+
+    def get_nearest_expiry(self, consumable):
+        if not consumable.tracks_batches:
+            return None
+        return next((b.expires_on.isoformat() for b in getattr(consumable, "stock_batches", ()) if b.stock > 0 and b.expires_on), None)
 
     class Meta:
         model = Consumable
-        fields = ["id", "name", "spec", "unit", "location", "safety_stock", "stock", "stock_version", "low", "notes", "created_at", "updated_at"]
+        fields = ["id", "name", "spec", "unit", "location", "safety_stock", "stock", "stock_version", "low", "tracks_batches", "batches", "nearest_expiry", "notes", "created_at", "updated_at"]
+
+        read_only_fields = ["tracks_batches"]
 
     def get_stock(self, consumable):
         # ConsumableViewSet annotates stock; a just-created item has no transactions yet.
@@ -36,6 +69,14 @@ class ConsumableSerializer(serializers.ModelSerializer):
             raise Conflict("本组已有同名同规格的耗材")
         return attrs
 
+    def update(self, instance, validated_data):
+        # Metadata writes must not overwrite concurrently changed batch mode.
+        for name, value in validated_data.items():
+            setattr(instance, name, value)
+        if validated_data:
+            instance.save(update_fields=[*validated_data, "updated_at"])
+        return instance
+
     def save(self, **kwargs):
         try:
             with transaction.atomic():
@@ -48,6 +89,10 @@ class StockTxnSerializer(serializers.ModelSerializer):
     """Clients send a positive quantity for in / out / return and the signed difference for adjust;
     the stored (and returned) quantity is signed: out is negative."""
 
+    batch = OpeningBatchSerializer(read_only=True)
+    batch_id = serializers.IntegerField(min_value=1, max_value=2**63 - 1, required=False, write_only=True)
+    batch_no = serializers.CharField(max_length=50, required=False, write_only=True)
+    expires_on = serializers.DateField(required=False, allow_null=True, write_only=True)
     stock_version_seen = serializers.IntegerField(write_only=True, required=False, min_value=0)
     handler = UserBriefSerializer(read_only=True)
     project = ProjectBriefSerializer(read_only=True)
@@ -57,9 +102,11 @@ class StockTxnSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockTxn
-        fields = ["id", "kind", "quantity", "stock_version_seen", "handler", "project", "project_id", "purchase", "purchase_id", "note", "created_at"]
+        fields = ["id", "kind", "quantity", "stock_version_seen", "batch", "batch_id", "batch_no", "expires_on", "handler", "project", "project_id", "purchase", "purchase_id", "note", "created_at"]
 
     def validate(self, attrs):
+        if attrs["kind"] in (StockTxn.Kind.ALLOCATION, StockTxn.Kind.BATCH_MODE):
+            raise serializers.ValidationError({"kind": ["内部流水类型不能由客户端创建"]})
         if attrs.get("purchase") and attrs["kind"] != StockTxn.Kind.IN:
             raise serializers.ValidationError({"purchase_id": ["只有入库可以关联采购申请"]})
         quantity = attrs["quantity"]

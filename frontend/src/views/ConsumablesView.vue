@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
 import { consumablesApi } from '@/api/inventory'
@@ -9,11 +10,19 @@ import type { Consumable, ConsumableWrite, StockTxn, TxnKind } from '@/api/types
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { TXN_KIND_LABELS, formatTime } from '@/utils/format'
+import { TXN_KIND_LABELS, formatTime, toDateStr } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 
 const auth = useAuthStore()
-const filters = reactive({ search: '', low: '' as 1 | '' })
+const route = inject(routeLocationKey, undefined)
+const routeExpiry = () => route?.query.expiring_within === '30' ? 30 : ''
+const filters = reactive({ search: '', low: '' as 1 | '', expiring_within: routeExpiry() })
+watch(routeExpiry, (days) => { filters.expiring_within = days })
+const dates = (d: string) => new Date(d + 'T00:00:00')
+const expiryTone = (d: string) => {
+  const remaining = Math.round((+dates(d) - +dates(toDateStr(new Date()))) / 86_400_000)
+  return remaining < 0 ? 'danger' : remaining <= 30 ? 'warning' : 'info'
+}
 const keyword = ref('')
 const { items, count, page, pageSize, loading, load } = usePagedList(consumablesApi.list, filters)
 const projects = useOptions(() => projectsApi.list({ status: 'active', page_size: 100 }))
@@ -49,19 +58,69 @@ async function saveItem() {
   }
 }
 
+// Separate operation: mode changes are revision-checked, not metadata edits.
+const batchTarget = ref<Consumable | null>(null)
+const batchModeOpen = ref(false)
+const openingBatch = reactive({ batch_no: '', expires_on: '' })
+const batchModeError = ref('')
+const enablingBatchMode = computed(() => !batchTarget.value?.tracks_batches)
+function openBatchMode(c: Consumable) {
+  batchTarget.value = c
+  Object.assign(openingBatch, { batch_no: '', expires_on: '' })
+  batchModeError.value = ''
+  batchModeOpen.value = true
+}
+
+async function saveBatchMode() {
+  const item = batchTarget.value
+  if (!item || saving.value) return
+  saving.value = true
+  batchModeError.value = ''
+  try {
+    const opening_batch = enablingBatchMode.value && item.stock > 0 ? {
+      batch_no: openingBatch.batch_no, expires_on: openingBatch.expires_on || undefined,
+    } : undefined
+    await consumablesApi.setBatchMode(item.id, {
+      tracks_batches: enablingBatchMode.value, stock_version_seen: item.stock_version, opening_batch,
+    })
+    ElMessage.success('已更新批次管理方式')
+    batchModeOpen.value = false
+    load()
+  } catch (e) {
+    if (e instanceof ApiError && e.body.code === 'stale_stock') {
+      batchModeOpen.value = false
+      ElMessage.warning('库存流水已变化，请重新核对批次管理方式')
+      load()
+    } else batchModeError.value = e instanceof ApiError ? e.message : '批次管理设置失败'
+  } finally {
+    saving.value = false
+  }
+}
+
 // ---- stock transactions ----
 const txnTarget = ref<Consumable | null>(null)
 const txnOpen = ref(false)
 const txnForm = reactive({
-  kind: 'out' as TxnKind, quantity: 1, counted: 0, project_id: null as number | null, purchase_id: null as number | null, note: '',
+  kind: 'out' as TxnKind, quantity: 1, counted: 0, batch_id: null as number | null, batch_no: '', expires_on: '', project_id: null as number | null, purchase_id: null as number | null, note: '',
 })
-const txnErrors = useFieldErrors(['kind', 'quantity', 'stock_version_seen', 'project_id', 'purchase_id', 'note'])
+const txnErrors = useFieldErrors(['kind', 'quantity', 'stock_version_seen', 'batch_id', 'batch_no', 'expires_on', 'project_id', 'purchase_id', 'note'])
 // Stocktaking: enter what is on the shelf; the API takes the difference from the book stock.
-const diff = computed(() => txnForm.counted - (txnTarget.value?.stock ?? 0))
+const batchOptions = computed(() => (txnTarget.value?.batches ?? []).filter(b => txnForm.kind !== 'out' || b.can_issue))
+const bookStock = computed(() => txnTarget.value?.tracks_batches
+  ? batchOptions.value.find(b => b.id === txnForm.batch_id)?.stock
+  : txnTarget.value?.stock)
+const diff = computed(() => bookStock.value === undefined ? 0 : txnForm.counted - bookStock.value)
+function resetCounted() {
+  txnForm.counted = bookStock.value ?? 0
+}
 
 function openTxn(c: Consumable, kind: TxnKind) {
   txnTarget.value = c
-  Object.assign(txnForm, { kind, quantity: 1, counted: c.stock, project_id: null, purchase_id: null, note: '' })
+  Object.assign(txnForm, {
+    kind, quantity: 1, batch_id: null, batch_no: '', expires_on: '', project_id: null, purchase_id: null, note: '',
+  })
+  if (c.tracks_batches && kind === 'out') txnForm.batch_id = batchOptions.value[0]?.id ?? null
+  resetCounted()
   txnErrors.clear()
   txnOpen.value = true
 }
@@ -74,7 +133,10 @@ async function saveTxn() {
     const quantity = txnForm.kind === 'adjust' ? diff.value : txnForm.quantity
     const purchase_id = txnForm.kind === 'in' ? (txnForm.purchase_id ?? null) : null
     const stock_version_seen = txnForm.kind === 'adjust' ? c.stock_version : undefined
-    await consumablesApi.addTxn(c.id, { stock_version_seen, kind: txnForm.kind, quantity, project_id: txnForm.project_id, purchase_id, note: txnForm.note })
+    const batch = !c.tracks_batches ? {} : txnForm.kind === 'in'
+      ? { batch_no: txnForm.batch_no, expires_on: txnForm.expires_on || undefined }
+      : { batch_id: txnForm.batch_id ?? undefined }
+    await consumablesApi.addTxn(c.id, { ...batch, stock_version_seen, kind: txnForm.kind, quantity, project_id: txnForm.project_id, purchase_id, note: txnForm.note })
     ElMessage.success(`已登记${TXN_KIND_LABELS[txnForm.kind]}`)
     txnOpen.value = false
     load()
@@ -122,6 +184,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     <div class="page-toolbar">
       <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
+      <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期</el-checkbox>
       <span class="grow" />
       <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新增耗材</el-button>
     </div>
@@ -132,6 +195,12 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <template #default="{ row }">
           <span class="stock" :class="{ low: row.low }">{{ row.stock }} {{ row.unit }}</span>
           <el-tag v-if="row.low" class="status-tag low-tag" type="danger" disable-transitions>不足</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="最近到期" min-width="115">
+        <template #default="{ row }">
+          <el-tag v-if="row.nearest_expiry" :type="expiryTone(row.nearest_expiry)">{{ row.nearest_expiry }}</el-tag>
+          <span v-else>{{ row.tracks_batches ? '—' : '未按批次' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="安全库存" min-width="80">
@@ -146,6 +215,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
             <el-button link type="primary" @click="openTxn(row as Consumable, 'in')">入库</el-button>
             <el-button link type="primary" @click="openTxn(row as Consumable, 'adjust')">盘点</el-button>
             <el-button link type="primary" @click="openItem(row as Consumable)">编辑</el-button>
+            <el-button link type="primary" @click="openBatchMode(row as Consumable)">批次管理</el-button>
           </template>
           <el-button link type="primary" @click="openHistory(row as Consumable)">流水</el-button>
         </template>
@@ -193,9 +263,36 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     </template>
   </el-dialog>
 
+  <el-dialog v-model="batchModeOpen" title="批次管理" width="min(460px, 95vw)">
+    <p v-if="batchTarget">{{ batchTarget.name }}：{{ enablingBatchMode ? '开启批次管理' : '关闭批次管理' }}</p>
+    <p v-if="!enablingBatchMode">只有各批次库存均为 0 才可关闭，历史流水不会删除。</p>
+    <el-form v-else-if="batchTarget && batchTarget.stock > 0" label-position="top" @submit.prevent="saveBatchMode">
+      <p>现有库存 {{ batchTarget.stock }} {{ batchTarget.unit }} 将全部分配到此批次，总数不变。</p>
+      <el-form-item label="期初批号" required><el-input v-model="openingBatch.batch_no" maxlength="50" /></el-form-item>
+      <el-form-item label="期初批次有效期"><el-input v-model="openingBatch.expires_on" type="date" /></el-form-item>
+    </el-form>
+    <el-alert v-if="batchModeError" type="error" :title="batchModeError" :closable="false" />
+    <template #footer>
+      <el-button @click="batchModeOpen = false">取消</el-button>
+      <el-button type="primary" :loading="saving" @click="saveBatchMode">确认切换</el-button>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="txnOpen" :title="`${TXN_KIND_LABELS[txnForm.kind]}：${txnTarget?.name} ${txnTarget?.spec}`" width="min(460px, 95vw)">
     <el-form v-if="txnTarget" label-position="top" @submit.prevent="saveTxn">
-      <p class="book">账面库存 {{ txnTarget.stock }} {{ txnTarget.unit }}</p>
+      <p class="book">总账 {{ txnTarget.stock }} {{ txnTarget.unit }}<template v-if="txnTarget.tracks_batches && bookStock !== undefined">，该批次 {{ bookStock }} {{ txnTarget.unit }}</template></p>
+      <template v-if="txnTarget.tracks_batches">
+        <template v-if="txnForm.kind === 'in'">
+          <el-form-item label="批号" :error="txnErrors.fe('batch_no')" required><el-input v-model="txnForm.batch_no" maxlength="50" /></el-form-item>
+          <el-form-item label="有效期至" :error="txnErrors.fe('expires_on')"><el-input v-model="txnForm.expires_on" type="date" /></el-form-item>
+        </template>
+        <el-form-item v-else label="批次" :error="txnErrors.fe('batch_id')" required>
+          <el-select v-model="txnForm.batch_id" placeholder="选择批次" @change="resetCounted">
+            <el-option v-for="b in batchOptions" :key="b.id" :value="b.id" :label="`${b.batch_no} · 库存 ${b.stock} · ${b.expires_on || '无有效期'}`" />
+          </el-select>
+          <span v-if="!batchOptions.length">没有可选批次{{ txnForm.kind === 'out' ? '，过期批次不可领用' : '' }}</span>
+        </el-form-item>
+      </template>
       <el-form-item v-if="txnForm.kind === 'adjust'" label="盘点实际数量" :error="txnErrors.fe('quantity')" required>
         <el-input-number v-model="txnForm.counted" :min="0" controls-position="right" />
         <span class="diff">差额 {{ signed(diff) }}</span>
@@ -220,7 +317,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     </el-form>
     <template #footer>
       <el-button @click="txnOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="txnForm.kind === 'adjust' && diff === 0" @click="saveTxn">登记</el-button>
+      <el-button type="primary" :loading="saving" :disabled="(txnForm.kind === 'adjust' && diff === 0) || (txnTarget?.tracks_batches && txnForm.kind !== 'in' && !txnForm.batch_id)" @click="saveTxn">登记</el-button>
     </template>
   </el-dialog>
 
@@ -231,6 +328,9 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       </el-table-column>
       <el-table-column label="类型" min-width="80">
         <template #default="{ row }">{{ TXN_KIND_LABELS[row.kind] }}</template>
+      </el-table-column>
+      <el-table-column label="批号" min-width="95">
+        <template #default="{ row }">{{ row.batch?.batch_no || '—' }}</template>
       </el-table-column>
       <el-table-column label="数量" min-width="70" align="right">
         <template #default="{ row }"><span class="mono">{{ signed(row.quantity) }}</span></template>

@@ -312,6 +312,7 @@ export interface Dashboard {
   manager: {
     equipment_to_check: EquipmentBrief[]
     low_stock: Consumable[]
+    expiring_batches?: { id: number; batch_no: string; expires_on: string; stock: number; consumable__name: string }[]
   } | null
 }
 
@@ -462,6 +463,20 @@ export interface BookingWrite {
 
 // ---- consumables ----
 
+export interface ConsumableBatch {
+  id: number
+  batch_no: string
+  expires_on: string | null
+  stock: number
+  can_issue: boolean
+}
+
+export interface BatchModeWrite {
+  tracks_batches: boolean
+  stock_version_seen: number
+  opening_batch?: { batch_no: string; expires_on?: string }
+}
+
 export interface Consumable {
   id: number
   name: string
@@ -474,6 +489,9 @@ export interface Consumable {
   // Latest append-only ledger entry id; 0 before the first entry.
   stock_version: number
   low: boolean
+  tracks_batches?: boolean
+  batches?: ConsumableBatch[]
+  nearest_expiry?: string | null
   notes: string
   created_at: string
   updated_at: string
@@ -485,7 +503,8 @@ export type TxnKind = 'in' | 'out' | 'return' | 'adjust'
 
 export interface StockTxn {
   id: number
-  kind: TxnKind
+  kind: TxnKind | "allocation" | "batch_mode"
+  batch?: { batch_no: string; expires_on: string | null } | null
   // signed: out is negative
   quantity: number
   handler: UserBrief
@@ -499,6 +518,9 @@ export interface StockTxn {
 export interface StockTxnWrite {
   // Required for adjust: version shown with the stock used to calculate the difference.
   stock_version_seen?: number
+  batch_id?: number
+  batch_no?: string
+  expires_on?: string
   kind: TxnKind
   quantity: number
   project_id: number | null

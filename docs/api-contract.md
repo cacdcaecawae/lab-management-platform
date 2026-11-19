@@ -482,3 +482,9 @@
 内嵌对象的序列化器放在对象所属模块的 `serializers.py`：`UserBrief` 在 `accounts`，`ProjectBrief` 在 `projects`，`DatasetBrief` 在 `datasets`，`EquipmentBrief` 在 `equipment`，`ExperimentBrief`、`RunBrief` 在 `research`，`WeeklyReportBrief` 在 `reports`。各 app 直接引用，不要各自重复定义；能引用哪些模块见 `docs/architecture.md` 的分层表。
 
 `type`: `created` | `changed` | `deleted`
+
+### 耗材按批次管理
+
+仅本组管理员可 `POST /api/consumables/{id}/batch-mode/`，提交 `{tracks_batches,stock_version_seen,opening_batch?}`。非零库存启用时提供 `opening_batch:{batch_no,expires_on?}`，平台等额转拨而非增加库存；非零批次禁止关闭，错过版本返回 `409 stale_stock`。普通新增和元数据编辑不通过此接口，不改变模式。所有原有和新建耗材默认关闭。
+
+耗材响应增加 `tracks_batches`、`nearest_expiry` 和按有效期升序（无日期最后）的 `batches:[{id,batch_no,expires_on,stock,can_issue}]`。保留零库存批次以便退回。开启后，入库传 `batch_no` 和可选 `expires_on`；领用、退回、盘点传本耗材的 `batch_id`。有效期当天可领，过期不能领，但允许退回、管理员盘点及普通入库记录。盘点提交**所选批次**的有符号差额及耗材总账版本；历史流水可能含只读的 `allocation`、`batch_mode`，客户端不能提交。列表 `expiring_within` 接受 0–365（含今天，忽略过期或零库存批次）；管理员工作台返回本组最多 20 个 30 天内到期批次。
