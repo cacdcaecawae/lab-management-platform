@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { achievementsApi } from '@/api/achievements'
@@ -23,6 +23,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const routeItem = () => typeof route.query.item === 'string' ? route.query.item : ''
 const thisYear = new Date().getFullYear()
 const years = Array.from({ length: 10 }, (_, i) => thisYear - i)
@@ -32,6 +33,11 @@ const STATUS_FILTERS: Record<string, string> = { 'accepted,published': '已录�
 const filters = reactive({ item: routeItem(), search: '', type: '', year: '' as number | '', status: '', member: '' as number | '' })
 const keyword = ref('')
 watch(routeItem, (item) => { filters.item = item })
+function showAll() {
+  const query = { ...route.query }
+  delete query.item
+  return router.replace({ query, hash: route.hash })
+}
 const { items, count, page, pageSize, loading, load } = usePagedList(achievementsApi.list, filters)
 const members = useOptions(() => membersApi.list({ page_size: 100 })) // former members too: they stay authors
 const exportQuery = computed(() => ({ ...filters }))
@@ -134,7 +140,7 @@ async function removeFulltext() {
 <template>
   <el-card class="card">
     <div class="page-toolbar">
-      <el-button v-if="filters.item" @click="filters.item = ''">显示全部</el-button>
+      <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索标题、作者、出处" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.type" placeholder="全部类型" aria-label="类型" clearable>
         <el-option v-for="(label, k) in ACHIEVEMENT_TYPE_LABELS" :key="k" :label="label" :value="k" />
