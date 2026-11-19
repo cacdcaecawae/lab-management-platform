@@ -4,9 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { datasetsApi } from '@/api/datasets'
 import { equipmentApi } from '@/modules/equipment/api'
+import { specimensApi } from '@/modules/specimens/api'
 import { projectsApi } from '@/api/projects'
 import { experimentsApi } from '@/api/research'
-import type { DatasetBrief, EquipmentBrief, Experiment, ExperimentWrite, ProjectBrief } from '@/api/types'
+import type { DatasetBrief, EquipmentBrief, Experiment, ExperimentWrite, ProjectBrief, SpecimenBrief } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime, mergeById, toDateStr } from '@/utils/format'
@@ -34,6 +35,7 @@ const form = reactive<ExperimentWrite>({
   equipment_item_id: null,
   equipment: '',
   specimen: '',
+  specimen_item_ids: [],
   params: {},
   steps: '',
   anomalies: '',
@@ -58,6 +60,8 @@ const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 const datasets = useOptions(() => datasetsApi.list({ owner: auth.user?.id, page_size: 100 }))
 const equipment = useOptions(() => equipmentApi.list({ page_size: 100 }))
 const equipmentOptions = computed(() => mergeById<EquipmentBrief>(equipment.value, [record.value?.equipment_item]))
+const specimens = useOptions(() => specimensApi.list({ page_size: 100 }))
+const specimenOptions = computed(() => mergeById<SpecimenBrief>(specimens.value, record.value?.specimen_items ?? []))
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project]))
 const datasetOptions = computed(() => mergeById<DatasetBrief>(datasets.value, record.value?.datasets ?? []))
 
@@ -70,6 +74,7 @@ function fill(r: Experiment) {
     equipment_item_id: r.equipment_item?.id ?? null,
     equipment: r.equipment,
     specimen: r.specimen,
+    specimen_item_ids: r.specimen_items.map((s) => s.id),
     params: r.params,
     steps: r.steps,
     anomalies: r.anomalies,
@@ -202,7 +207,14 @@ if (route.params.id) load(Number(route.params.id))
         </el-col>
         <el-col :xs="24" :sm="12" :md="6">
           <el-form-item label="试件" :error="errors.fe('specimen')">
-            <el-input v-model="form.specimen" />
+            <el-input v-model="form.specimen" placeholder="台账外的试件" />
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :md="12">
+          <el-form-item label="台账试件" :error="errors.fe('specimen_item_ids')">
+            <el-select v-model="form.specimen_item_ids" multiple filterable placeholder="从试样与标准件中选择">
+              <el-option v-for="s in specimenOptions" :key="s.id" :label="`${s.code} ${s.name}`" :value="s.id" />
+            </el-select>
           </el-form-item>
         </el-col>
       </el-row>

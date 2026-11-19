@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "knowledge",
     "meetings",
     "achievements",
+    "specimens",
     "workbench",
     "system",
 ]

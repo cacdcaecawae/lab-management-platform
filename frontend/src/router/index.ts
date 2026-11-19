@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 // Business modules (src/modules/<module>/); the pages still in src/views/ move in once the pilot is confirmed.
 import * as equipment from '@/modules/equipment'
 import * as knowledge from '@/modules/knowledge'
+import * as specimens from '@/modules/specimens'
 
 const ExperimentEdit = () => import('@/views/ExperimentEditView.vue')
 const RunEdit = () => import('@/views/RunEditView.vue')
@@ -43,6 +44,7 @@ export const appRoutes: RouteRecordRaw[] = [
   { path: 'reports/new', name: 'report-new', component: ReportEdit, meta: { title: '写周报', menu: 'reports' } },
   { path: 'reports/:id(\\d+)', name: 'report-edit', component: ReportEdit, meta: { title: '周报', menu: 'reports' } },
   ...equipment.routes,
+  ...specimens.routes,
   { path: 'consumables', name: 'consumables', component: () => import('@/views/ConsumablesView.vue'), meta: { title: '耗材库存' } },
   { path: 'purchases', name: 'purchases', component: Purchases, meta: { title: '采购申请' } },
   { path: 'purchases/reviews', name: 'purchase-reviews', component: Purchases, meta: { title: '我的审批', supervisor: true } },

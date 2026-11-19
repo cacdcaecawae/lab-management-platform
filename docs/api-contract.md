@@ -158,14 +158,14 @@
 
 ## 实验记录 `/api/experiments/`（Agent B）
 
-`Experiment = {id, code, project: {id,name}, owner: UserBrief, title, date, equipment_item: EquipmentBrief | null, equipment, specimen, params: object, steps, anomalies, datasets: [DatasetBrief], status, submitted_at, created_at, updated_at}`
+`Experiment = {id, code, project: {id,name}, owner: UserBrief, title, date, equipment_item: EquipmentBrief | null, equipment, specimen, specimen_items: [SpecimenBrief], params: object, steps, anomalies, datasets: [DatasetBrief], status, submitted_at, created_at, updated_at}`
 `DatasetBrief = {id, code, name, kind}`；内嵌在实验、处理记录、周报里的数据集另有 `version`（提交时记下的版本码，草稿和旧记录为 `null`）和 `changed`（提交后是否追加过文件）
 `status`: `draft` | `submitted`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/experiments/?project=&status=&owner=&search=` | 个人数据范围 | |
-| POST | `/api/experiments/` | 登录成员 | `{project_id, title, date, equipment_item_id, equipment, specimen, params, steps, anomalies, dataset_ids}` → 草稿 |
+| POST | `/api/experiments/` | 登录成员 | `{project_id, title, date, equipment_item_id, equipment, specimen, specimen_item_ids, params, steps, anomalies, dataset_ids}` → 草稿 |
 | GET | `/api/experiments/{id}/` | 个人数据范围 | |
 | PATCH | `/api/experiments/{id}/` | 本人，且为草稿 | 已提交时 409 `invalid_state` |
 | DELETE | `/api/experiments/{id}/` | 本人，且为草稿、未被周报引用 | |
@@ -173,7 +173,7 @@
 | POST | `/api/experiments/{id}/return/` | 本组管理员/导师 | `{reason}`（必填）→ 已提交 → 草稿；返回 `Experiment` |
 | GET | `/api/experiments/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
 
-校验：`project_id` 必须是本组项目；`equipment_item_id`（可为 `null`）必须是本组台账里的设备；`dataset_ids` 必须是**记录所有者本人**的数据集；`params` 必须是 JSON 对象。`equipment` 是自由文本的"设备说明"。
+校验：`project_id` 必须是本组项目；`equipment_item_id`（可为 `null`）必须是本组台账里的设备；`specimen_item_ids` 必须是本组的台账试件（`SpecimenBrief = {id, code, name, status}`，不带缺陷参数）；`dataset_ids` 必须是**记录所有者本人**的数据集；`params` 必须是 JSON 对象。`equipment` 是自由文本的"设备说明"。
 
 ## 数据处理记录 `/api/runs/`（Agent B）
 
@@ -277,6 +277,30 @@
 不提供删除；流水不可修改，记错用一笔盘点调整纠正。Django admin 的流水内联也只读，禁止新增/编辑/删除，写流水统一通过上述加锁 API。
 
 `stock_version`（只读）为该耗材最新流水 id，空账本为 0；与 `stock` 在同一查询中读取。`adjust` 必须另传 `stock_version_seen`（打开盘点时看到的版本，非负整数）；缺少/非法返回 400。锁内版本已变则返回 409 `stale_stock`，即使库存先减后增回到原值也拒绝，且不新增流水。客户端必须刷新并重新核对，不能自动重发旧差额。普通 `in/out/return` 无版本要求。旧客户端缺少版本的盘点将安全失败，前后端须同步更新。
+
+---
+
+## 试样与标准件 `/api/specimens/`
+
+`Specimen = {id, code, name, kind, material, dimensions, location, custodian: UserBrief | null, status, defects_public, defects: [Defect] | null, current_loan: Loan | null, notes, created_at, updated_at}`
+`kind`: `standard` 标准试块 | `reference` 对比试块 | `sample` 试样 | `other` 其他；`status`: `available` 可用 | `damaged` 损坏 | `retired` 停用。"借出"不是状态，看 `current_loan`。
+`Defect = {id, kind, size_mm, depth_mm, position, note}`，`kind`: `fbh` 平底孔 | `sdh` 横通孔 | `notch` 刻槽 | `crack` 裂纹 | `delamination` 分层 | `other`；`size_mm`、`depth_mm` 是两位小数的字符串或 `null`
+`Loan = {id, borrower: UserBrief, project: {id,name} | null, purpose, due_date, borrowed_at, returned_at, returned_by: UserBrief | null, return_note}`
+
+**缺陷参数可能是盲测的真值**：`defects_public` 为 `false` 时，学生拿到的 `defects` 是 `null`（不是空列表，也不给个数）；管理员和导师总能看到。搜索不匹配缺陷字段。修改历史只记"修改了缺陷参数"，不记数值。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的 |
+| POST | `/api/specimens/` | 管理员 | `{code, name, kind, material, dimensions, location, custodian_id, status, defects_public, notes, defects: [{kind, size_mm, depth_mm, position, note}]}`；编号组内唯一（409） |
+| GET | `/api/specimens/{id}/` | 本组全员 | |
+| PATCH | `/api/specimens/{id}/` | 管理员 | 同 POST 字段；带 `defects` 时整份替换 |
+| GET | `/api/specimens/{id}/history/` | 本组全员 | `[HistoryEntry]` |
+| GET | `/api/specimens/{id}/loans/` | 本组全员 | 分页，最新在前 |
+| POST | `/api/specimens/{id}/borrow/` | 本组全员 | `{project_id?, purpose?, due_date?}` → 201 `Loan`，借用人是当前用户。状态不是"可用" → 409 `not_available`；已借出 → 409 `on_loan`（同一试件同时只有一条未归还的借用，数据库约束） |
+| POST | `/api/specimens/{id}/return/` | 借用人或管理员 | `{loan_id_seen, note?}` → `Loan`；`loan_id_seen` 为打开归还确认框时的借用 id（必填正整数）；当前借用不同 → 409 `stale_loan`，刷新后重新核对；没借出 → 409 `not_on_loan`；别人借的 → 403。旧客户端缺少该字段返回 400，前后端须同步更新 |
+
+不提供删除；不再使用的改为"停用"。
 
 ---
 

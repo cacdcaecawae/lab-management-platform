@@ -21,6 +21,9 @@ class Experiment(models.Model):
     # Free text for equipment outside the inventory and for records written before it existed.
     equipment = models.CharField("设备说明", max_length=200, blank=True)
     specimen = models.CharField("试件", max_length=200, blank=True)
+    specimen_items = models.ManyToManyField(
+        "specimens.Specimen", verbose_name="台账试件", blank=True, related_name="experiments"
+    )
     params = models.JSONField("实验参数", default=dict, blank=True)
     steps = models.TextField("步骤与现场记录", blank=True)
     anomalies = models.TextField("异常情况", blank=True)

@@ -8,7 +8,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
 REPO=$(cd "$SKILL/../../.." && pwd)
 
-SYNC=b291d6c   # last commit at which the model was confirmed to describe the covered code
+SYNC=e731809   # last commit at which the model was confirmed to describe the covered code
 COVERED=(
   backend/equipment/views.py
   backend/equipment/serializers.py

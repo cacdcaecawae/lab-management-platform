@@ -6,6 +6,7 @@ from datasets.serializers import DatasetBriefSerializer
 from datasets.versions import add_pinned_versions
 from equipment.serializers import EquipmentBriefSerializer, GroupEquipmentField
 from projects.serializers import GroupProjectField, ProjectBriefSerializer
+from specimens.serializers import GroupSpecimenField, SpecimenBriefSerializer
 
 from .models import Experiment, ProcessingRun
 
@@ -51,12 +52,14 @@ class ExperimentSerializer(RecordSerializer):
     dataset_ids = OwnDatasetField(source="datasets", many=True, write_only=True, required=False)
     equipment_item = EquipmentBriefSerializer(read_only=True)
     equipment_item_id = GroupEquipmentField(source="equipment_item", write_only=True, required=False, allow_null=True)
+    specimen_items = SpecimenBriefSerializer(many=True, read_only=True)
+    specimen_item_ids = GroupSpecimenField(source="specimen_items", many=True, write_only=True, required=False)
 
     class Meta:
         model = Experiment
         fields = [
             "id", "code", "project", "project_id", "owner", "title", "date", "equipment_item", "equipment_item_id",
-            "equipment", "specimen",
+            "equipment", "specimen", "specimen_items", "specimen_item_ids",
             "params", "steps", "anomalies", "datasets", "dataset_ids", "status", "submitted_at",
             "created_at", "updated_at",
         ]

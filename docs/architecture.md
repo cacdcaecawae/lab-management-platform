@@ -29,9 +29,10 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 | 业务 | `procurement` | 经费来源、采购申请与两级审批、报销与统计、财务提醒 | projects 及以下 |
 | 业务 | `meetings` | 组会、议程、行动项、附件 | projects 及以下 |
 | 业务 | `achievements` | 论文、专利、获奖、软著，导出 | projects 及以下 |
+| 业务 | `specimens` | 试样与标准件台账、缺陷参数（盲测时对学生隐藏）、借用登记 | projects 及以下 |
 | 业务 | `equipment` | 设备台账、预约（排他约束防冲突）、使用登记与照片、异常邮件 | procurement、projects 及以下 |
 | 业务 | `inventory` | 耗材品类、出入库流水（库存由流水汇总） | procurement、projects 及以下 |
-| 业务 | `research` | 实验记录、数据处理记录、提交/退回、修改历史 | datasets、equipment、projects 及以下 |
+| 业务 | `research` | 实验记录（可关联台账设备和试件）、数据处理记录、提交/退回、修改历史 | datasets、equipment、specimens、projects 及以下 |
 | 业务 | `knowledge` | 知识库文档与版本 | equipment、projects 及以下 |
 | 业务 | `reports` | 周报、反馈、状态流转、未交统计 | research、datasets、projects 及以下 |
 | 汇总 | `workbench` | 工作台汇总接口 `/api/dashboard/`（无模型） | 所有业务模块 |
@@ -53,6 +54,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 | 个人数据 | 实验记录、数据集/文件、处理记录、周报 | 本人 + 本组 supervisor | 本人；提交后锁定，supervisor 可退回 |
 | 组内公开 | 项目与进展、成员公开信息 | 本组全员 | 项目：supervisor 或项目负责人；成员：管理员 |
 | 组内公开（第二期） | 设备、预约与使用登记、耗材与流水 | 本组全员 | 台账、入库、盘点：管理员（不含导师）；预约、领用、退回：本人；取消：本人（未开始）或管理员 |
+| 组内公开（试样） | 试样与标准件、借用记录；缺陷参数在盲测时（`defects_public=false`）只给管理员和导师 | 本组全员 | 台账：管理员（不含导师）；借用：本人；归还：本人或管理员 |
 | 成员隐私 | 学号（登录名）、电话、邮箱 | 本人 + 本组 supervisor | 管理员 |
 
 实现规则（必须遵守）：
@@ -88,4 +90,4 @@ Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router。
 - `src/api/types.ts`：与 `api-contract.md` 一一对应的类型。
 - `src/stores/auth.ts`：登录状态；路由守卫负责未登录跳转登录页、未改初始密码跳转改密页。
 - 菜单按开发手册 §5，只显示已上线的模块；`meta.supervisor` 只控制界面显示，权限以后端为准。
-- 模块目录 `src/modules/<模块>/`（试点中：`equipment`、`knowledge`，其余页面仍在 `src/views/`）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/`）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。
+- 模块目录 `src/modules/<模块>/`（`equipment`、`knowledge`，新模块 `specimens`；其余页面仍在 `src/views/`）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/`）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。

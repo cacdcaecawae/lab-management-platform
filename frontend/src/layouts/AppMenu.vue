@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Box,
+  Aim,
   Calendar,
   ChatDotRound,
   Coin,
@@ -52,6 +53,7 @@ const raw = [
       { name: 'equipment', label: '设备台账', icon: Monitor },
       { name: 'bookings', label: '设备预约', icon: Calendar },
       { name: 'consumables', label: '耗材库存', icon: Box },
+      { name: 'specimens', label: '试样与标准件', icon: Aim },
     ],
   },
   {
