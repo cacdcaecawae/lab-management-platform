@@ -4,6 +4,30 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 env_file=${ENV_FILE:-.env}
 [[ -f "$env_file" ]] || { echo "找不到环境文件：$env_file" >&2; exit 1; }
+envget() { sed -n "s/^$1=//p" "$env_file" | tail -n 1 | tr -d '\r'; }
+unset BACKUP_REPO_ID # Ignore an interactive shell override.
+repo_id=$(envget BACKUP_REPO_ID)
+backup_mountpoint=$(envget BACKUP_MOUNTPOINT)
+if [[ -n "$backup_mountpoint" ]]; then
+  [[ -n "$repo_id" ]] || {
+    echo "使用备份挂载点时，须先核实仓库并在 $env_file 中设置 BACKUP_REPO_ID" >&2
+    exit 1
+  }
+  BACKUP_REPO=$(envget BACKUP_REPO)
+  export BACKUP_REPO
+  unset BACKUP_PASSWORD # The isolated Compose must use the same config as scheduled jobs.
+  mount=$(realpath -e -- "$backup_mountpoint") &&
+    [[ "$backup_mountpoint" == /* && "$mount" != / ]] &&
+    mountpoint -q -- "$mount" || { echo "备份挂载点未挂载" >&2; exit 1; }
+  repo=$(realpath -e -- "$BACKUP_REPO") &&
+    [[ "$BACKUP_REPO" == /* && -d "$repo" && ( "$repo" == "$mount" || "$repo" == "$mount/"* ) ]] ||
+    { echo "备份目录不在指定挂载点内" >&2; exit 1; }
+fi
+[[ -z "$repo_id" || "$repo_id" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "$env_file 中的 BACKUP_REPO_ID 应是完整的 64 位小写十六进制仓库 ID" >&2
+  exit 1
+}
+
 version=${1:-}
 snap=${2:-latest}
 limit=${3:-20}
@@ -45,6 +69,14 @@ done
 started=yes
 rt() { dc run --rm -T --no-deps restic "$@"; }
 verify() { dc run --rm -T --no-deps verifier "$@"; }
+
+if [[ -n "$repo_id" ]]; then
+  # Restic 0.19.1 emits an indented JSON Config with one top-level id.
+  # Use the same read-only isolated mount as the subsequent snapshot reads.
+  config=$(rt --no-cache cat config 2>/dev/null) || { echo "无法读取指定备份仓库的身份" >&2; exit 1; }
+  actual=$(sed -nE 's/^[[:space:]]*"id"[[:space:]]*:[[:space:]]*"([0-9a-f]{64})"[[:space:]]*,?[[:space:]]*$/\1/p' <<<"$config")
+  [[ "$actual" == "$repo_id" ]] || { echo "备份仓库身份不符，未恢复任何数据" >&2; exit 1; }
+fi
 
 id=$(rt snapshots --json --host lab "$snap" | verify snapshot)
 [[ "$id" =~ ^[0-9a-f]{64}$ ]] || { echo "无法固定快照 ID" >&2; exit 1; }

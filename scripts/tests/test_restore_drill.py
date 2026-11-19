@@ -34,7 +34,9 @@ service, *argv = args[4:]
 path = "datasets/1/" + "b"*32
 id = "a"*64
 if service == "restic":
-    if argv[0] == "snapshots":
+    if "cat" in argv and argv[-1] == "config":
+        print('  "id": "' + ('b' if os.environ.get("MODE") == "wrong-id" else 'a') * 64 + '",')
+    elif argv[0] == "snapshots":
         print(json.dumps([{"time":"2026-11-19", "hostname":"lab", "id":id}]))
     else:
         assert argv[:2] == ["dump", id]
@@ -63,7 +65,7 @@ class RestoreDrillTests(unittest.TestCase):
             check({("app", "0003")}, disk)
 
     def test_restore_drill(self):
-        for mode in ("ok", "missing", "corrupt", "cleanup", "collision"):
+        for mode in ("ok", "missing", "corrupt", "cleanup", "collision", "right-id", "wrong-id", "missing-id", "missing-mount"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 self.run_case(mode, Path(directory))
 
@@ -73,17 +75,34 @@ class RestoreDrillTests(unittest.TestCase):
         docker.chmod(0o755)
         log = tmp_path / "docker.log"
         env_file = tmp_path / "synthetic.env"
-        env_file.touch()
+        repo_id = "BACKUP_REPO_ID=" + "a" * 64 + "\n"
+        env_file.write_text(
+            repo_id if mode in ("right-id", "wrong-id") else
+            "BACKUP_MOUNTPOINT=/fixture\n" if mode == "missing-id" else ""
+        )
+        if mode == "missing-mount":
+            with env_file.open("a") as config:
+                config.write(repo_id + f"BACKUP_MOUNTPOINT={tmp_path}\n")
+            mountpoint = tmp_path / "mountpoint"
+            mountpoint.write_text("#!/bin/sh\nexit 1\n")
+            mountpoint.chmod(0o755)
         result = subprocess.run(["bash", "scripts/restore-drill.sh", "v0.1.0"], cwd=ROOT,
                                 env=dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}",
                                          ENV_FILE=str(env_file), MODE=mode, DOCKER_LOG=str(log), TMPDIR=str(tmp_path)),
                                 text=True, capture_output=True)
+        if mode in ("missing-id", "missing-mount"):
+            assert result.returncode != 0
+            assert ("BACKUP_REPO_ID" if mode == "missing-id" else "备份挂载点未挂载") in result.stderr
+            assert not log.exists()
+            return
         calls = log.read_text()
         assert not list(tmp_path.glob("labdrill.*"))
         assert ("down --volumes --remove-orphans" in calls) == (mode != "collision")
-        assert ("dump " in calls) == (mode != "collision")
-        assert (result.returncode == 0) == (mode == "ok"), (result.stdout, result.stderr)
-        assert ("演练通过" in result.stdout) == (mode == "ok")
+        assert ("dump " in calls) == (mode not in ("collision", "wrong-id"))
+        assert (result.returncode == 0) == (mode in ("ok", "right-id")), (result.stdout, result.stderr)
+        assert ("演练通过" in result.stdout) == (mode in ("ok", "right-id"))
+        if mode == "wrong-id":
+            assert "身份不符" in result.stderr and "snapshots" not in calls and "up -d" not in calls
         if mode == "corrupt":
             assert "checksum mismatch" in result.stderr
         if mode == "cleanup":
