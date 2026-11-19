@@ -2,10 +2,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { describe, expect, it, vi } from 'vitest'
 import { projectsApi } from '@/api/projects'
-import type { Project, ProjectTask } from '@/api/types'
+import type { Project, ProjectMilestone, ProjectTask } from '@/api/types'
 import ProjectBoard from './ProjectBoard.vue'
 
-vi.mock('@/api/projects', () => ({ projectsApi: { tasks: vi.fn(), updateTask: vi.fn(), milestones: vi.fn() } }))
+vi.mock('@/api/projects', () => ({ projectsApi: { tasks: vi.fn(), updateTask: vi.fn(), milestones: vi.fn(), updateMilestone: vi.fn() } }))
 
 const project: Project = {
   id: 4, name: '测试项目', leader: { id: 1, name: '负责人' }, members: [{ id: 2, name: '同学' }],
@@ -46,5 +46,32 @@ describe('ProjectBoard', () => {
     await flushPromises()
     expect(wrapper.text()).toContain(task.title)
     expect(wrapper.findAll('button')).toHaveLength(0)
+  })
+})
+
+describe('milestone editor', () => {
+  it('sends only the edited title, keeping a concurrent completion intact', async () => {
+    const baseline: ProjectMilestone = { id: 8, title: '待定里程碑', due_date: null, done_at: null, task_total: 0, task_done: 0 }
+    let server = { ...baseline }
+    vi.mocked(projectsApi.milestones).mockImplementation(async () => ({ ...empty, count: 1, results: [{ ...server }] }))
+    vi.mocked(projectsApi.updateMilestone).mockImplementation(async (_id, body) => {
+      server = { ...server, title: body.title ?? server.title }
+      if (body.done === false) server.done_at = null
+      return server
+    })
+    const wrapper = mount(ProjectBoard, {
+      props: { project, sessionUserId: 1, canManage: true, tab: 'milestones' },
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '编辑')!.trigger('click')
+    await flushPromises()
+    server.done_at = '2026-11-18T08:00:00Z'
+    await wrapper.get('.el-dialog input[maxlength="200"]').setValue('里程碑新标题')
+    await wrapper.get('.el-dialog form').trigger('submit')
+    await flushPromises()
+    expect(projectsApi.updateMilestone).toHaveBeenCalledWith(8, { title: '里程碑新标题' })
+    expect(server.done_at).toBe('2026-11-18T08:00:00Z')
+    expect(wrapper.text()).toContain('已完成')
   })
 })

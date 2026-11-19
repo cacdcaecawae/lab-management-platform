@@ -123,9 +123,19 @@ function editMilestone(milestone: ProjectMilestone | null) {
 }
 
 async function saveMilestone() {
+  const item = selectedMilestone.value
+  const body: MilestoneWrite = { ...milestoneForm }
   await mutate(async () => {
-    if (selectedMilestone.value) await projectsApi.updateMilestone(selectedMilestone.value.id, milestoneForm)
-    else await projectsApi.addMilestone(props.project.id, milestoneForm)
+    if (item) {
+      // An unrelated edit must not overwrite another editor's completion or due date.
+      const changes: Partial<MilestoneWrite> = {}
+      if (body.title !== item.title) changes.title = body.title
+      if (body.due_date !== item.due_date) changes.due_date = body.due_date
+      if (body.done !== !!item.done_at) changes.done = body.done
+      if (Object.keys(changes).length) await projectsApi.updateMilestone(item.id, changes)
+    } else {
+      await projectsApi.addMilestone(props.project.id, body)
+    }
     milestoneDialog.value = false
   }, true)
 }
