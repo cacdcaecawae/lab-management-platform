@@ -30,8 +30,18 @@ if 'restic dump' in command:
 elif 'restic restore' in command:
     snap = args[args.index('restore') + 1].split(':')[0]
     (root / 'files_snapshot').write_text((root / 'latest').read_text() if snap == 'latest' else snap)
+    if mode == 'files-fail':
+        print('no space left on device', file=sys.stderr)
+        sys.exit(1)
 elif 'pg_restore' in command:
     (root / 'database_dump').write_text(sys.stdin.read())
+    if mode == 'pg-restore-fails':
+        sys.exit(1)
+elif 'ps' in args and '--format' in args:
+    # Like Compose: an APP_VERSION exported in the shell wins over the env file.
+    version = os.environ.get('APP_VERSION') or [
+        line.split('=', 1)[1] for line in (root / '.env').read_text().splitlines() if line.startswith('APP_VERSION=')][-1]
+    print(f'ghcr.io/x/backend:{version}\nghcr.io/x/web:{version}')
 elif 'SELECT count' in command:
     print('20')
 elif args[-2:] == ['up', '-d']:
@@ -56,7 +66,10 @@ class ServerScripts(unittest.TestCase):
         (self.root / 'bin').mkdir()
         for name in ('update.sh', 'restore.sh', 'server-env.sh'):
             shutil.copyfile(ROOT / 'scripts' / name, self.root / 'scripts' / name)
-        (self.root / 'scripts/backup.sh').write_text("echo 'snapshot abcdef12 saved'\n")
+        (self.root / 'scripts/backup.sh').write_text(
+            'echo \'["backup.sh"]\' >>"$TEST_ROOT/calls"\n'
+            '[ "$MODE" != backup-fails ] || exit 1\n'
+            "echo 'snapshot abcdef12 saved'\n")
         (self.root / '.env').write_text('APP_VERSION=v0.1.0\nBACKUP_REPO=/unused\nBACKUP_PASSWORD=dummy\n')
         self.executable('docker', '#!' + sys.executable + '\n' + DOCKER)
         self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\nexit 0\n')
@@ -94,6 +107,28 @@ class ServerScripts(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn('已更新到 v0.2.0', r.stdout)
 
+    def test_site_is_stopped_before_the_rollback_backup(self):
+        # A change saved after the backup would be lost when the rollback restores that backup.
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = self.calls()
+        self.assertLess(calls.index(['compose', '--env-file', '.env', 'stop', 'backend', 'web']), calls.index(['backup.sh']))
+
+    def test_failed_backup_restarts_the_old_version_without_updating(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='backup-fails')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('网站已重新启动', r.stderr)
+        self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
+        self.assertEqual(self.calls()[-1][-2:], ['up', '-d'])
+
+    def test_old_images_answering_is_not_an_update(self):
+        # An APP_VERSION exported in the operator's shell keeps the old images running after up -d.
+        self.env['APP_VERSION'] = 'v0.1.0'
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn('已更新到', r.stdout)
+        self.assertIn('已退回 v0.1.0', r.stderr)
+
     def test_health_failure_still_rolls_back(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='unhealthy')
         self.assertNotEqual(r.returncode, 0)
@@ -123,6 +158,33 @@ class ServerScripts(unittest.TestCase):
         r = self.run_script('restore.sh', 'latest', '--yes', mode='query-fails')
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse(any('stop' in c for c in self.calls()))
+
+    def test_database_from_before_is_kept_until_files_and_site_are_back(self):
+        for mode in ('files-fail', 'unhealthy'):
+            with self.subTest(mode=mode):
+                (self.root / 'calls').unlink(missing_ok=True)
+                (self.root / 'up_count').unlink(missing_ok=True)
+                r = self.run_script('restore.sh', A, '--yes', mode=mode)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn('恢复前的数据库保留为 before_restore_', r.stderr)
+                self.assertFalse(any('dropdb' in c and '"$OLD"' in c for c in map(' '.join, self.calls())))
+
+    def test_successful_restore_drops_the_database_from_before_last(self):
+        r = self.run_script('restore.sh', A, '--yes')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = [' '.join(c) for c in self.calls()]
+        self.assertIn('dropdb', calls[-1])
+        self.assertIn('"$OLD"', calls[-1])
+        self.assertTrue(any('wget' in c for c in calls[:-1]))
+        self.assertFalse(any('IF EXISTS' in c or '--if-exists' in c for c in calls))  # never drop a kept database
+
+    def test_failed_database_restore_never_stops_site(self):
+        r = self.run_script('restore.sh', A, '--yes', mode='pg-restore-fails')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('当前的数据没有变化', r.stderr)
+        calls = self.calls()
+        self.assertFalse(any('stop' in c for c in calls))
+        self.assertTrue('dropdb' in ' '.join(calls[-1]) and '"$NEW"' in ' '.join(calls[-1]))
 
     def test_explicit_id_db_only_skips_resolution_and_files(self):
         r = self.run_script('restore.sh', A, '--yes', '--db-only')

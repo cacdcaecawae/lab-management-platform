@@ -82,8 +82,8 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend pyt
 cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版本号就更新到最新版本
 ```
 
-- 依次：拉取新版本的镜像（失败时什么都没改）→ 备份 → 切换部署文件和镜像 → 检查网站能否访问（最多等 3 分钟）。
-- 新版本起不来就自动退回原版本；如果新版本已经改了数据库结构，先用刚才的备份恢复数据库。
+- 依次：拉取新版本的镜像（失败时什么都没改）→ 停止网站并备份（备份没完成就重新启动原版本，不更新）→ 切换部署文件和镜像 → 检查网站能否访问、运行的是不是新版本的镜像（最多等 3 分钟）。从停止到更新完成，网站不能访问。
+- 新版本起不来就自动退回原版本；如果新版本已经改了数据库结构，先用刚才的备份恢复数据库。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
 - 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
 
 备份与恢复：
@@ -95,9 +95,9 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
   30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
   ```
 
-- 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。恢复期间网站停止，原数据库在新的恢复好之前保持不动。
+- 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站换上它。原来的数据库改名为 `before_restore_<时间>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
 - 开发手册要求每月在测试机上还原一次，抽查几条记录和文件。没有还原验证过的备份不算可靠。
-- 数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。
+- 每天的备份里，数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。更新前的那次备份是停了网站做的，没有这个问题。
 
 发版（维护者）：在 `main` 上打标签并推送，例如 `git tag v0.2.0 && git push origin v0.2.0`。GitHub Actions 先在这条提交上跑完整检查，再构建 backend、web 两个镜像推到 `ghcr.io/cacdcaecawae/lab-management-platform/`，并生成发布说明。第一次发版后，到 GitHub 的 Packages 页确认两个镜像是 Public，否则服务器拉取前要先 `docker login ghcr.io`。
 

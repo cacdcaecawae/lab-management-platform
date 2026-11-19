@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Update the server to a release: pull its images, back up, switch the deployment files and images, check that the
-# site answers; if it does not, switch back by itself (and restore the database if the new version migrated it).
+# Update the server to a release: pull its images, stop the site and back up, switch the deployment files and images,
+# check that the site answers with them; if not, switch back by itself (and restore the database if the new version
+# migrated it).
 # Usage, from the repository root on the server: scripts/update.sh [vX.Y.Z]   (default: the newest release)
 set -euo pipefail
 
@@ -19,20 +20,23 @@ main() {
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web
 
-  echo "== 更新前备份"
+  # Stopped from here on: a change saved after the backup would be lost if the rollback restores it.
+  echo "== 停止网站，更新前备份"
+  dc stop backend web
   log=$(mktemp)
-  bash "$SCRIPTS/backup.sh" "before-$target" | tee "$log"  # not tee /dev/stderr: that reopens a redirected log
+  bash "$SCRIPTS/backup.sh" "before-$target" | tee "$log" || true  # not tee /dev/stderr: that reopens a redirected log
   snap=$(sed -n 's/^snapshot \([0-9a-f]*\) saved$/\1/p' "$log")
   rm -f "$log"
-  [ -n "$snap" ] || die "没拿到备份的快照编号，停止更新"
+  [ -n "$snap" ] || { dc up -d; die "备份没有完成，没有更新，网站已重新启动"; }
   migrations=$(applied_migrations)
   previous=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
 
   echo "== 切换到 $target"
   git checkout --quiet "$target"
   setenv APP_VERSION "$target"
-  # Old containers can still answer after a failed recreation. A healthy response alone is not an update.
-  if dc up -d && healthy; then
+  # Old containers can still answer after a failed recreation, and an APP_VERSION exported in the shell overrides
+  # the env file: only the target's images answering is an update.
+  if dc up -d && healthy && runs "$target"; then
     echo "已更新到 $target。更新前的备份是快照 $snap"
     exit 0
   fi
@@ -54,17 +58,8 @@ applied_migrations() {
   dc exec -T db sh -c 'psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM django_migrations"'
 }
 
-# Ask Nginx inside the web container, so the host's port mapping and firewall do not matter. Django only answers
-# hosts it allows, hence the Host header. Up to 3 minutes: the backend runs the migrations before it starts.
-healthy() {
-  local host
-  host=$(envget DJANGO_ALLOWED_HOSTS | cut -d, -f1 | sed 's/^\.//; s/^\*$//')
-  for _ in $(seq 60); do
-    dc exec -T web wget -q -O /dev/null --header "Host: ${host:-localhost}" http://127.0.0.1/api/auth/csrf/ \
-      2>/dev/null && return 0
-    sleep 3
-  done
-  return 1
+runs() {
+  [ "$(dc ps --format '{{.Image}}' backend web | grep -c ":$1\$")" = 2 ]
 }
 
 setenv() {
