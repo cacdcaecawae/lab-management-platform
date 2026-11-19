@@ -38,19 +38,23 @@ elif 'pg_restore' in command:
     if mode == 'pg-restore-fails':
         sys.exit(1)
 elif 'ps' in args and '--format' in args:
-    # Like Compose: an APP_VERSION exported in the shell wins over the env file.
-    version = os.environ.get('APP_VERSION') or [
-        line.split('=', 1)[1] for line in (root / '.env').read_text().splitlines() if line.startswith('APP_VERSION=')][-1]
-    print(f'ghcr.io/x/backend:{version}\nghcr.io/x/web:{version}')
+    for service in args[args.index('--format') + 2:]:
+        print(f"ghcr.io/x/{service}:{(root / service).read_text()}")
 elif 'SELECT count' in command:
+    if mode == 'unknown-migrations' and (root / 'up_count').exists():
+        sys.exit(1)
     print('20')
 elif args[-2:] == ['up', '-d']:
     counter = root / 'up_count'
     n = int(counter.read_text()) + 1 if counter.exists() else 1
     counter.write_text(str(n))
-    if mode == 'start-fails' and n == 1:
+    if mode in ('start-fails', 'unknown-migrations') and n == 1:
         print('recreation failed; old containers still serving', file=sys.stderr)
         sys.exit(1)
+    version = os.environ.get('APP_VERSION') or [
+        line.split('=', 1)[1] for line in (root / '.env').read_text().splitlines() if line.startswith('APP_VERSION=')][-1]
+    (root / 'backend').write_text(version)
+    (root / 'web').write_text('v0.9.9' if mode == 'wrong-web' or (mode == 'stale-web' and n == 1) else version)
 elif 'wget' in args:
     if mode == 'unhealthy' and (root / 'up_count').read_text() == '1':
         sys.exit(1)
@@ -69,7 +73,10 @@ class ServerScripts(unittest.TestCase):
         (self.root / 'scripts/backup.sh').write_text(
             'echo \'["backup.sh"]\' >>"$TEST_ROOT/calls"\n'
             '[ "$MODE" != backup-fails ] || exit 1\n'
-            "echo 'snapshot abcdef12 saved'\n")
+            'case "$MODE" in INT|TERM) kill -"$MODE" "$PPID";; esac\n'
+            '[ "$MODE" != missing-snapshot ] || exit 0\n'
+            "echo 'snapshot abcdef12 saved'\n"
+            '[ "$MODE" != incomplete-backup ] || exit 3\n')
         (self.root / '.env').write_text('APP_VERSION=v0.1.0\nBACKUP_REPO=/unused\nBACKUP_PASSWORD=dummy\n')
         self.executable('docker', '#!' + sys.executable + '\n' + DOCKER)
         self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\nexit 0\n')
@@ -77,7 +84,7 @@ class ServerScripts(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
                         TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A}]))
         # Do not inherit an operator's target-stack overrides.
-        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'MODE'):
+        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE'):
             self.env.pop(key, None)
 
     def executable(self, name, text):
@@ -119,21 +126,95 @@ class ServerScripts(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('网站已重新启动', r.stderr)
         self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
-        self.assertEqual(self.calls()[-1][-2:], ['up', '-d'])
+        self.assertEqual((self.root / 'web').read_text(), 'v0.1.0')
+
+    def test_snapshot_printed_before_backup_error_cannot_authorize_update(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='incomplete-backup')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('snapshot abcdef12 saved', r.stdout)
+        self.assertIn('网站已重新启动', r.stderr)
+        self.assertEqual((self.root / 'up_count').read_text(), '1')
+        self.assertEqual((self.root / 'backend').read_text(), 'v0.1.0')
+
+    def test_interruption_during_backup_resumes_old_site(self):
+        for signal, code in [('INT', 130), ('TERM', 143)]:
+            with self.subTest(signal=signal):
+                r = self.run_script('update.sh', 'v0.2.0', mode=signal)
+                self.assertEqual(r.returncode, code, r.stderr)
+                self.assertIn('网站已重新启动', r.stderr)
+                self.assertEqual((self.root / 'web').read_text(), 'v0.1.0')
+
+    def test_successful_backup_without_snapshot_resumes_old_site(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='missing-snapshot')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('快照编号', r.stderr)
+        self.assertIn('网站已重新启动', r.stderr)
+
+    def test_checkout_failure_after_stop_resumes_old_site(self):
+        self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\n'
+                        '[ "$*" != "checkout --quiet v0.2.0" ]\n')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('网站已重新启动', r.stderr)
+        self.assertEqual((self.root / 'web').read_text(), 'v0.1.0')
+
+    def test_shell_version_does_not_override_release(self):
+        self.env['APP_VERSION'] = 'v0.3.0'
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.root / 'web').read_text(), 'v0.2.0')
+
+    def test_env_write_failure_restores_checkout_and_old_version(self):
+        (self.root / 'bin/git').unlink()
+
+        def git(*args):
+            return subprocess.check_output(['git', '-c', 'user.name=test', '-c', 'user.email=test@localhost',
+                                            *args], cwd=self.root, text=True).strip()
+
+        git('init', '-q', '-b', 'main')
+        git('remote', 'add', 'origin', '.')
+        git('add', 'scripts/update.sh')
+        git('commit', '-qm', 'old release')
+        git('checkout', '-q', '--detach')
+        (self.root / 'scripts/update.sh').write_text('exit 42\n')
+        git('commit', '-qam', 'new release replaces the running script')
+        git('tag', 'v0.2.0')
+        git('checkout', '-q', 'main')
+        self.executable('sed', '#!/bin/bash\n/bin/sed "$@" || exit 1\n'
+                        '[[ $1 != -i || $2 != *v0.2.0* ]]\n')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('网站已重新启动', r.stderr)
+        self.assertEqual(git('symbolic-ref', '--short', 'HEAD'), 'main')
+        self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
+        self.assertEqual((self.root / 'web').read_text(), 'v0.1.0')
 
     def test_old_images_answering_is_not_an_update(self):
-        # An APP_VERSION exported in the operator's shell keeps the old images running after up -d.
-        self.env['APP_VERSION'] = 'v0.1.0'
-        r = self.run_script('update.sh', 'v0.2.0')
+        self.env['APP_VERSION'] = 'v0.3.0'
+        r = self.run_script('update.sh', 'v0.2.0', mode='stale-web')
         self.assertNotEqual(r.returncode, 0)
         self.assertNotIn('已更新到', r.stdout)
         self.assertIn('已退回 v0.1.0', r.stderr)
+        self.assertEqual((self.root / 'backend').read_text(), 'v0.1.0')
+
+    def test_healthy_wrong_web_image_cannot_confirm_rollback(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='wrong-web')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn('已退回', r.stderr)
+        self.assertEqual((self.root / 'up_count').read_text(), '2')
 
     def test_health_failure_still_rolls_back(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='unhealthy')
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('已退回 v0.1.0', r.stderr)
         self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
+
+    def test_unknown_migration_state_stops_rollback(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='unknown-migrations')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('无法核对数据库迁移', r.stderr)
+        self.assertFalse(any('restic' in c for c in self.calls()))
+        self.assertEqual((self.root / 'up_count').read_text(), '1')
 
     def test_latest_stays_pinned_when_new_backup_completes(self):
         # Both compact and pretty restic JSON; fake id text within an escaped path must not match.

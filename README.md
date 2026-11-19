@@ -82,8 +82,9 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend pyt
 cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版本号就更新到最新版本
 ```
 
-- 依次：拉取新版本的镜像（失败时什么都没改）→ 停止网站并备份（备份没完成就重新启动原版本，不更新）→ 切换部署文件和镜像 → 检查网站能否访问、运行的是不是新版本的镜像（最多等 3 分钟）。从停止到更新完成，网站不能访问。
+- 更新会先拉取镜像，再停站备份。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
 - 新版本起不来就自动退回原版本；如果新版本已经改了数据库结构，先用刚才的备份恢复数据库。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
+- 如果断电或脚本被强制终止，先看更新日志。确认新版本**尚未启动**时，切回更新前的 Git 版本，把 `.env` 的 `APP_VERSION` 改回原值，在仓库根目录执行 `env -u APP_VERSION docker compose -f infra/docker-compose.prod.yml --env-file .env up -d`。如果新版本可能已启动，先核对迁移状态；需要回退数据库时，切回原版本并改回 `.env` 后，运行 `env -u APP_VERSION bash scripts/restore.sh <更新日志中的快照编号> --db-only`。恢复会覆盖备份之后的数据库写入。
 - 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
 
 备份与恢复：
