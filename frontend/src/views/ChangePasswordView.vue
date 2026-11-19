@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import { postAuthTarget } from '@/router/post-auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const form = reactive({ old: '', next: '', confirm: '' })
 const errors = ref<string[]>([])
 
@@ -19,7 +21,7 @@ async function submit() {
   try {
     await auth.changePassword(form.old, form.next)
     ElMessage.success('密码已修改')
-    router.replace('/')
+    await router.replace(postAuthTarget(router, route.query.next) ?? { name: 'workbench' })
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
     errors.value = e.body.errors ? Object.values(e.body.errors).flat() : [e.message]
