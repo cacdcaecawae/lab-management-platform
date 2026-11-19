@@ -1,0 +1,45 @@
+# Deliberately separate from the production Compose configuration.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: lab_drill
+      POSTGRES_USER: lab_drill
+      POSTGRES_PASSWORD: lab_drill_internal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lab_drill", "-d", "lab_drill"]
+      interval: 2s
+      retries: 30
+  verifier:
+    image: ${IMAGE_PREFIX:-ghcr.io/cacdcaecawae/lab-management-platform}/backend:${DRILL_APP_VERSION:?set DRILL_APP_VERSION}
+    environment:
+      DJANGO_SECRET_KEY: isolated-restore-drill-not-used-for-serving
+      DB_HOST: db
+      POSTGRES_DB: lab_drill
+      POSTGRES_USER: lab_drill
+      POSTGRES_PASSWORD: lab_drill_internal
+    volumes:
+      - ${DRILL_SCRIPT:?set DRILL_SCRIPT}:/verify.py:ro
+    entrypoint: ["python", "/verify.py"]
+  restic:
+    image: restic/restic:0.19.1
+    network_mode: none
+    environment:
+      RESTIC_PASSWORD: ${BACKUP_PASSWORD:?set BACKUP_PASSWORD}
+      RESTIC_REPOSITORY: /repo
+    volumes:
+      - type: bind
+        source: ${BACKUP_REPO:?set BACKUP_REPO}
+        target: /repo
+        read_only: true
+        bind:
+          create_host_path: false
+    # The repository is read-only, so restic cannot create a repository lock.
+    entrypoint: ["restic", "--no-lock"]
+volumes:
+  pgdata:
+networks:
+  default:
+    internal: true

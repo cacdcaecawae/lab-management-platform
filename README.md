@@ -100,6 +100,14 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 - 开发手册要求每月在测试机上还原一次，抽查几条记录和文件。没有还原验证过的备份不算可靠。
 - 每天的备份里，数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。更新前的那次备份是停了网站做的，没有这个问题。
 
+- 隔离恢复演练：先检查 Docker 存储空间至少可容纳一份解压后的数据库，在测试机用合成备份验收；再按需要在服务器运行 `bash scripts/restore-drill.sh v0.1.0 latest 20`（将版本换为与该快照兼容的 backend 发行版镜像）。无 Web 端口，不调用生产恢复脚本，备份仓库只读。每类最多抽 20 个数据集或知识库文件；未抽到、未纳入样本的文件不算已验证。脚本以非零退出报告失败。
+- 演练使用 restic 无锁只读方式，不能与 `forget --prune`、修复或其他仓库维护重叠；安排在不同维护窗口。以下只示例，不会自动安装任务，也需要维护所选镜像版本：
+
+  ```cron
+  0 4 1 * * cd /srv/lab-management-platform && bash scripts/restore-drill.sh v0.1.0 latest 20 >> /var/log/lab-restore-drill.log 2>&1
+  ```
+
+
 发版（维护者）：在 `main` 上打标签并推送，例如 `git tag v0.2.0 && git push origin v0.2.0`。GitHub Actions 先在这条提交上跑完整检查，再构建 backend、web 两个镜像推到 `ghcr.io/cacdcaecawae/lab-management-platform/`，并生成发布说明。第一次发版后，到 GitHub 的 Packages 页确认两个镜像是 Public，否则服务器拉取前要先 `docker login ghcr.io`。
 
 其他：
