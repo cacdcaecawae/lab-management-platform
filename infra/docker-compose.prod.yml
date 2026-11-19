@@ -70,7 +70,11 @@ services:
       RESTIC_PASSWORD: ${BACKUP_PASSWORD:-}
     volumes:
       - labdata:/data
-      - ${BACKUP_REPO:-./backup-repo-not-set}:/repo   # the scripts refuse to run until BACKUP_REPO is set
+      - type: bind
+        source: ${BACKUP_REPO:-./backup-repo-not-set}
+        target: /repo
+        bind:
+          create_host_path: false
 
 volumes:
   pgdata:

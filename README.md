@@ -82,21 +82,21 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend pyt
 cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版本号就更新到最新版本
 ```
 
-- 更新会先拉取镜像，再停站备份。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
-- 新版本起不来就自动退回原版本；如果新版本已经改了数据库结构，先用刚才的备份恢复数据库。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
+- 更新前先核对版本是有 Git 祖先关系的较新正式标签并检查 Compose、备份仓库和迁移记录，再拉取镜像、停站备份。不支持用更新命令直接降级。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
+- 新版本起不来就自动退回原版本；如果新版本已经改了已应用迁移名单（不仅是迁移数量），先用刚才的备份恢复数据库。失败的新版先停下来；无法确认回退时不会把旧镜像启动到新库上。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
 - 如果断电或脚本被强制终止，先看更新日志。确认新版本**尚未启动**时，切回更新前的 Git 版本，把 `.env` 的 `APP_VERSION` 改回原值，在仓库根目录执行 `env -u APP_VERSION docker compose -f infra/docker-compose.prod.yml --env-file .env up -d`。如果新版本可能已启动，先核对迁移状态；需要回退数据库时，切回原版本并改回 `.env` 后，运行 `env -u APP_VERSION bash scripts/restore.sh <更新日志中的快照编号> --db-only`。恢复会覆盖备份之后的数据库写入。
 - 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
 
 备份与恢复：
 
-- `.env` 里设 `BACKUP_REPO`（另一块硬盘上的目录）和 `BACKUP_PASSWORD`。备份用 restic，在容器里运行，服务器不用另装；加密、增量、去重。**密码丢了备份就打不开**，要另外抄一份保存。
+- `.env` 里设 `BACKUP_REPO`（另一块硬盘上已存在的绝对路径）和 `BACKUP_PASSWORD`。备份用 restic，在容器里运行，服务器不用另装；加密、增量、去重。**密码丢了备份就打不开**，要另外抄一份保存。 首次在已核实的空目录建仓时，请显式运行 `bash scripts/backup.sh --init`。常规备份不会自动创建仓库，读取配置失败直接退出。使用 NAS 时，在同一 `.env` 中填写实际挂载点 `BACKUP_MOUNTPOINT`（例如 `/mnt/nas`）；请勿并发卸载或更换挂载。
 - 每天备份一次，保留每天一份 30 天、每月一份 12 个月。在宿主机 `crontab -e` 加一行：
 
   ```cron
   30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
   ```
 
-- 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站换上它。原来的数据库改名为 `before_restore_<时间>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
+- 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站，以单个 PostgreSQL 事务换上它。任一步换名失败都不提交；仅确认原库仍在且并非内部升级回退时，脚本才尝试启动原站。原来的数据库改名为 `before_restore_<时间和随机后缀>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
 - 开发手册要求每月在测试机上还原一次，抽查几条记录和文件。没有还原验证过的备份不算可靠。
 - 每天的备份里，数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。更新前的那次备份是停了网站做的，没有这个问题。
 

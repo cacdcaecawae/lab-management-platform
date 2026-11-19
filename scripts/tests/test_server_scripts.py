@@ -20,6 +20,17 @@ with (root / 'calls').open('a') as f:
     f.write(json.dumps(args) + '\n')
 command = ' '.join(args)
 mode = os.environ.get('MODE', '')
+if 'cat config' in command:
+    sys.exit(1 if mode == 'bad-repo' else 0)
+if args[-2:] == ['config', '--quiet'] and mode == 'bad-compose':
+    sys.exit(1)
+if '--single-transaction' in command and 'psql' in command:
+    (root / 'rename_sql').write_text(sys.stdin.read())
+    sys.exit(1 if mode in ('swap-fails', 'swap-ambiguous', 'changed-swap-fails') else 0)
+if 'psql' in command and '-qtA' in command:
+    sys.stdin.read()
+    print('unknown' if mode == 'swap-ambiguous' else 'original')
+    sys.exit(0)
 if 'snapshots --json' in command:
     print(os.environ['SNAPSHOT_JSON'])
     sys.exit(1 if mode == 'query-fails' else 0)
@@ -40,15 +51,15 @@ elif 'pg_restore' in command:
 elif 'ps' in args and '--format' in args:
     for service in args[args.index('--format') + 2:]:
         print(f"ghcr.io/x/{service}:{(root / service).read_text()}")
-elif 'SELECT count' in command:
+elif 'FROM django_migrations' in command:
     if mode == 'unknown-migrations' and (root / 'up_count').exists():
         sys.exit(1)
-    print('20')
-elif args[-2:] == ['up', '-d']:
+    print('["core","new"]' if mode in ('changed-migrations', 'changed-swap-fails') and (root / 'up_count').exists() else '["core","old"]')
+elif args[-2:] == ['up', '-d'] or args[-4:] == ['up', '-d', 'backend', 'web']:
     counter = root / 'up_count'
     n = int(counter.read_text()) + 1 if counter.exists() else 1
     counter.write_text(str(n))
-    if mode in ('start-fails', 'unknown-migrations') and n == 1:
+    if mode in ('start-fails', 'unknown-migrations', 'changed-migrations', 'changed-swap-fails') and n == 1:
         print('recreation failed; old containers still serving', file=sys.stderr)
         sys.exit(1)
     version = os.environ.get('APP_VERSION') or [
@@ -77,7 +88,8 @@ class ServerScripts(unittest.TestCase):
             '[ "$MODE" != missing-snapshot ] || exit 0\n'
             "echo 'snapshot abcdef12 saved'\n"
             '[ "$MODE" != incomplete-backup ] || exit 3\n')
-        (self.root / '.env').write_text('APP_VERSION=v0.1.0\nBACKUP_REPO=/unused\nBACKUP_PASSWORD=dummy\n')
+        (self.root / 'repo').mkdir()
+        (self.root / '.env').write_text(f'APP_VERSION=v0.1.0\nBACKUP_REPO={self.root / "repo"}\nBACKUP_PASSWORD=dummy\n')
         self.executable('docker', '#!' + sys.executable + '\n' + DOCKER)
         self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\nexit 0\n')
         self.executable('sleep', '#!/bin/bash\nexit 0\n')
@@ -97,7 +109,7 @@ class ServerScripts(unittest.TestCase):
                               env=dict(self.env, MODE=mode), text=True, capture_output=True, timeout=20)
 
     def calls(self):
-        return [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()]
+        return [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()] if (self.root / 'calls').exists() else []
 
     def test_failed_start_cannot_succeed_from_old_healthy_endpoint(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='start-fails')
@@ -152,7 +164,7 @@ class ServerScripts(unittest.TestCase):
 
     def test_checkout_failure_after_stop_resumes_old_site(self):
         self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\n'
-                        '[ "$*" != "checkout --quiet v0.2.0" ]\n')
+                        '[ "$*" != "checkout --quiet refs/tags/v0.2.0" ]\n')
         r = self.run_script('update.sh', 'v0.2.0')
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('网站已重新启动', r.stderr)
@@ -175,6 +187,7 @@ class ServerScripts(unittest.TestCase):
         git('remote', 'add', 'origin', '.')
         git('add', 'scripts/update.sh')
         git('commit', '-qm', 'old release')
+        git('tag', 'v0.1.0')
         git('checkout', '-q', '--detach')
         (self.root / 'scripts/update.sh').write_text('exit 42\n')
         git('commit', '-qam', 'new release replaces the running script')
@@ -213,7 +226,7 @@ class ServerScripts(unittest.TestCase):
         r = self.run_script('update.sh', 'v0.2.0', mode='unknown-migrations')
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('无法核对数据库迁移', r.stderr)
-        self.assertFalse(any('restic' in c for c in self.calls()))
+        self.assertFalse(any('dump' in c or 'restore' in c for c in self.calls()))
         self.assertEqual((self.root / 'up_count').read_text(), '1')
 
     def test_latest_stays_pinned_when_new_backup_completes(self):
@@ -273,6 +286,79 @@ class ServerScripts(unittest.TestCase):
         self.assertEqual((self.root / 'database_dump').read_text().strip(), 'database:' + A)
         self.assertFalse(any('snapshots' in c or 'restore' in c for c in self.calls()))
         self.assertFalse((self.root / 'files_snapshot').exists())
+
+
+    def test_preflight_failures_never_stop_or_start_anything(self):
+        for mode in ('bad-repo', 'bad-compose'):
+            with self.subTest(mode=mode):
+                r = self.run_script('update.sh', 'v0.2.0', mode=mode)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertFalse(any('stop' in c or 'up' in c for c in self.calls()))
+
+    def test_no_implicit_init_when_repository_is_unreadable(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        r = self.run_script('backup.sh', mode='bad-repo')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertTrue(any('cat' in c for c in self.calls()))
+        self.assertFalse(any('init' in c or 'exec' in c for c in self.calls()))
+
+    def test_init_requires_an_existing_empty_directory(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        (self.root / 'repo/existing').touch()
+        r = self.run_script('backup.sh', '--init')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.calls(), [])
+        (self.root / 'repo/existing').unlink()
+        r = self.run_script('backup.sh', '--init')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.calls()), 1)
+        self.assertIn('init', self.calls()[0])
+
+    def test_missing_nas_mount_refuses_even_existing_directory(self):
+        with (self.root / '.env').open('a') as f:
+            f.write(f'BACKUP_MOUNTPOINT={self.root}\n')
+        self.executable('mountpoint', '#!/bin/bash\nexit 1\n')
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        for script, args in [('backup.sh', []), ('backup.sh', ['--init']), ('restore.sh', []), ('update.sh', ['v0.2.0'])]:
+            r = self.run_script(script, *args)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn('未挂载', r.stderr)
+        self.assertFalse(any('restic' in c or 'stop' in c for c in self.calls()))
+
+    def test_explicit_older_or_unproven_release_never_stops(self):
+        r = self.run_script('update.sh', 'v0.0.9')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('降级', r.stderr)
+        self.executable('git', '#!/bin/bash\n[ "$1" != merge-base ]\n')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('降级', r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_restore_swap_in_one_transaction_and_resume_only_known_original(self):
+        for mode in ('swap-fails', 'swap-ambiguous'):
+            with self.subTest(mode=mode):
+                (self.root / 'calls').unlink(missing_ok=True)
+                r = self.run_script('restore.sh', A, '--yes', mode=mode)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertEqual((self.root / 'rename_sql').read_text().count('ALTER DATABASE'), 2)
+                calls = self.calls()
+                self.assertEqual(sum(any('--single-transaction' in a and 'psql' in a for a in c) for c in calls), 1)
+                self.assertFalse(any('restore' in c for c in calls))
+                self.assertEqual(any('up' in c for c in calls), mode == 'swap-fails')
+
+    def test_changed_migration_names_even_with_same_count_restore_snapshot(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='changed-migrations')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('已退回 v0.1.0', r.stderr)
+        self.assertEqual((self.root / 'database_dump').read_text().strip(), 'database:abcdef12')
+        self.assertEqual((self.root / 'backend').read_text(), 'v0.1.0')
+
+    def test_failed_rollback_swap_does_not_boot_old_image_on_new_schema(self):
+        r = self.run_script('update.sh', 'v0.2.0', mode='changed-swap-fails')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('保持网站停止', r.stderr)
+        self.assertEqual((self.root / 'up_count').read_text(), '1')
 
 
 if __name__ == '__main__':

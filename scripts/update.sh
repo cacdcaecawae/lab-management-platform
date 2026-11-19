@@ -7,21 +7,29 @@ set -euo pipefail
 
 main() {
   source "$(dirname "$0")/server-env.sh"
-  need_backup_settings
   git diff --quiet HEAD || die "仓库里有未提交的改动（git status 查看），处理后再更新"
   current=$(envget APP_VERSION)
-  [ -n "$current" ] || die "$ENV_FILE 里没有 APP_VERSION：先写上正在运行的版本，例如 APP_VERSION=v0.1.0"
+  [[ "$current" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die "$ENV_FILE 里需要正在运行的正式版本（例如 APP_VERSION=v0.1.0）"
   export APP_VERSION="$current"
 
   git fetch --quiet --tags origin
   target=${1:-$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)}
-  [ -n "$target" ] && git rev-parse -q --verify "refs/tags/$target" >/dev/null || die "没有这个版本：${target:-（还没有发布过）}"
+  [[ "$target" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+    die "目标须为正式版本：${target:-（还没有发布过）}"
+  git rev-parse -q --verify "refs/tags/$target^{commit}" >/dev/null || die "没有这个版本：$target"
   [ "$target" != "$current" ] || { echo "已经是 $current"; exit 0; }
+  [[ "$(printf '%s\n' "$current" "$target" | LC_ALL=C sort -V | tail -n 1)" == "$target" ]] &&
+    git merge-base --is-ancestor "refs/tags/$current" "refs/tags/$target" ||
+    die "无法证明 $target 是 $current 的后续正式版本，未停止网站；不支持直接降级"
+
+  dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
+  need_backup_repository
+
 
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web
   previous=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
-  migrations=$(applied_migrations)
+  migrations=$(applied_migrations) || die "停站前无法核对数据库迁移"
   log=$(mktemp)
   switching=false
   trap 'resume_before_start' EXIT
@@ -38,7 +46,7 @@ main() {
 
   echo "== 更新前的版本是 $current，快照是 $snap；切换到 $target"
   switching=true
-  git checkout --quiet "$target"
+  git checkout --quiet "refs/tags/$target"
   setenv APP_VERSION "$target"
   export APP_VERSION="$target"
   # Once the target can run migrations, recovery must account for the database.
@@ -51,20 +59,21 @@ main() {
 
   echo "== $target 没有正常启动，退回 $current" >&2
   dc logs --tail 40 backend >&2 || true
+  dc stop backend web || die "无法停止失败的版本，不执行回退；更新前快照为 $snap"
   git checkout --quiet "$previous"
   setenv APP_VERSION "$current"
   export APP_VERSION="$current"
   after=$(applied_migrations) || die "无法核对数据库迁移，退回未完成，更新前快照为 $snap"
   if [ "$after" != "$migrations" ]; then
     echo "== $target 已经改了数据库结构，用更新前的备份恢复数据库" >&2
-    bash "$SCRIPTS/restore.sh" "$snap" --db-only --yes
+    bash "$SCRIPTS/restore.sh" "$snap" --db-only --yes --keep-stopped-on-swap-failure
   fi
   start_version || die "退回 $current 未通过启动、健康或镜像检查，请查看生产 Compose 的 ps 和 logs"
   die "已退回 $current，没有更新。原因见上面的日志"
 }
 
 applied_migrations() {
-  dc exec -T db sh -c 'psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM django_migrations"'
+  dc exec -T db sh -c 'psql -X -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT to_json(ARRAY[app, name]) FROM django_migrations ORDER BY app, name"'
 }
 
 start_version() {

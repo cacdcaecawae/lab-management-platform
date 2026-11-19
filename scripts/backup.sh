@@ -4,7 +4,16 @@
 # Usage, from the repository root on the server: scripts/backup.sh [tag]   (cron runs it daily; update.sh before updating)
 set -euo pipefail
 source "$(dirname "$0")/server-env.sh"
-need_backup_settings
+[[ $# -le 1 ]] || die "用法：scripts/backup.sh [标签|--init]"
+if [[ ${1:-} == --init ]]; then
+  need_backup_settings
+  first_entry=$(find "$BACKUP_REPO" -mindepth 1 -maxdepth 1 -print -quit) ||
+    die "无法检查备份目录"
+  [[ -z "$first_entry" ]] || die "只允许在已存在的空目录初始化备份仓库"
+  restic init
+  exit
+fi
+need_backup_repository
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -16,7 +25,6 @@ dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' >"$tmp/l
 [ -s "$tmp/lab.dump" ] || die "数据库导出是空的"
 
 echo "== 写入备份仓库"
-restic cat config >/dev/null 2>&1 || restic init
 dc --profile ops run --rm -T -v "$tmp:/dump:ro" restic backup --host lab --tag "${1:-daily}" /data /dump
 
 echo "== 清理旧备份（每天一份留 30 天，每月一份留 12 个月）"
