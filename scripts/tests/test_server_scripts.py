@@ -21,7 +21,16 @@ with (root / 'calls').open('a') as f:
 command = ' '.join(args)
 mode = os.environ.get('MODE', '')
 if 'cat config' in command:
-    sys.exit(1 if mode == 'bad-repo' else 0)
+    assert 'BACKUP_REPO_ID' not in os.environ
+    if mode == 'bad-repo':
+        print('untrusted backend diagnostics', file=sys.stderr)
+        sys.exit(1)
+    config = {'version': 2, 'id': ('b' if mode == 'other-repo' else 'a') * 64}
+    print(json.dumps(config, indent=2) if mode != 'malformed-config' else '{"id": "wrong"}')
+    sys.exit(0)
+if 'pg_dump' in command:
+    print('synthetic dump')
+    sys.exit(0)
 if args[-2:] == ['config', '--quiet'] and mode == 'bad-compose':
     sys.exit(1)
 if '--single-transaction' in command and 'psql' in command:
@@ -324,6 +333,66 @@ class ServerScripts(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn('未挂载', r.stderr)
         self.assertFalse(any('restic' in c or 'stop' in c for c in self.calls()))
+
+    def configure_repository_pin(self, expected=None, mounted=True):
+        if mounted:
+            with (self.root / '.env').open('a') as f:
+                f.write(f'BACKUP_MOUNTPOINT={self.root}\n')
+            self.executable('mountpoint', '#!/bin/bash\nexit 0\n')
+        if expected is not None:
+            with (self.root / '.env').open('a') as f:
+                f.write(f'BACKUP_REPO_ID={expected}\n')
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+
+    def test_mounted_repository_requires_pin_except_explicit_bootstrap(self):
+        self.configure_repository_pin()
+        self.env['BACKUP_REPO_ID'] = A  # inherited value is not the deployment .env
+        for script, args in [('backup.sh', []), ('restore.sh', [A]), ('update.sh', ['v0.2.0'])]:
+            with self.subTest(script=script):
+                r = self.run_script(script, *args)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn('BACKUP_REPO_ID', r.stderr)
+        self.assertFalse(any('restic' in c or 'stop' in c or 'exec' in c for c in self.calls()))
+        self.assertEqual(self.run_script('backup.sh', '--init').returncode, 0)
+        r = self.run_script('backup.sh', '--repo-id')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), A)
+
+    def test_wrong_repository_identity_rejected_before_effects(self):
+        self.configure_repository_pin(A)
+        self.env['BACKUP_REPO_ID'] = B
+        r = self.run_script('backup.sh', '--init')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.calls(), [])
+        for mode in ('other-repo', 'malformed-config', 'bad-repo'):
+            for script, args in [('backup.sh', []), ('restore.sh', [A]), ('update.sh', ['v0.2.0'])]:
+                with self.subTest(script=script, mode=mode):
+                    r = self.run_script(script, *args, mode=mode)
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertNotIn(A, r.stdout + r.stderr)
+                    self.assertNotIn(B, r.stdout + r.stderr)
+                    self.assertNotIn('untrusted backend diagnostics', r.stdout + r.stderr)
+        self.assertTrue(any('cat' in c for c in self.calls()))
+        self.assertFalse(any(set(c) & {'exec', 'stop', 'up', 'pull', 'init', 'dump', 'backup', 'restore', 'forget'}
+                             for c in self.calls()))
+
+    def test_matching_pin_can_backup_and_is_not_logged(self):
+        self.configure_repository_pin(A)
+        r = self.run_script('backup.sh')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn(A, r.stdout + r.stderr)
+        calls = self.calls()
+        digest_step = next(i for i, c in enumerate(calls) if 'cat' in c)
+        db_step = next(i for i, c in enumerate(calls) if any('pg_dump' in arg for arg in c))
+        self.assertLess(digest_step, db_step)
+        self.assertTrue(any('backup' in c for c in calls))
+
+    def test_optional_pin_also_verifies_non_mount_repo(self):
+        self.configure_repository_pin(A, mounted=False)
+        r = self.run_script('backup.sh', mode='other-repo')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('身份不符', r.stderr)
+        self.assertFalse(any('exec' in c for c in self.calls()))
 
     def test_explicit_older_or_unproven_release_never_stops(self):
         r = self.run_script('update.sh', 'v0.0.9')
