@@ -118,6 +118,22 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 
   忘了配置也不会出错，只是没有每周提醒；管理员可以在"报销与统计 → 统计"里点"发送财务提醒"手动发。
 
+### 每日提醒（可选）
+
+按 Asia/Shanghai 的业务日期计算：试件逾期、设备校准、行动项和周五尚未提交的本周周报。周五早上的周报邮件是**提交前提示**，不表示逾期。邮件由“系统管理 → 邮件”配置；`SITE_URL` 可以填写站点 HTTP(S) 地址（不含账号、路径、查询或片段），不填就只写页面路径。修改环境变量后请按部署流程重建 backend 容器。
+
+先在隔离实例执行 `python manage.py send_due_reminders --dry-run`：不会发送邮件或写发送记录；预览包含内部组内工作内容，只在受控终端查看，不重定向到共享或 cron 日志；不打印 SMTP 凭据。`--date YYYY-MM-DD` 用于指定业务日期（例如合成数据测试；补发历史日期前先人工核对）。
+
+验证后再由运维人工添加以下 crontab 示例；项目不会自动启用：
+
+```cron
+CRON_TZ=Asia/Shanghai
+0 8 * * * cd /srv/lab-management-platform && docker compose -f infra/docker-compose.prod.yml --env-file .env exec -T backend python manage.py send_due_reminders >> /var/log/lab-due-reminders.log 2>&1
+```
+
+只使用支持 `CRON_TZ` 的 cron；若不支持，须先让调度端按 Asia/Shanghai 触发，再使用该时刻。每个账号每天只认领一份合并邮件。明确的 SMTP 临时拒绝可在**同一业务日**重跑，总尝试最多三次；永久拒绝须修复配置。SMTP 超时、接受后写库失败或进程中断时无法保证恰好一次送达；发送中/结果不明的记录不会自动重发，避免重复，请先在 SMTP 侧核对。命令对未确认的条目返回非零；发送日志只报告状态计数，不打印邮件正文。
+
+
 ## 目录
 
 ```

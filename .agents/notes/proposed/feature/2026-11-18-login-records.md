@@ -24,7 +24,7 @@ LoginEvent(user → User null SET_NULL, username ≤150（尝试登录时填的�
 - 来源地址的取法与登录限速相同：取 Nginx 追加在 `X-Forwarded-For` 末尾的一段，与 `NUM_PROXIES` 一致；复用限速类里已有的取法，不要另写一套。
 - 写入失败（例如数据库只读）不能影响登录：写在 try 里，失败只记日志。
 
-**保留**：只保留 180 天。每次写入时，以 1% 的概率顺带删除 180 天前的记录；如果[每日提醒](2026-11-18-scheduled-reminder-mail.md)的命令已经存在，就放进那个命令里。
+**保留**：只保留 180 天。每次写入时，以 1% 的概率顺带删除 180 天前的记录；如果[每日提醒](../../implemented/feature/2026-11-18-scheduled-reminder-mail.md)的命令已经存在，就放进那个命令里。
 
 **接口**：`GET /api/system/logins/?username=&success=&from=&to=`，只给运维，分页，最新在前。
 
