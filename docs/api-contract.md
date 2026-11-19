@@ -482,3 +482,7 @@
 内嵌对象的序列化器放在对象所属模块的 `serializers.py`：`UserBrief` 在 `accounts`，`ProjectBrief` 在 `projects`，`DatasetBrief` 在 `datasets`，`EquipmentBrief` 在 `equipment`，`ExperimentBrief`、`RunBrief` 在 `research`，`WeeklyReportBrief` 在 `reports`。各 app 直接引用，不要各自重复定义；能引用哪些模块见 `docs/architecture.md` 的分层表。
 
 `type`: `created` | `changed` | `deleted`
+
+### 全站搜索
+
+`GET /api/search/?q=关键字`：须为已改密、已分组的登录账号。去掉首尾空白后须为 2 至 100 个字符，否则返回 400。返回非空模块组的数组，每组为 `{module, label, items:[{id,title,subtitle,link}]}`；每组最多 5 条，按 ID 倒序。沿用各模块可见范围；不搜索试件缺陷、报告正文或附件。周报支持按 ISO 日期文本匹配。响应禁止缓存。

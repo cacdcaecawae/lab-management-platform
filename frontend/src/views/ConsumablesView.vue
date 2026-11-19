@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
 import { consumablesApi } from '@/api/inventory'
@@ -13,8 +14,11 @@ import { TXN_KIND_LABELS, formatTime } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 
 const auth = useAuthStore()
-const filters = reactive({ search: '', low: '' as 1 | '' })
+const route = inject(routeLocationKey, undefined)
+const routeItem = () => typeof route?.query.item === 'string' ? route.query.item : ''
+const filters = reactive({ item: routeItem(), search: '', low: '' as 1 | '' })
 const keyword = ref('')
+watch(routeItem, (item) => { filters.item = item })
 const { items, count, page, pageSize, loading, load } = usePagedList(consumablesApi.list, filters)
 const projects = useOptions(() => projectsApi.list({ status: 'active', page_size: 100 }))
 // Stock-in (managers only) may name the arrived purchase request it came from.
@@ -120,6 +124,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
 <template>
   <el-card class="card">
     <div class="page-toolbar">
+      <el-button v-if="filters.item" @click="filters.item = ''">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
       <span class="grow" />

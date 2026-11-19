@@ -1,20 +1,20 @@
 # Agent Note: 全站搜索
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
 每个列表页都有自己的搜索框，但要先知道东西在哪个模块：一个设备编号可能出现在设备台账、实验记录、知识库和采购单里；一个关键词（如"螺栓"）可能在项目、实验记录、周报、知识库里都有。现在只能一个页面一个页面地搜。
 
-## Proposal
+## Decision
 
-**接口**：`GET /api/search/?q=<至少 2 个字>`，放在 `workbench` app（汇总层，可以引用各模块）。
+**接口**：`GET /api/search/?q=<去除首尾空白后 2 至 100 个字>`，放在 `workbench` app（汇总层，可以引用各模块）。
 
 - 每个模块最多返回 5 条：`[{module, label, items: [{id, title, subtitle, link}]}]`。
 - 每个模块都用自己现有的可见范围：
   - 个人数据用 `scope_private`：实验记录、数据处理记录、数据集、周报、采购单——学生只能搜到自己的，管理员和导师能搜到本组的；
   - 组内公开用 `scope_group`：项目、设备、试件、耗材、知识库、组会、成果。
-- 匹配字段沿用各列表页的 `search_fields`，用 `icontains`；只搜标题类字段，不搜大段正文（周报正文、组会纪要）。试件不搜缺陷参数，理由见[试样与标准件](../../implemented/feature/2026-11-18-specimens.md)。
+- 匹配字段使用显式白名单，用 `icontains`；只搜标题类字段，不搜大段正文（周报正文、组会纪要）。试件不搜缺陷参数，理由见[试样与标准件](../../implemented/feature/2026-11-18-specimens.md)。
 
 **前端**：
 
@@ -28,7 +28,7 @@ Status: proposed
 - **Elasticsearch / Meilisearch**：功能强。但要多运维一个服务，还要同步数据、复刻每个模块的权限，权限出错就是数据泄露。
 - **只在前端把各列表接口挨个调一遍**：后端不用写。但要发十几个请求，而且每个列表接口的筛选参数不统一。
 
-## Acceptance criteria
+## Verification
 
 - 后端测试（这是权限最容易出错的地方，测试要逐模块覆盖）：
   - 学生 A 搜不到学生 B 的实验记录、数据集、周报、采购单；
@@ -45,3 +45,9 @@ Status: proposed
 
 - 新增模块时容易忘了把它加进搜索：在 `docs/architecture.md` 的"新增模块"步骤里加一条。
 - `icontains` 会做全表扫描，数据量到几十万行时再考虑加 `pg_trgm` 索引；目前不需要。
+
+## Consequences
+
+- 12 个模块按主键倒序、每模块最多 5 条，按已有的数据范围和字段白名单筛选。周报按日期搜索；耗材和成果按 ID 定位到精确列表；知识库只展示最新选中的链接。
+- PostgreSQL 测试覆盖角色与组隔离、盲测字段和采购联表去重，前端测试覆盖防抖、拒绝过期响应、知识库链接切换，以及编辑器普通导航重新加载而首次保存保留现有实例。
+- 隔离 PostgreSQL、Django、Vite 启动成功；Chromium 启动因本地 socket 被环境拒绝，未完成真实浏览器验证。

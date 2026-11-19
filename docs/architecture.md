@@ -91,3 +91,5 @@ Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router。
 - `src/stores/auth.ts`：登录状态；路由守卫负责未登录跳转登录页、未改初始密码跳转改密页。
 - 菜单按开发手册 §5，只显示已上线的模块；`meta.supervisor` 只控制界面显示，权限以后端为准。
 - 模块目录 `src/modules/<模块>/`（`equipment`、`knowledge`，新模块 `specimens`；其余页面仍在 `src/views/`）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/`）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。
+
+全站搜索由 `workbench/search.py` 汇总，沿用各模块数据范围，匹配和返回字段使用显式白名单。新增模块时按需接入并补权限对照测试，不自动搜索序列化器字段。

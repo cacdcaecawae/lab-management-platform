@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
@@ -44,14 +44,20 @@ function fill(doc: DocDetail | null) {
   )
 }
 
+let detailGeneration = 0
+onBeforeUnmount(() => { ++detailGeneration })
+
 async function openDoc(id: number | null) {
+  const generation = ++detailGeneration
   errors.clear()
   note.value = ''
   try {
-    fill(id ? await docsApi.get(id) : null)
+    const doc = id ? await docsApi.get(id) : null
+    if (generation !== detailGeneration) return
+    fill(doc)
     dialogOpen.value = true
   } catch (e) {
-    showError(e)
+    if (generation === detailGeneration) showError(e)
   }
 }
 async function save() {
@@ -114,7 +120,14 @@ async function onPick(e: Event) {
   }
 }
 
-if (Number(route.query.doc)) openDoc(Number(route.query.doc)) // after `note` above exists
+watch(() => route.query.doc, (doc, previous) => {
+  if (typeof doc === 'string' && /^\d+$/.test(doc) && Number.isSafeInteger(Number(doc)) && Number(doc) > 0) {
+    void openDoc(Number(doc))
+  } else if (previous != null) {
+    ++detailGeneration
+    dialogOpen.value = false
+  }
+}, { immediate: true })
 </script>
 
 <template>

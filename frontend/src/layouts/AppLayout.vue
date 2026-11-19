@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Lock, Menu, SwitchButton } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import AppMenu from './AppMenu.vue'
+import RoutePage from './RoutePage.vue'
+import SiteSearch from '@/components/SiteSearch.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -38,6 +40,7 @@ async function logout() {
           <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
           <span class="title">{{ route.meta.title }}</span>
         </div>
+        <SiteSearch />
         <el-dropdown trigger="click" placement="bottom-end">
           <span class="user">
             <span class="avatar" aria-hidden="true">{{ displayName.slice(0, 1) }}</span>{{ displayName }}<template v-if="auth.user?.group">（{{ auth.user.group.name }}）</template>
@@ -51,8 +54,7 @@ async function logout() {
         </el-dropdown>
       </header>
       <main class="main">
-        <!-- not keyed: xxx-new -> xxx-edit after the first save keeps the same view instance (and its field errors) -->
-        <RouterView />
+        <RoutePage />
       </main>
     </div>
   </div>
