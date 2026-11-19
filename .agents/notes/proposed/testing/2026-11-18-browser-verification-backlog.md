@@ -43,3 +43,7 @@ AGENTS.md 要求改了页面、接口行为或权限后，按 verify-lab 在浏�
 
 - 登录有限速：同一账号每分钟最多 5 次。多个上下文反复登录同一个账号会被 429，要复用已登录的上下文。
 - Element Plus 的 switch、checkbox 把真正的 input 藏起来了，`click`、`fill` 会超时；绕过办法见 `features/specimens.md` 的 Gotchas。
+
+## Linux 托管试跑边界（仅前两份）
+
+Windows 验证脚本和本地浏览器限制当前环境。试跑分支先用 Ubuntu 自带 Chrome/ChromeDriver 运行实验记录和周报的合成场景，不给常规 CI 加浏览器门禁，也不改变其余项目的验收顺序。每项使用独立临时库和目录；通过前不把待走查项标记为完成。
