@@ -70,17 +70,18 @@ def stats(items, group_id, params):
 def export_stats(result):
     book = Workbook()
     header = [Achievement.Type(kind).label for kind in KINDS] + ["合计"]
-    for title, key, first, label in (
-        ("按年统计", "by_year", "年份", lambda row: row["year"]),
-        ("按成员统计", "by_member", "成员", lambda row: row["user"]["name"]),
+    for title, key, columns, labels in (
+        ("按年统计", "by_year", ("年份",), lambda row: (row["year"],)),
+        ("按成员统计", "by_member", ("成员", "成员 ID"),
+         lambda row: (row["user"]["name"], str(row["user"]["id"]))),
     ):
         sheet = book.active if key == "by_year" else book.create_sheet()
         sheet.title = title
-        sheet.append([first, *header])
+        sheet.append([*columns, *header])
         for entry in result[key]:
-            sheet.append([label(entry), *(entry[kind] for kind in KINDS), entry["total"]])
+            sheet.append([*labels(entry), *(entry[kind] for kind in KINDS), entry["total"]])
         total = result["total"]
-        sheet.append(["全组去重总计", *(total[kind] for kind in KINDS), total["total"]])
+        sheet.append(["全组去重总计", *([None] * (len(columns) - 1)), *(total[kind] for kind in KINDS), total["total"]])
     response = HttpResponse(xlsx_bytes(book), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = content_disposition_header(as_attachment=True, filename="成果统计.xlsx")
     return response

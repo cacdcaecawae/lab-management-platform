@@ -64,6 +64,7 @@ onMounted(refresh)
       <h3>按成员</h3>
       <el-table v-loading="loading" :data="stats.by_member">
         <el-table-column prop="user.name" label="成员" />
+        <el-table-column prop="user.id" label="成员 ID" />
         <el-table-column v-for="(label, key) in ACHIEVEMENT_TYPE_LABELS" :key="key" :prop="key" :label="label" />
         <el-table-column prop="total" label="合计" />
       </el-table>

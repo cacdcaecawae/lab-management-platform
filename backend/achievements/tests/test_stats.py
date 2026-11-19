@@ -23,6 +23,8 @@ def test_formal_scope_dedup_and_excel(api, group, student_a, student_b, manager,
     record("paper", "submitted").members.add(student_a)
     record("patent", "filed").members.add(student_a)
     record("award", "awarded", group=other_manager.group)
+    student_a.name = "=1+1"
+    student_a.save(update_fields=["name"])
     student_b.name = "=1+1"
     student_b.save(update_fields=["name"])
 
@@ -49,13 +51,15 @@ def test_formal_scope_dedup_and_excel(api, group, student_a, student_b, manager,
     assert book.sheetnames == ["按年统计", "按成员统计"]
     total_row = ("全组去重总计", 2, 1, 1, 1, 5)
     columns = ("paper", "patent", "award", "software", "total")
-    for sheet, key, get_label in [
-        ("按年统计", "by_year", lambda row: row["year"]),
-        ("按成员统计", "by_member", lambda row: row["user"]["name"]),
+    for sheet, key, get_labels, footer in [
+        ("按年统计", "by_year", lambda row: (row["year"],), total_row),
+        ("按成员统计", "by_member", lambda row: (row["user"]["name"], str(row["user"]["id"])), (total_row[0], None, *total_row[1:])),
     ]:
         assert list(book[sheet].values)[1:] == [
-            (get_label(row), *(row[k] for k in columns)) for row in data[key]
-        ] + [total_row]
+            (*get_labels(row), *(row[k] for k in columns)) for row in data[key]
+        ] + [footer]
+    assert [row[0].value for row in book["按成员统计"].iter_rows()][1:3] == ["=1+1", "=1+1"]
+    assert book["按成员统计"]["B1"].value == "成员 ID"
     example = [row[0] for row in book["按成员统计"].iter_rows() if row[0].value == "=1+1"]
     assert example and example[0].data_type == "s"
 
