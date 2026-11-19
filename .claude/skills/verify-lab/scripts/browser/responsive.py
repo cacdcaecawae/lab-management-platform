@@ -38,7 +38,8 @@ return {innerWidth,innerHeight,devicePixelRatio,clientWidth:width,
 
 
 def responsive(stack, helpers):
-    browser, login, visible, screenshot, evidence = helpers
+    browser, login = helpers.browser, helpers.login
+    visible, screenshot, evidence = helpers.visible, helpers.screenshot, helpers.evidence
     results, failures = [], []
     # A manager sees all business entries; ops sees the separate system page.
     for role in ('mgr', 'ops'):

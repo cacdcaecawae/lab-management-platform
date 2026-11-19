@@ -5,9 +5,11 @@ No script is executed and the synthetic git URL is stored as text, never fetched
 """
 from hashlib import sha256
 
+from selenium.webdriver.common.keys import Keys
+
 from scenarios import (
     APP, EVIDENCE, By, WebDriverWait, ec, browser, login, visit, button,
-    option, label_input, visible, body_has, record_path, screenshot, evidence,
+    option, field_control, label_input, visible, body_has, record_path, screenshot, evidence,
 )
 from datasets.models import Dataset
 from datasets.versions import current_version
@@ -66,6 +68,13 @@ def processing(stack):
     screenshot(student, "processing-incomplete-rejected")
 
     option(student, "输入数据集（只能选择自己的数据集）", raw.name)
+    # Multiple-select stays open after choosing an input and overlaps the script field.
+    # Dismiss it with the same keyboard interaction a user can perform, not a JS click.
+    inputs_combo = field_control(student, "输入数据集（只能选择自己的数据集）", "input[@role='combobox']")
+    inputs_listbox = inputs_combo.get_attribute("aria-controls")
+    assert inputs_listbox
+    inputs_combo.send_keys(Keys.ESCAPE)
+    WebDriverWait(student, 12).until(ec.invisibility_of_element_located((By.ID, inputs_listbox)))
     # The script group has multiple controls, so Element Plus renders its label as a div.
     visible(student, By.CSS_SELECTOR, ".script .el-select__wrapper").click()
     combo = visible(student, By.CSS_SELECTOR, ".script input[role=combobox]")

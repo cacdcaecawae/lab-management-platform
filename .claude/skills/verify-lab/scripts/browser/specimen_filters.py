@@ -21,7 +21,11 @@ def check_specimen_filters(stack, *, browser, login, visit, visible, button, lab
     def pick(session, where, label, value):
         box = f"{where}//div[contains(@class,'el-select')][.//input[@aria-label='{label}']]"
         visible(session, By.XPATH, f"{box}//div[contains(@class,'el-select__wrapper')]").click()
-        combo = visible(session, By.XPATH, f"{box}//input[@role='combobox']")
+        # Non-filterable selects may keep their readonly input at zero width after
+        # opening. It still identifies the linked listbox; only the option must be visible.
+        combo = WebDriverWait(session, 12).until(ec.presence_of_element_located(
+            (By.XPATH, f"{box}//input[@role='combobox'][@aria-label='{label}']")
+        ))
         listbox = combo.get_attribute("aria-controls")
         assert listbox
         visible(session, By.XPATH, f"//*[@id='{listbox}']//*[@role='option'][normalize-space(.)='{value}']").click()
