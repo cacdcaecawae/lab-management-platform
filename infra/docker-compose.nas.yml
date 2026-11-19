@@ -1,0 +1,29 @@
+# Optional production overlay. LAB_NAS_ROOT must be a dedicated mounted app directory,
+# not the NAS share's root. Leave PostgreSQL and the upload spool on the server.
+services:
+  backend:
+    environment:
+      LAB_NAS_STORAGE_ID: ${LAB_NAS_STORAGE_ID:?set LAB_NAS_STORAGE_ID}
+      FILE_UPLOAD_TEMP_DIR: /tmp
+    volumes:
+      - type: bind
+        source: ${LAB_NAS_ROOT:?set LAB_NAS_ROOT}
+        target: /data
+        bind:
+          create_host_path: false
+  restic:
+    environment:
+      LAB_NAS_STORAGE_ID: ${LAB_NAS_STORAGE_ID:?set LAB_NAS_STORAGE_ID}
+    entrypoint: ["/bin/sh", "/nas-restic.sh"]
+    volumes:
+      - type: bind
+        source: ${LAB_NAS_ROOT:?set LAB_NAS_ROOT}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nas-restic.sh
+        target: /nas-restic.sh
+        read_only: true
+        bind:
+          create_host_path: false

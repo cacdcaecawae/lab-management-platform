@@ -42,6 +42,11 @@ if [ -z "$yes" ]; then
   [ "$answer" = yes ] || die "已取消"
 fi
 
+# Do not switch the live database if the snapshot has no usable attachment tree.
+if [ -z "$db_only" ]; then
+  restic ls "$snap:/data/files" >/dev/null || die "快照缺少可读取的上传文件目录，未停止网站"
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 restic dump "$snap" /dump/lab.dump >"$tmp/lab.dump"
@@ -90,7 +95,7 @@ trap 'rc=$?; rm -rf "$tmp"; [ $rc = 0 ] || echo "恢复没有完成，网站可�
 
 if [ -z "$db_only" ]; then
   echo "== 恢复上传的文件"
-  restic restore "$snap:/data" --target /data --delete
+  restic restore "$snap:/data/files" --target /data/files --delete
 fi
 
 echo "== 启动网站"

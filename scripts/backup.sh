@@ -6,7 +6,7 @@ set -euo pipefail
 source "$(dirname "$0")/server-env.sh"
 [[ $# -le 1 ]] || die "用法：scripts/backup.sh [标签|--init]"
 if [[ ${1:-} == --init ]]; then
-  need_backup_settings
+  need_live_backup_settings
   first_entry=$(find "$BACKUP_REPO" -mindepth 1 -maxdepth 1 -print -quit) ||
     die "无法检查备份目录"
   [[ -z "$first_entry" ]] || die "只允许在已存在的空目录初始化备份仓库"
@@ -25,7 +25,7 @@ dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' >"$tmp/l
 [ -s "$tmp/lab.dump" ] || die "数据库导出是空的"
 
 echo "== 写入备份仓库"
-dc --profile ops run --rm -T -v "$tmp:/dump:ro" restic backup --host lab --tag "${1:-daily}" /data /dump
+dc --profile ops run --rm -T -v "$tmp:/dump:ro" restic backup --host lab --tag "${1:-daily}" /data/files /dump
 
 echo "== 清理旧备份（每天一份留 30 天，每月一份留 12 个月）"
 restic forget --host lab --keep-daily 30 --keep-monthly 12 --prune

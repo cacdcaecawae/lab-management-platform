@@ -6,6 +6,7 @@
 set -euo pipefail
 
 main() {
+  local file
   source "$(dirname "$0")/server-env.sh"
   git diff --quiet HEAD || die "仓库里有未提交的改动（git status 查看），处理后再更新"
   current=$(envget APP_VERSION)
@@ -22,9 +23,16 @@ main() {
     git merge-base --is-ancestor "refs/tags/$current" "refs/tags/$target" ||
     die "无法证明 $target 是 $current 的后续正式版本，未停止网站；不支持直接降级"
 
-  dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
-  need_backup_repository
+  if nas_mode; then
+    for file in infra/docker-compose.nas.yml infra/nas-restic.sh backend/core/nas_storage.py; do
+      git cat-file -e "HEAD:$file" 2>/dev/null && git cat-file -e "refs/tags/$target:$file" 2>/dev/null ||
+        die "当前 checkout 或 $target 不支持 NAS 主存储（缺少 $file），未停止网站"
+    done
+  fi
 
+  need_live_backup_settings
+  dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
+  check_backup_repository
 
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web
