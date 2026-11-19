@@ -94,6 +94,21 @@
 
 ---
 
+## 站内通知 `/api/notifications/`
+
+只允许登录并已完成首次改密码的组内成员访问。查询只包括本人在当前组收到的、且仍符合必要角色的通知；其他账号的通知一律 404。无组运维账号不能访问。通知中的链接不改变原业务权限。
+
+`SiteNotification = {id, title, body, link, created_at, read_at: datetime | null}`。标题为简要动作，不包含审批意见、设备故障描述、盲测参数等业务内容。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/notifications/?unread=1` | 可分页；默认 20、最多 100；最新在前；省略 unread 返回全部 |
+| GET | `/api/notifications/unread-count/` | `{count}` |
+| POST | `/api/notifications/{id}/read/` | 幂等，返回更新后的通知 |
+| POST | `/api/notifications/read-all/` | 标记当前范围内未读通知，返回 `{updated}` |
+
+---
+
 ## 成员 `/api/members/`（Agent A）
 
 `Member`（本组成员可见的公开字段）：`{id, name, role, research_direction, is_active}`

@@ -2,6 +2,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
+from core.notifications import notify
 from projects.serializers import AnyGroupMemberField
 
 from .models import ActionItem, AgendaItem, Meeting, MeetingFile
@@ -95,6 +96,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         meeting = super().create(validated_data)
         self._write_agenda(meeting, agenda)
         ActionItem.objects.bulk_create(ActionItem(meeting=meeting, **a) for a in actions)
+        self._notify_assignees(meeting, {a["owner"].pk for a in actions})
         return meeting
 
     @transaction.atomic
@@ -107,14 +109,26 @@ class MeetingSerializer(serializers.ModelSerializer):
         if actions is not None:
             # Matched by id so an item keeps its "done" state; items left out are removed.
             kept = {a["id"] for a in actions if "id" in a}
+            # The meeting save locks its row until commit, so another edit cannot run before this read.
+            previous_owners = dict(meeting.actions.filter(pk__in=kept).values_list("pk", "owner_id"))
+            assigned = set()
             meeting.actions.exclude(id__in=kept).delete()
             for a in actions:
                 fields = {k: v for k, v in a.items() if k != "id"}
                 if "id" in a:
-                    ActionItem.objects.filter(pk=a["id"]).update(**fields)
+                    changed = meeting.actions.filter(pk=a["id"]).update(**fields)
+                    if changed and "owner" in a and previous_owners.get(a["id"]) != a["owner"].pk:
+                        assigned.add(a["owner"].pk)
                 else:
                     ActionItem.objects.create(meeting=meeting, **fields)
+                    assigned.add(a["owner"].pk)
+            self._notify_assignees(meeting, assigned)
         return meeting
+
+    @staticmethod
+    def _notify_assignees(meeting, owner_ids):
+        if owner_ids:
+            notify(meeting.group_id, "有新的组会行动项分配给你", f"/meetings/{meeting.pk}", recipient_ids=owner_ids)
 
     @staticmethod
     def _write_agenda(meeting, agenda):

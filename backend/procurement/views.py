@@ -24,6 +24,7 @@ from core.history import serialize_history
 from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, scope_group, scope_private
 
 from .mail import notify, send_finance_reminder
+from .notifications import notify_purchase
 from .models import Approval, Attachment, Fund, PurchaseRequest, Reimbursement
 from .queries import awaiting_review, returned_flag
 from .serializers import (
@@ -181,6 +182,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 # Going back to review is a new submission: the same checks apply (no empty or 0-yuan request).
                 if errors := submission_errors(purchase):
                     raise ValidationError(errors)  # inside the transaction: nothing of the edit is kept
+                notify_purchase(purchase)
                 transaction.on_commit(lambda: notify(purchase.pk))
         return self.respond(purchase.pk)
 
@@ -212,6 +214,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchase.status = first_review(purchase.owner)
             purchase.submitted_at = timezone.now()
             purchase.save()
+            notify_purchase(purchase)
             transaction.on_commit(lambda: notify(purchase.pk))
         return self.respond(purchase.pk)
 
@@ -265,6 +268,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 purchase.status = S.APPROVED
             purchase._change_reason = f"{Approval.Stage(stage).label}{Approval.Verdict(verdict).label}：{comment}".rstrip("：")
             purchase.save()
+            notify_purchase(purchase)
             transaction.on_commit(lambda: notify(purchase.pk, comment))
         return self.respond(purchase.pk)
 
@@ -278,6 +282,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchase.status = to_status
             purchase.save()
             if to_status == S.ARRIVED:
+                notify_purchase(purchase)
                 transaction.on_commit(lambda: notify(purchase.pk))
         return self.respond(purchase.pk)
 

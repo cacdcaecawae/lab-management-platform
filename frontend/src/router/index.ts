@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import * as equipment from '@/modules/equipment'
 import * as knowledge from '@/modules/knowledge'
 import * as specimens from '@/modules/specimens'
+import * as notifications from '@/modules/notifications'
 
 const ExperimentEdit = () => import('@/views/ExperimentEditView.vue')
 const RunEdit = () => import('@/views/RunEditView.vue')
@@ -45,6 +46,7 @@ export const appRoutes: RouteRecordRaw[] = [
   { path: 'reports/:id(\\d+)', name: 'report-edit', component: ReportEdit, meta: { title: '周报', menu: 'reports' } },
   ...equipment.routes,
   ...specimens.routes,
+  ...notifications.routes,
   { path: 'consumables', name: 'consumables', component: () => import('@/views/ConsumablesView.vue'), meta: { title: '耗材库存' } },
   { path: 'purchases', name: 'purchases', component: Purchases, meta: { title: '采购申请' } },
   { path: 'purchases/reviews', name: 'purchase-reviews', component: Purchases, meta: { title: '我的审批', supervisor: true } },

@@ -118,6 +118,8 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 
   忘了配置也不会出错，只是没有每周提醒；管理员可以在"报销与统计 → 统计"里点"发送财务提醒"手动发。
 
+- 站内通知不依赖邮件。运维可以先运行 `python manage.py purge_notifications --dry-run` 查看待清理数量，再手动运行 `python manage.py purge_notifications` 清理已读超过 180 天的通知。不会清理未读，不会自动部署计划任务。
+
 ## 目录
 
 ```

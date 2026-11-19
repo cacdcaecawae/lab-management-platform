@@ -22,7 +22,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 | 层 | App | 职责 | 可以引用 |
 |---|---|---|---|
-| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`） | 只用 Django / DRF |
+| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`）、站内通知 | 运行期只用 Django / DRF；通知迁移引用账号及课题组模型 |
 | 账号 | `accounts` | 课题组 `ResearchGroup`、自定义用户 `User`、登录/退出/改密、成员管理接口 | core |
 | 项目 | `projects` | 项目、项目成员、项目进展 | accounts、core |
 | 业务 | `datasets` | 数据集、数据文件、上传/下载、SHA256、不可覆盖、版本 | projects 及以下 |
