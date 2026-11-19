@@ -1,0 +1,21 @@
+name: NAS synthetic smoke
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  nas-smoke:
+    if: github.event.pull_request.number == 30 && github.event.pull_request.head.ref == 'feat/nas-primary-storage' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Exercise backup, restore and NAS guard using generated fixture data only
+        run: bash scripts/nas-ci-smoke.sh

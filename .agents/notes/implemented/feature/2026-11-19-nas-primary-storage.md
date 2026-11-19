@@ -28,3 +28,4 @@ Status: implemented
 
 - `infra/docker-compose.nas.yml`、`backend/core/nas_storage.py`、`backend/system/storage.py` 和 `frontend/src/components/SystemStorage.vue`。
 - `scripts/backup.sh` 和 `scripts/restore.sh` 保持快照附件路径不变，且不覆盖 NAS 标识。
+- 草稿 #30 的同仓库 GitHub 托管运行器可启动仅内部网络、无对外端口的临时 Compose，以合成字节和数据库哨兵演练备份、恢复与标识失配；它不验收真实的 SMB/NFS、生产或外网。
