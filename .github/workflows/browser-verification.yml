@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [experiments, reports]
+        scenario: [experiments, reports, login, members]
     services:
       postgres:
         image: postgres:17-alpine

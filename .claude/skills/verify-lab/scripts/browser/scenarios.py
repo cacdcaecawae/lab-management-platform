@@ -7,15 +7,20 @@ import sys
 from contextlib import ExitStack
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import django
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 
 django.setup()
+from accounts.models import User
+from django.conf import settings
+from django.contrib.sessions.models import Session
 from datasets.models import Dataset
 from datasets.versions import current_version
 from reports.models import WeeklyReport
@@ -26,6 +31,7 @@ EVIDENCE = Path(os.environ["BROWSER_EVIDENCE"])
 EXPERIMENT = "合成验证-螺栓预紧力扫描"
 REASON = "合成验证-参数表缺少采样率"
 REVISION = "合成验证-补充导波幅值重复性数据"
+SEED_PASSWORD = "Verify-2026!"
 
 
 def browser(stack):
@@ -73,19 +79,23 @@ def button(session, text, within=""):
 
 def field_control(session, label, selector):
     # Element Plus puts the label and control inside the same form-item.
-    return visible(session, By.XPATH, f"//div[contains(@class,'el-form-item')][./label[normalize-space(.)='{label}']]//{selector}")
+    return visible(session, By.XPATH, f"//div[contains(@class,'el-form-item')][./*[contains(@class,'el-form-item__label') and normalize-space(.)='{label}']]//{selector}")
 
 
 def label_input(session, label, tag="input"):
     return field_control(session, label, tag)
 
 
-def login(session, who):
+def submit_login(session, who, password):
     visit(session, "/login")
     visible(session, By.CSS_SELECTOR, 'input[autocomplete=username]').send_keys(who)
-    visible(session, By.CSS_SELECTOR, 'input[autocomplete=current-password]').send_keys("Verify-2026!")
+    visible(session, By.CSS_SELECTOR, 'input[autocomplete=current-password]').send_keys(password)
     button(session, "登录").click()
-    WebDriverWait(session, 12).until(lambda s: "/login" not in s.current_url)
+
+
+def login(session, who, password=SEED_PASSWORD):
+    submit_login(session, who, password)
+    WebDriverWait(session, 12).until(lambda s: urlsplit(s.current_url).path != "/login")
 
 
 def option(session, label, value):
@@ -272,8 +282,131 @@ def reports(stack):
     evidence("reports-db", {"status": report.status, "feedback": feedback, "history": report.history.count()})
 
 
+def wait_path(session, path):
+    WebDriverWait(session, 12).until(lambda browser: urlsplit(browser.current_url).path == path)
+
+
+def evidence_text(session, name):
+    # Capture only visible text, not form values, passwords, source or cookies.
+    assert session.current_url.startswith(APP + "/")
+    text = session.find_element(By.TAG_NAME, "body").text
+    (EVIDENCE / f"{name}.txt").write_text(text + "\n", encoding="utf-8")
+
+
+def login_logout(stack):
+    student = browser(stack)
+    login(student, "s_a")
+    wait_path(student, "/")
+    body_has(student, "学生甲（验证课题组）")
+    cookie = student.get_cookie(settings.SESSION_COOKIE_NAME)
+    assert cookie and Session.objects.filter(session_key=cookie["value"]).exists()
+    screenshot(student, "login-ok")
+
+    wrong = browser(stack)
+    submit_login(wrong, "s_b", "wrong-password")
+    body_has(wrong, "用户名或密码错误")
+    assert urlsplit(wrong.current_url).path == "/login"
+    assert wrong.get_cookie(settings.SESSION_COOKIE_NAME) is None
+    evidence_text(wrong, "login-wrong")
+
+    first = browser(stack)
+    login(first, "s_new")
+    wait_path(first, "/password")
+    body_has(first, "首次登录，请先修改初始密码。")
+    screenshot(first, "login-first-restricted")
+    visit(first, "/datasets")
+    wait_path(first, "/password")
+    new_password = "Verify-2026-new!"
+    for label, value in (("原密码", SEED_PASSWORD), ("新密码", new_password), ("确认新密码", new_password)):
+        label_input(first, label).send_keys(value)
+    button(first, "确认修改").click()
+    wait_path(first, "/")
+    body_has(first, "新同学（验证课题组）")
+    user = User.objects.get(username="s_new")
+    assert not user.must_change_password and user.check_password(new_password)
+    assert not user.check_password(SEED_PASSWORD)
+    screenshot(first, "login-first-change")
+
+    visible(student, By.CSS_SELECTOR, ".topbar .user").click()
+    visible(student, By.XPATH, "//*[@role='menuitem'][normalize-space(.)='退出登录']").click()
+    wait_path(student, "/login")
+    assert student.get_cookie(settings.SESSION_COOKIE_NAME) is None
+    assert not Session.objects.filter(session_key=cookie["value"]).exists()
+    visit(student, "/datasets")
+    WebDriverWait(student, 12).until(lambda b: urlsplit(b.current_url).path == "/login"
+                                  and parse_qs(urlsplit(b.current_url).query).get("next") == ["/datasets"])
+    evidence_text(student, "login-logout")
+    evidence("login-db", {"initial_password_replaced": True, "must_change_password": False, "logged_out_session_removed": True})
+
+
+def members(stack):
+    manager = browser(stack)
+    login(manager, "mgr")
+    visit(manager, "/members")
+    button(manager, "新建成员").click()
+    # Role is no longer a picker. Assert the fixed value and that editing is not offered.
+    role = field_control(manager, "角色", "div[contains(@class,'el-form-item__content')]")
+    assert role.text == "学生"
+    assert not role.find_elements(By.CSS_SELECTOR, "select, [role=combobox], [role=radio]")
+    screenshot(manager, "members-role-limit")
+    initial = "Init-2026-pass!"
+    label_input(manager, "学号 / 工号（登录名）").send_keys("verify_new_student_01")
+    label_input(manager, "姓名").send_keys("合成验证学生丙")
+    label_input(manager, "初始密码").send_keys(initial)
+    button(manager, "保存").click()
+    body_has(manager, "合成验证学生丙")
+    user = User.objects.get(username="verify_new_student_01")
+    assert user.role == User.Role.STUDENT and user.group.name == "验证课题组"
+    assert user.check_password(initial) and user.must_change_password
+    screenshot(manager, "members-create")
+
+    table = "//div[contains(@class,'el-table')]"
+    advisor = visible(manager, By.XPATH, table + "//tr[td[normalize-space(.)='导师甲']]")
+    assert "由运维管理" in advisor.text
+    assert not advisor.find_elements(By.XPATH, ".//button[normalize-space(.)='编辑' or normalize-space(.)='重置密码']")
+    screenshot(manager, "members-no-edit-supervisors")
+
+    row_path = table + "//tr[td[normalize-space(.)='合成验证学生丙']]"
+    button(manager, "编辑", within=row_path).click()
+    static_role = field_control(manager, "角色", "div[contains(@class,'el-form-item__content')]")
+    assert static_role.text == "学生"
+    assert not static_role.find_elements(By.CSS_SELECTOR, "select, [role=combobox], [role=radio]")
+    button(manager, "取消").click()
+    with ExitStack() as initial_stack:
+        initial_student = browser(initial_stack)
+        login(initial_student, user.username, initial)
+        wait_path(initial_student, "/password")
+        body_has(initial_student, "首次登录，请先修改初始密码。")
+    button(manager, "重置密码", within=row_path).click()
+    reset = "Reset-2026-pass!"
+    label_input(manager, "新密码").send_keys(reset)
+    button(manager, "重置").click()
+    body_has(manager, "密码已重置，该成员下次登录时需修改密码")
+    user.refresh_from_db()
+    assert user.must_change_password and user.check_password(reset) and not user.check_password(initial)
+    peer_new = browser(stack)
+    login(peer_new, user.username, reset)
+    wait_path(peer_new, "/password")
+    body_has(peer_new, "首次登录，请先修改初始密码。")
+    screenshot(peer_new, "members-reset")
+
+    peer = browser(stack)
+    login(peer, "s_b")
+    visit(peer, "/members")
+    visible(peer, By.XPATH, row_path)
+    search = visible(peer, By.CSS_SELECTOR, 'input[placeholder="搜索姓名、研究方向"]')
+    assert not peer.find_elements(By.XPATH, "//th[contains(normalize-space(.),'学号 / 工号')]")
+    assert not peer.find_elements(By.XPATH, "//button[normalize-space(.)='新建成员' or normalize-space(.)='重置密码']")
+    screenshot(peer, "members-student-view")
+    search.send_keys(user.username, Keys.TAB)
+    visible(peer, By.CSS_SELECTOR, ".el-table__empty-text")
+    assert not peer.find_elements(By.XPATH, row_path)
+    screenshot(peer, "members-no-username-search")
+    evidence("members-db", {"role": user.role, "group": user.group.name, "initial_password_replaced": True, "must_change_password": True})
+
+
 if __name__ == "__main__":
-    assert django.conf.settings.DATABASES["default"]["NAME"] == "lab_verify"
-    assert django.conf.settings.DATABASES["default"]["HOST"] == "127.0.0.1"
+    assert settings.DATABASES["default"]["NAME"] == "lab_verify"
+    assert settings.DATABASES["default"]["HOST"] == "127.0.0.1"
     with ExitStack() as stack:
-        {"experiments": experiments, "reports": reports}[sys.argv[1]](stack)
+        {"experiments": experiments, "reports": reports, "login": login_logout, "members": members}[sys.argv[1]](stack)

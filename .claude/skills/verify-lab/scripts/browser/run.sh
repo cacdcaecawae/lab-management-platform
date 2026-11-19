@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Only valid for a newly provisioned loopback PostgreSQL service named lab_verify.
 set -euo pipefail
-case "${1:-}" in experiments|reports) ;; *) exit 2;; esac
+case "${1:-}" in experiments|reports|login|members) ;; *) exit 2;; esac
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 test "${GITHUB_ACTIONS:-}" = true
 test "${RUNNER_ENVIRONMENT:-}" = github-hosted
