@@ -75,7 +75,10 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *, date=None, dry_run=False, **options):
-        today = self.parse_day(date)
+        business_today = timezone.localdate(timezone=SHANGHAI)
+        today = self.parse_day(date) if date is not None else business_today
+        if today > business_today and not dry_run:
+            raise CommandError("未来业务日期只能使用 --dry-run 预览，不能发送提醒。")
         enabled = mail.enabled()
         if not enabled and not dry_run:
             self.stdout.write("邮件未启用，跳过。")
@@ -120,8 +123,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def parse_day(value):
-        if value is None:
-            return timezone.localdate(timezone=SHANGHAI)
         try:
             day = date.fromisoformat(value)
             if day.isoformat() != value or not date.min + timedelta(days=7) <= day <= date.max - timedelta(days=30):

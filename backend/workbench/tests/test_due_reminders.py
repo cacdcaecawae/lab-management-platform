@@ -1,6 +1,6 @@
 import smtplib
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 from threading import Event
 
@@ -22,6 +22,12 @@ from workbench.models import ReminderDelivery
 pytestmark = pytest.mark.django_db
 MONDAY = date(2026, 11, 16)
 FRIDAY = date(2026, 11, 20)
+
+
+@pytest.fixture(autouse=True)
+def known_shanghai_date(monkeypatch):
+    # Thursday UTC is already Friday in Asia/Shanghai.
+    monkeypatch.setattr(timezone, "now", lambda: datetime(2026, 11, 19, 16, 30, tzinfo=UTC))
 
 
 def run(day=MONDAY, **kwargs):
@@ -112,6 +118,18 @@ def test_dry_run_disabled_and_input_validation(student_a, monkeypatch):
         run(dry_run=True)
     with pytest.raises(CommandError, match="--date"):
         call_command("send_due_reminders", date="20261116", dry_run=True)
+
+
+def test_future_day_is_preview_only(student_a):
+    a = address(student_a)
+    future = FRIDAY + timedelta(days=1)
+    borrow(a, "FUTURE-PREVIEW", FRIDAY)
+    enable_mail()
+    with pytest.raises(CommandError, match="未来业务日期只能使用 --dry-run"):
+        run(future)
+    assert "FUTURE-PREVIEW" in run(future, dry_run=True)
+    assert not django_mail.outbox
+    assert not ReminderDelivery.objects.exists()
 
 
 def test_temporary_refusal_retries_but_ambiguous_delivery_does_not(student_a, student_b, monkeypatch):

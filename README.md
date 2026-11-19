@@ -122,7 +122,7 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 
 按 Asia/Shanghai 的业务日期计算：试件逾期、设备校准、行动项和周五尚未提交的本周周报。周五早上的周报邮件是**提交前提示**，不表示逾期。邮件由“系统管理 → 邮件”配置；`SITE_URL` 可以填写站点 HTTP(S) 地址（不含账号、路径、查询或片段），不填就只写页面路径。修改环境变量后请按部署流程重建 backend 容器。
 
-先在隔离实例执行 `python manage.py send_due_reminders --dry-run`：不会发送邮件或写发送记录；预览包含内部组内工作内容，只在受控终端查看，不重定向到共享或 cron 日志；不打印 SMTP 凭据。`--date YYYY-MM-DD` 用于指定业务日期（例如合成数据测试；补发历史日期前先人工核对）。
+先在隔离实例执行 `python manage.py send_due_reminders --dry-run`：不会发送邮件或写发送记录；预览包含内部组内工作内容，只在受控终端查看，不重定向到共享或 cron 日志；不打印 SMTP 凭据。`--date YYYY-MM-DD` 用于指定业务日期（例如合成数据测试；补发历史日期前先人工核对）；晚于上海当前业务日的日期仅允许预览。
 
 验证后再由运维人工添加以下 crontab 示例；项目不会自动启用：
 
