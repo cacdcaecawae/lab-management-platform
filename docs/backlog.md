@@ -11,7 +11,7 @@
 | 1 | 设备并发模型检查只看 settings.py 的数据库设置 | [process/…-tla-check-database-settings-only](../.agents/notes/proposed/process/2026-11-18-tla-check-database-settings-only.md) | S | — | 改检查脚本本身 |
 | 2 | 前端其余页面迁入 `src/modules/` | [architecture/…-frontend-modules-rest](../.agents/notes/proposed/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 否 |
 | 3 | 补走浏览器验证欠账 | [testing/…-browser-verification-backlog](../.agents/notes/proposed/testing/2026-11-18-browser-verification-backlog.md) | M（可拆开做） | 最好在 2 之后 | 否 |
-| 4 | 工作台提醒：我借的试件、逾期未还、校准到期 | [feature/…-workbench-reminders](../.agents/notes/proposed/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
+| 4 | 工作台提醒：我借的试件、逾期未还、校准到期（代码完成，浏览器待验收） | [feature/…-workbench-reminders](../.agents/notes/implemented/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
 | 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/proposed/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |
 | 6 | 站内通知（铃铛） | [feature/…-notification-center](../.agents/notes/proposed/feature/2026-11-18-notification-center.md) | M | — | 设备异常的接入点在 `equipment/views.py`：是 |
 | 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/proposed/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |

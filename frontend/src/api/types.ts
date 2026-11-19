@@ -290,8 +290,18 @@ export interface HistoryEntry {
   changes: { field: string; old: unknown; new: unknown }[]
 }
 
+export interface BorrowedSpecimenReminder {
+  loan_id: number
+  specimen: SpecimenBrief
+  borrowed_at: string
+  due_date: string | null
+  overdue: boolean
+}
+
 export interface Dashboard {
   my: {
+    borrowed_specimens: BorrowedSpecimenReminder[]
+    borrowed_specimens_count: number
     action_items: MyActionItem[]
     reports_needing_revision: WeeklyReportBrief[]
     draft_experiments: ExperimentBrief[]
@@ -310,6 +320,10 @@ export interface Dashboard {
   } | null
   // managers only (they maintain equipment and consumables)
   manager: {
+    overdue_loans: (BorrowedSpecimenReminder & { borrower: UserBrief })[]
+    overdue_loans_count: number
+    calibration_due: (EquipmentBrief & { calibration_due: string })[]
+    calibration_due_count: number
     equipment_to_check: EquipmentBrief[]
     low_stock: Consumable[]
   } | null

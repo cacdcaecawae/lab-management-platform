@@ -75,7 +75,9 @@
     "upcoming_bookings": [Booking],     // 本人进行中和将来的预约，按开始时间
     "unreported_bookings": [Booking],   // 本人最近 14 天内结束、还没登记使用结果的"使用"类预约
     "returned_purchases": [Purchase],   // 本人被退回、还没重新提交的采购申请
-    "action_items": [MyActionItem]      // 本人未完成的组会行动项，截止日期近的在前，没有截止日期的在最后
+    "action_items": [MyActionItem],     // 本人未完成的组会行动项，截止日期近的在前，没有截止日期的在最后
+    "borrowed_specimens": [BorrowedSpecimenReminder],  // 本人未还，到期日早的在前，无到期日在最后
+    "borrowed_specimens_count": 0      // 真实总数，不限于预览
   },
   "supervisor": {                      // 仅管理员/导师，否则为 null
     "week_start": "2026-11-16",
@@ -85,12 +87,18 @@
   },
   "manager": {                         // 仅管理员（不含导师），否则为 null
     "equipment_to_check": [EquipmentBrief],   // 状态为"待检查"的设备
-    "low_stock": [Consumable]                 // 库存低于安全库存的耗材
+    "low_stock": [Consumable],                // 库存低于安全库存的耗材
+    "overdue_loans": [BorrowedSpecimenReminder + {borrower: UserBrief}],
+    "overdue_loans_count": 0,
+    "calibration_due": [EquipmentBrief + {calibration_due}],
+    "calibration_due_count": 0
   }
 }
 ```
 
-每个列表最多 20 条。
+每个列表最多 20 条；上述三个 `*_count` 字段为相同条件下的真实总数。
+`BorrowedSpecimenReminder = {loan_id, specimen: SpecimenBrief, borrowed_at, due_date: date | null, overdue}`；不含缺陷参数。
+逾期是到期日小于应用所在时区的当日且未归还。校准提醒包含到期日在当日后 30 天以内及已过期的非停用设备。
 
 ---
 
@@ -222,7 +230,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/equipment/?status=&search=` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置 |
+| GET | `/api/equipment/?status=&search=&calibration_within=30` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置；`calibration_within` 为 0 至 3650 的整数，包含已过期、不含停用和无到期日，按到期日再按 ID 排序；无效值 400 |
 | POST | `/api/equipment/` | 管理员 | `{code, name, model, category, location, custodian_id, status, purchase_date, calibration_due, notes, purchase_id}`；`code` 组内唯一（409 `conflict`）；保管人必须是本组在籍成员；`purchase_id` 只能选本组已到货的采购申请 |
 | GET | `/api/equipment/{id}/` | 本组全员 | `Equipment` 加 `recent_usage: [Booking]`：已开始、未取消的"使用"类预约，最近 20 条，含使用登记 |
 | PATCH | `/api/equipment/{id}/` | 管理员 | 同 POST 字段，只提交要改的字段；没提交的字段保留数据库里的最新值（在行锁下重读，不会把并发的"待检查"写回成旧值）。提交 `status` 时必须同时提交 `status_seen`（打开编辑框时看到的状态，缺了 400）；锁下的当前状态既不是 `status_seen` 也不是新状态时 → 409 `stale_status` |
@@ -291,7 +299,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的 |
+| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1&overdue=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的；`overdue=1` 借用已逾期（按应用时区）且未归还；可叠加 |
 | POST | `/api/specimens/` | 管理员 | `{code, name, kind, material, dimensions, location, custodian_id, status, defects_public, notes, defects: [{kind, size_mm, depth_mm, position, note}]}`；编号组内唯一（409） |
 | GET | `/api/specimens/{id}/` | 本组全员 | |
 | PATCH | `/api/specimens/{id}/` | 管理员 | 同 POST 字段；带 `defects` 时整份替换 |

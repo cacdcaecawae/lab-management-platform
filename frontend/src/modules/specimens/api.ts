@@ -2,7 +2,7 @@ import { api, type Page } from '@/api/client'
 import type { HistoryEntry, ListQuery, LoanWrite, Specimen, SpecimenLoan, SpecimenWrite } from '@/api/types'
 
 export const specimensApi = {
-  // q: search, kind, status, on_loan=1, mine=1 (borrowed by me and not returned)
+  // q: search, kind, status, on_loan=1, overdue=1, mine=1 (borrowed by me and not returned)
   list: (q?: ListQuery) => api.get<Page<Specimen>>('/api/specimens/', q),
   get: (id: number) => api.get<Specimen>(`/api/specimens/${id}/`),
   create: (body: SpecimenWrite) => api.post<Specimen>('/api/specimens/', body),

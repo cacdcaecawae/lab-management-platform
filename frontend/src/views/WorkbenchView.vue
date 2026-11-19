@@ -63,8 +63,11 @@ const tiles = computed(() => {
   if (!d.supervisor || d.my.upcoming_bookings.length) {
     result.push({ label: '我的预约', value: n(d.my.upcoming_bookings), to: { name: 'bookings' } })
   }
+  result.push({ label: '我借的试件', value: String(d.my.borrowed_specimens_count), to: { name: 'specimens', query: { mine: '1' } }, alert: d.my.borrowed_specimens.some((loan) => loan.overdue) })
   if (d.manager) {
     result.push(
+      { label: '逾期未还', value: String(d.manager.overdue_loans_count), to: { name: 'specimens', query: { overdue: '1' } }, alert: d.manager.overdue_loans_count > 0 },
+      { label: '校准到期', value: String(d.manager.calibration_due_count), to: { name: 'equipment', query: { calibration_within: '30' } }, alert: d.manager.calibration_due_count > 0 },
       { label: '待检查的设备', value: n(d.manager.equipment_to_check), to: { name: 'equipment', query: { status: 'needs_check' } }, alert: d.manager.equipment_to_check.length > 0 },
       { label: '库存不足的耗材', value: n(d.manager.low_stock), to: { name: 'consumables' }, alert: d.manager.low_stock.length > 0 },
     )
@@ -196,6 +199,40 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
           </ul>
         </el-card>
 
+        <el-card header="我借的试件" class="wb-card">
+          <el-empty v-if="!data.my.borrowed_specimens.length" :image-size="40" description="没有未归还的试件" />
+          <ul v-else class="rows">
+            <li v-for="loan in data.my.borrowed_specimens" :key="loan.loan_id">
+              <RouterLink :to="{ name: 'specimen-detail', params: { id: loan.specimen.id } }">
+                <span class="code">{{ loan.specimen.code }}</span> {{ loan.specimen.name }}
+              </RouterLink>
+              <span class="hint">{{ loan.due_date ? '到期 ' + loan.due_date : '未设到期日' }}</span>
+              <el-tag v-if="loan.overdue" type="danger" size="small">已逾期</el-tag>
+            </li>
+          </ul>
+        </el-card>
+        <el-card v-if="data.manager" header="逾期未还" class="wb-card">
+          <el-empty v-if="!data.manager.overdue_loans.length" :image-size="40" description="没有逾期借用" />
+          <ul v-else class="rows">
+            <li v-for="loan in data.manager.overdue_loans" :key="loan.loan_id">
+              <RouterLink :to="{ name: 'specimen-detail', params: { id: loan.specimen.id } }">
+                <span class="code">{{ loan.specimen.code }}</span> {{ loan.specimen.name }}
+              </RouterLink>
+              <span class="hint">{{ loan.borrower.name }} · 到期 {{ loan.due_date }}</span>
+            </li>
+          </ul>
+        </el-card>
+        <el-card v-if="data.manager" header="校准到期" class="wb-card">
+          <el-empty v-if="!data.manager.calibration_due.length" :image-size="40" description="没有到期或即将到期的设备" />
+          <ul v-else class="rows">
+            <li v-for="device in data.manager.calibration_due" :key="device.id">
+              <RouterLink :to="{ name: 'equipment-detail', params: { id: device.id } }">
+                <span class="code">{{ device.code }}</span> {{ device.name }}
+              </RouterLink>
+              <span class="hint">校准到期 {{ device.calibration_due }}</span>
+            </li>
+          </ul>
+        </el-card>
         <el-card v-if="data.manager" header="待检查的设备" class="wb-card">
           <el-empty v-if="!data.manager.equipment_to_check.length" :image-size="40" description="没有待检查的设备" />
           <ul v-else class="rows">
