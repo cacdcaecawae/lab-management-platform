@@ -482,3 +482,9 @@
 内嵌对象的序列化器放在对象所属模块的 `serializers.py`：`UserBrief` 在 `accounts`，`ProjectBrief` 在 `projects`，`DatasetBrief` 在 `datasets`，`EquipmentBrief` 在 `equipment`，`ExperimentBrief`、`RunBrief` 在 `research`，`WeeklyReportBrief` 在 `reports`。各 app 直接引用，不要各自重复定义；能引用哪些模块见 `docs/architecture.md` 的分层表。
 
 `type`: `created` | `changed` | `deleted`
+
+### 成果统计
+
+- `GET /api/achievements/stats/` 本组成员；可选 `year_from`、`year_to`（均含）、`status`（默认 `formal`，亦可指定 `all` 或逗号分隔的状态）。原成果列表与导出也接受 `status=formal`，依类型分别选已录用及已发表论文、已授权专利、获奖及已登记软著。
+- 返回 `{status, by_year, by_member, total}`。分组分别附 `year`、`user:{id,name}`；计数列为 `paper,patent,award,software,total`。只展示有符合条件成果的年；本组成员每项各计一次，组总计按成果去重，不要求存在组内作者。
+- `GET /api/achievements/stats/export/` 参数、权限与聚合口径同上，下载两页 Excel，不附全文。

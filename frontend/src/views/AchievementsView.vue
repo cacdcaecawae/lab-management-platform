@@ -19,13 +19,15 @@ import {
 } from '@/utils/format'
 import { showActionError, showError, useFieldErrors } from '@/utils/errors'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
+import AchievementStatsPanel from './AchievementStatsPanel.vue'
 
 const auth = useAuthStore()
+const statsOpen = ref(false)
 const thisYear = new Date().getFullYear()
 const years = Array.from({ length: 10 }, (_, i) => thisYear - i)
 
 // "已录用及以上" is what most applications ask for: accepted and published papers.
-const STATUS_FILTERS: Record<string, string> = { 'accepted,published': '已录用（含已发表）', ...ACHIEVEMENT_STATUS_LABELS }
+const STATUS_FILTERS: Record<string, string> = { formal: '正式成果（按类型）', 'accepted,published': '已录用（含已发表）', ...ACHIEVEMENT_STATUS_LABELS }
 const filters = reactive({ search: '', type: '', year: '' as number | '', status: '', member: '' as number | '' })
 const keyword = ref('')
 const { items, count, page, pageSize, loading, load } = usePagedList(achievementsApi.list, filters)
@@ -144,6 +146,7 @@ async function removeFulltext() {
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <span class="grow" />
+      <el-button @click="statsOpen = true">成果统计</el-button>
       <el-button tag="a" :href="achievementsApi.exportUrl(exportQuery)">导出 Excel</el-button>
       <el-button tag="a" :href="achievementsApi.exportUrl(exportQuery, true)">导出（附全文）</el-button>
       <el-button type="primary" @click="open(null)">登记成果</el-button>
@@ -248,6 +251,9 @@ async function removeFulltext() {
     :values="{ type: ACHIEVEMENT_TYPE_LABELS, status: ACHIEVEMENT_STATUS_LABELS }"
     :labels="{ title: '标题', type: '类型' }"
   />
+  <el-dialog v-model="statsOpen" title="成果统计" width="min(900px, 95vw)" destroy-on-close>
+    <AchievementStatsPanel v-if="statsOpen" />
+  </el-dialog>
 </template>
 
 <style scoped>
