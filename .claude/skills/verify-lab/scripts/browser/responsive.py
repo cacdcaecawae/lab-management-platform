@@ -37,6 +37,23 @@ return {innerWidth,innerHeight,devicePixelRatio,clientWidth:width,
 """
 
 
+def drawer_labels(session):
+    # Element Plus marks the drawer displayed while its entrance transform still
+    # puts text outside the viewport. Wait for rendered labels, not hidden DOM text.
+    drawers = session.find_elements(By.CSS_SELECTOR, '.nav-drawer')
+    if not drawers or not drawers[0].is_displayed():
+        return False
+    ready = session.execute_script(
+        'const r=arguments[0].getBoundingClientRect(); return r.left>=-1 && r.right<=innerWidth+1;',
+        drawers[0],
+    )
+    if not ready:
+        return False
+    items = session.find_elements(By.CSS_SELECTOR, '.nav-drawer [role=menuitem]')
+    labels = [item.text.strip() for item in items if item.is_displayed()]
+    return labels if labels and all(labels) else False
+
+
 def responsive(stack, helpers):
     browser, login = helpers.browser, helpers.login
     visible, screenshot, evidence = helpers.visible, helpers.screenshot, helpers.evidence
@@ -52,8 +69,11 @@ def responsive(stack, helpers):
         menu_button = 'button[aria-label="打开菜单"]'
         visible(session, By.CSS_SELECTOR, menu_button).click()
         visible(session, By.CSS_SELECTOR, '.nav-drawer')
-        names = [e.text.strip() for e in session.find_elements(By.CSS_SELECTOR, '.nav-drawer [role=menuitem]') if e.is_displayed()]
-        assert names and len(names) == len(set(names)), names
+        try:
+            names = WebDriverWait(session, 12).until(drawer_labels)
+        finally:
+            screenshot(session, f'responsive-{role}-menu-ready')
+        assert len(names) == len(set(names)), names
         evidence(f'responsive-{role}-menu', names)
         screenshot(session, f'responsive-{role}-menu')
         # Close without selecting the already-active route (its watcher would not fire).
@@ -61,6 +81,7 @@ def responsive(stack, helpers):
         WebDriverWait(session, 12).until(ec.invisibility_of_element_located((By.CSS_SELECTOR, '.nav-drawer')))
         for i, name in enumerate(names):
             visible(session, By.CSS_SELECTOR, menu_button).click()
+            WebDriverWait(session, 12).until(drawer_labels)
             item = visible(session, By.XPATH, f"//div[contains(@class,'nav-drawer')]//*[@role='menuitem'][normalize-space(.)='{name}']")
             item.click()
             WebDriverWait(session, 12).until(lambda s: any(
