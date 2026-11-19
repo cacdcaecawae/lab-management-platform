@@ -4,13 +4,21 @@
 # Usage, from the repository root on the server: scripts/backup.sh [tag]   (cron runs it daily; update.sh before updating)
 set -euo pipefail
 source "$(dirname "$0")/server-env.sh"
-[[ $# -le 1 ]] || die "用法：scripts/backup.sh [标签|--init]"
+[[ $# -le 1 ]] || die "用法：scripts/backup.sh [标签|--init|--repo-id]"
 if [[ ${1:-} == --init ]]; then
   need_live_backup_settings
+  [[ -z "$BACKUP_REPO_ID" ]] || die "已固定备份仓库身份，拒绝初始化替代仓库"
   first_entry=$(find "$BACKUP_REPO" -mindepth 1 -maxdepth 1 -print -quit) ||
     die "无法检查备份目录"
   [[ -z "$first_entry" ]] || die "只允许在已存在的空目录初始化备份仓库"
-  restic init
+  restic init >/dev/null 2>&1 || die "无法初始化备份仓库，请核对路径、权限和密码"
+  echo "备份仓库已初始化；核实地址后可用 --repo-id 读取身份"
+  exit
+fi
+if [[ ${1:-} == --repo-id ]]; then
+  # Interactive bootstrap; intentionally available before BACKUP_REPO_ID is saved.
+  need_live_backup_settings
+  read_backup_repository_id || die "无法读取指定备份仓库的身份，请核对路径、权限和密码"
   exit
 fi
 need_backup_repository

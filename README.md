@@ -90,6 +90,8 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 备份与恢复：
 
 - `.env` 里设 `BACKUP_REPO`（另一块硬盘上已存在的绝对路径）和 `BACKUP_PASSWORD`。备份用 restic，在容器里运行，服务器不用另装；加密、增量、去重。**密码丢了备份就打不开**，要另外抄一份保存。 首次在已核实的空目录建仓时，请显式运行 `bash scripts/backup.sh --init`。常规备份不会自动创建仓库，读取配置失败直接退出。使用 NAS 时，在同一 `.env` 中填写实际挂载点 `BACKUP_MOUNTPOINT`（例如 `/mnt/nas`）；请勿并发卸载或更换挂载。
+
+- 配置 `BACKUP_MOUNTPOINT` 时，首次初始化（或接入已有仓库）后，在确认挂载目标确实是预期 NAS 仓库的情况下，交互运行 `bash scripts/backup.sh --repo-id`，把返回的完整 64 位小写仓库 ID 保存到**同一** `.env` 的 `BACKUP_REPO_ID`。不要从尚未核实的挂载或失败日志复制 ID。常规备份、恢复、更新遇到缺失或不同的 ID 都会在导库或停站前退出，即使另一个仓库使用同一密码。非挂载点部署可省略此项以保留原行为，也可以主动设定以固定仓库。已固定仓库 ID 时，`--init` 不会新建替代仓库。仓库迁移时，单独核对新仓库身份，再有意更新配置；不要让计划任务自动发现或覆盖 ID。
 - 每天备份一次，保留每天一份 30 天、每月一份 12 个月。在宿主机 `crontab -e` 加一行：
 
   ```cron
