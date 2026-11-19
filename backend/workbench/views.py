@@ -13,6 +13,8 @@ from inventory.models import Consumable
 from inventory.serializers import ConsumableSerializer
 from meetings.models import ActionItem
 from meetings.serializers import MyActionItemSerializer
+from projects.models import Task
+from projects.task_board import WorkbenchTaskSerializer, board_tasks
 from procurement.models import PurchaseRequest
 from procurement.queries import awaiting_review, returned_flag
 from procurement.serializers import PurchaseSerializer
@@ -41,6 +43,11 @@ class DashboardView(APIView):
         )
         data = {
             "my": {
+                "tasks": WorkbenchTaskSerializer(
+                    board_tasks(scope_group(Task.objects.filter(assignee=user), user, "project__group_id"))
+                    .filter(assignee_current=True).exclude(status=Task.Status.DONE).select_related("project")[:LIMIT],
+                    many=True,
+                ).data,
                 "reports_needing_revision": WeeklyReportBriefSerializer(
                     mine.filter(status=WeeklyReport.Status.NEEDS_REVISION)[:LIMIT], many=True
                 ).data,

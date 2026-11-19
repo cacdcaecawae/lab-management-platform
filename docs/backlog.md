@@ -14,7 +14,7 @@
 | 4 | 工作台提醒：我借的试件、逾期未还、校准到期 | [feature/…-workbench-reminders](../.agents/notes/proposed/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
 | 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/proposed/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |
 | 6 | 站内通知（铃铛） | [feature/…-notification-center](../.agents/notes/proposed/feature/2026-11-18-notification-center.md) | M | — | 设备异常的接入点在 `equipment/views.py`：是 |
-| 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/proposed/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |
+| 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/implemented/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |
 | 8 | 每月自动恢复演练 | [process/…-restore-drill](../.agents/notes/proposed/process/2026-11-18-restore-drill.md) | M | — | 否 |
 | 9 | 设备使用统计与导出 | [feature/…-equipment-usage-stats](../.agents/notes/proposed/feature/2026-11-18-equipment-usage-stats.md) | M | — | 否（视图放在新文件） |
 | 10 | 存储用量统计 | [feature/…-storage-usage](../.agents/notes/proposed/feature/2026-11-18-storage-usage.md) | M | — | 否 |

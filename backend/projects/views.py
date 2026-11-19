@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -8,6 +10,7 @@ from rest_framework.response import Response
 from accounts.models import User
 from core.permissions import IsActiveMember, is_supervisor, scope_group
 
+from .task_views import milestones_endpoint, tasks_endpoint
 from .models import Project, ProjectLog
 from .serializers import ProjectLogSerializer, ProjectSerializer
 
@@ -77,3 +80,19 @@ class ProjectViewSet(
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         page = self.paginate_queryset(project.logs.select_related("author"))
         return self.get_paginated_response(self.get_serializer(page, many=True).data)
+
+    def board_project(self):
+        projects = scope_group(Project.objects.all(), self.request.user)
+        if self.request.method == "POST":
+            projects = projects.select_for_update()
+        return get_object_or_404(projects, pk=self.kwargs["pk"])
+
+    @action(detail=True, methods=["get", "post"])
+    @transaction.atomic
+    def tasks(self, request, pk=None):
+        return tasks_endpoint(self, request, self.board_project())
+
+    @action(detail=True, methods=["get", "post"])
+    @transaction.atomic
+    def milestones(self, request, pk=None):
+        return milestones_endpoint(self, request, self.board_project())

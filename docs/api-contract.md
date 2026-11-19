@@ -75,6 +75,7 @@
     "upcoming_bookings": [Booking],     // 本人进行中和将来的预约，按开始时间
     "unreported_bookings": [Booking],   // 本人最近 14 天内结束、还没登记使用结果的"使用"类预约
     "returned_purchases": [Purchase],   // 本人被退回、还没重新提交的采购申请
+    "tasks": [WorkbenchTask],           // 本人当前负责且未完成的项目任务，最多 20 条，截止日期早的在前
     "action_items": [MyActionItem]      // 本人未完成的组会行动项，截止日期近的在前，没有截止日期的在最后
   },
   "supervisor": {                      // 仅管理员/导师，否则为 null
@@ -129,6 +130,25 @@
 不提供删除（结束用 `status=closed`）。
 
 ---
+
+### 项目任务与里程碑
+
+列表分页；截止日期早的在前，空日期最后，相同日期按编号。对象归属原项目，外组请求均 404。
+
+| 方法 | 路径 | 权限和字段 |
+|---|---|---|
+| GET | `/api/projects/{id}/tasks/?status=&assignee=&milestone=` | 本组全员；可按状态、负责人编号、里程碑编号筛选 |
+| POST | `/api/projects/{id}/tasks/` | 本项目现任成员、项目负责人、管理员或导师；`{title, description?, assignee_id?, status?, milestone_id?, due_date?}` |
+| PATCH | `/api/tasks/{id}/` | 同 POST；只提交需要修改的字段，移动卡片使用 `{status}` |
+| DELETE | `/api/tasks/{id}/` | 创建者、项目负责人、管理员或导师；同时删除任务修改历史 |
+| GET | `/api/projects/{id}/milestones/` | 本组全员；含 `task_total` 和 `task_done` |
+| POST | `/api/projects/{id}/milestones/` | 项目负责人、管理员或导师；`{title, due_date?, done?}` |
+| PATCH / DELETE | `/api/milestones/{id}/` | 同 POST；删除后关联任务保留并解除关联 |
+
+任务状态为 `todo`（待办，默认）、`doing`（进行中）或 `done`（完成）。负责人、里程碑、截止日期可为 `null`。任何操作者只能新分配本项目在籍成员（含项目负责人）；历史负责人离开项目、停用或转组后仍保留原姓名，返回 `assignee: {id, name, current: false}`。可以清除或改派；未提交 `assignee_id` 不影响原指派。不可关联同组另一项目的里程碑。任务返回 `milestone: {id, title} | null`、`created_by`（用户 ID）、最多 20 条近期修改记录 `history: [{actor, changes: {field: {before, after}}, created_at}]`；删除里程碑触发的解除关联也记入历史。里程碑的 `done_at` 是独立的人工完成时间，不会随计数自动改变。
+
+工作台 `my.tasks` 返回 `{id, title, due_date, status, project: {id, name}}`，不含已离开项目、停用或转组后的旧指派。
+
 
 ## 数据集与文件（Agent C）
 
