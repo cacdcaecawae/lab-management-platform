@@ -7,8 +7,8 @@ import { ApiError } from '@/api/client'
 
 const api = vi.hoisted(() => ({ update: vi.fn(), create: vi.fn() }))
 vi.mock('../api', () => ({ equipmentApi: { update: api.update, create: api.create } }))
-vi.mock('@/api/members', () => ({ membersApi: { list: () => Promise.resolve({ results: [] }) } }))
-vi.mock('@/api/procurement', () => ({ purchasesApi: { list: () => Promise.resolve({ results: [] }) } }))
+vi.mock('@/modules/members/api', () => ({ membersApi: { list: () => Promise.resolve({ results: [] }) } }))
+vi.mock('@/modules/procurement/api', () => ({ purchasesApi: { list: () => Promise.resolve({ results: [] }) } }))
 
 const global = { plugins: [ElementPlus] }
 

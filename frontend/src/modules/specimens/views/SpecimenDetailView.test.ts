@@ -6,7 +6,7 @@ import SpecimenDetailView from './SpecimenDetailView.vue'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), loans: vi.fn(), giveBack: vi.fn() }))
 vi.mock('../api', () => ({ specimensApi: api }))
-vi.mock('@/api/projects', () => ({ projectsApi: { list: () => Promise.resolve({ results: [] }) } }))
+vi.mock('@/modules/projects/api', () => ({ projectsApi: { list: () => Promise.resolve({ results: [] }) } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 }, isManager: true, isSupervisor: true }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '3' } }), useRouter: () => ({ push: vi.fn() }) }))
 
