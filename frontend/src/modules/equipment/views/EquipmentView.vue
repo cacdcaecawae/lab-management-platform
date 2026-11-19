@@ -30,6 +30,7 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
       </el-select>
       <span class="grow" />
       <el-button @click="router.push({ name: 'bookings' })">预约日历</el-button>
+      <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
       <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增设备</el-button>
     </div>
     <el-table v-loading="loading" :data="items">
