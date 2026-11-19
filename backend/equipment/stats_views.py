@@ -1,7 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from django.db.models import Count, DurationField, ExpressionWrapper, F, Q, Sum
+from django.db.models import Case, Count, DurationField, ExpressionWrapper, F, Q, Sum, Value, When
 from django.db.models.functions import Greatest, Least
 from django.http import HttpResponse
 from django.urls import path
@@ -18,15 +18,13 @@ from .models import Booking, Equipment, UsageReport
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 DIMENSIONS = {
     "equipment": ("equipment_id", "equipment__code", "equipment__name"),
-    "user": ("user_id", "user__name", "user__username"),
-    "project": ("project_id", "project__name"),
 }
 
 
 class StatsQuery(serializers.Serializer):
     from_date = serializers.DateField()
     to_date = serializers.DateField()
-    by = serializers.ChoiceField(choices=(*DIMENSIONS, "month"), default="equipment")
+    by = serializers.ChoiceField(choices=("equipment", "user", "project", "month"), default="equipment")
 
     def validate(self, attrs):
         if not 0 < (attrs["to_date"] - attrs["from_date"]).days <= 366:
@@ -80,17 +78,29 @@ def usage_rows(user, first, last, by):
             day = month_end
         return result
 
-    fields = DIMENSIONS[by]
-    groups = items.values(*fields).annotate(**metrics(start, end)).order_by(*fields)
     if by == "equipment":
+        fields = DIMENSIONS["equipment"]
+        groups = items.values(*fields).annotate(**metrics(start, end)).order_by(*fields)
         mapped = {g["equipment_id"]: g for g in groups}
         return [
             row(pk, f"{code} {name}", mapped.get(pk, {}))
             for pk, code, name in scope_group(Equipment.objects.all(), user).order_by("code", "pk").values_list("pk", "code", "name")
         ]
-    if by == "user":
-        return [row(g["user_id"], g["user__name"] or g["user__username"], g) for g in groups]
-    return [row(g["project_id"], g["project__name"] or "未关联项目", g) for g in groups]
+
+    # Ownership of an old booking is independent of current related-object scope.
+    # Bucket foreign associations anonymously without dropping their usage metrics.
+    local = {f"{by}__group_id": user.group_id}
+    label_field = f"{by}__name"
+    grouped = items.annotate(
+        related_key=Case(When(**local, then=F(f"{by}_id")), default=Value(None)),
+        related_label=Case(When(**local, then=F(label_field)), default=Value("")),
+        related_fallback=Case(When(**local, then=F("user__username")), default=Value("")) if by == "user" else Value(""),
+    ).values("related_key", "related_label", "related_fallback").annotate(**metrics(start, end)).order_by("related_key")
+    fallback = "未归属成员" if by == "user" else "未关联项目"
+    return [
+        row(g["related_key"], g["related_label"] or g["related_fallback"] or fallback, g)
+        for g in grouped
+    ]
 
 
 class EquipmentUsageStatsView(APIView):

@@ -33,6 +33,8 @@ Status: implemented
 - 设备台账工具栏加"使用统计"按钮，只对管理员和导师显示，进入新页面 `equipment/stats`（`modules/equipment/views/EquipmentStatsView.vue`）。
 - 页面上有日期范围（默认本月）、分组方式，一张表，"导出 Excel"按钮，以及"预约时长不等于实际使用时长"的说明。
 
+- 历史预约按设备归属计入总量；按成员或项目展开时，只显示当前仍属本组的关联标识，其他记录合并到未归属行。
+
 ## Alternatives considered
 
 - **只统计已登记使用结果的预约**：更接近实际使用。但很多人用完不登记，这样数字会严重偏低；两列都给，由看的人判断。

@@ -51,3 +51,34 @@ def test_month_clip_and_counts(api, group, manager, advisor, student_a, other_ma
 def test_invalid_query(api, manager, query):
     assert api(manager).get(URL, query).status_code == 400
     assert api(manager).get(URL + "export/", query).status_code == 400
+
+
+def test_historical_usage_keeps_counts_without_out_of_group_labels(api, group, manager, student_a, student_b, project, other_group):
+    equipment = Equipment.objects.create(group=group, code="SCOPE", name="校验")
+    moved = Booking.objects.create(
+        equipment=equipment, user=student_a, project=project, start_at=dt("2026-12-01T09:00"), end_at=dt("2026-12-01T11:00"),
+    )
+    UsageReport.objects.create(booking=moved, condition="abnormal")
+    Booking.objects.create(
+        equipment=equipment, user=student_b, start_at=dt("2026-12-01T12:00"), end_at=dt("2026-12-01T13:00"),
+    )
+    student_a.group = other_group
+    student_a.name = "本组不可见的当前姓名"
+    student_a.save(update_fields=["group", "name"])
+    project.group = other_group
+    project.name = "本组不可见的当前项目名"
+    project.save(update_fields=["group", "name"])
+    client = api(manager)
+    for by, label, expected in [
+        ("user", "未归属成员", [(student_b.pk, 1, 0, 1, 0), (None, 2, 2, 1, 1)]),
+        ("project", "未关联项目", [(None, 3, 2, 2, 1)]),
+    ]:
+        args = {**QUERY, "by": by}
+        result = client.get(URL, args)
+        assert result.status_code == 200
+        fields = ("booked_hours", "reported_hours", "bookings", "abnormal")
+        assert [(r["key"]["id"], *(r[field] for field in fields)) for r in result.data] == expected
+        assert result.data[-1]["key"] == {"id": None, "label": label}
+        exported = client.get(URL + "export/", args)
+        book_rows = list(load_workbook(BytesIO(exported.content)).active.values)[1:]
+        assert book_rows == [(r["key"]["label"], *(r[field] for field in fields)) for r in result.data]

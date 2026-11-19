@@ -486,5 +486,5 @@
 ### 设备使用统计
 
 - `GET /api/equipment/usage-stats/?from=YYYY-MM-DD&to=YYYY-MM-DD&by=equipment|user|project|month`：本组管理员或导师；范围按上海时区左闭右开，最长 366 天。统计未取消使用类预约与区间的交集。
-- 返回 `[{key: {id, label}, booked_hours, reported_hours, bookings, abnormal}]`。已登记预约小时指有使用登记的预约时长，不是实测机时。跨月时按月分摊小时，预约数和异常数仅计入窗口内第一个相交月。设备分组含零预约；项目分组含未关联项目。
+- 返回 `[{key: {id, label}, booked_hours, reported_hours, bookings, abnormal}]`。已登记预约小时指有使用登记的预约时长，不是实测机时。跨月时按月分摊小时，预约数和异常数仅计入窗口内第一个相交月。设备分组含零预约；成员和项目维度只显示当前本组标识，转组成员或外组项目的预约仍计入，分别合并为未归属成员或未关联项目。
 - `GET /api/equipment/usage-stats/export/`：相同参数、权限和聚合口径，下载 Excel。
