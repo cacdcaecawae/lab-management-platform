@@ -16,11 +16,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 
 django.setup()
-from accounts.models import User
-from datasets.models import DataFile, Dataset
+from datasets.models import Dataset
 from datasets.versions import current_version
-from django.core.files.base import ContentFile
-from projects.models import Project
 from reports.models import WeeklyReport
 from research.models import Experiment
 
@@ -117,20 +114,30 @@ def record_path(session, section):
     return session.current_url.removeprefix(APP)
 
 
-def new_experiment_fixture():
-    owner = User.objects.get(username="s_a")
-    proj = Project.objects.get(leader=owner)
-    data = b"t,amp\n0,0\n1,1\n"
-    dataset = Dataset.objects.create(owner=owner, project=proj, name="验证-导波波形")
-    DataFile.objects.create(dataset=dataset, name="wave_001.csv", size=len(data),
-                            file=ContentFile(data, "wave_001.csv"), sha256=sha256(data).hexdigest(), uploaded_by=owner)
-    return dataset
-
-
 def experiments(stack):
-    dataset = new_experiment_fixture()
     student = browser(stack)
     login(student, "s_a")
+    # Create and first-upload through the UI, not an ORM fixture. ORM is read-only evidence.
+    visit(student, "/datasets")
+    button(student, "新建数据集").click()
+    option(student, "项目", "导波螺栓松动")
+    label_input(student, "名称").send_keys("验证-导波波形")
+    button(student, "创建").click()
+    dataset_path = record_path(student, "datasets")
+    dataset = Dataset.objects.get(pk=int(dataset_path.rsplit("/", 1)[1]), owner__username="s_a")
+    assert dataset.name == "验证-导波波形" and not dataset.files.exists()
+    payload = EVIDENCE.parent / "wave_001.csv"
+    data = b"t,amp\n0,0\n1,1\n"
+    payload.write_bytes(data)
+    button(student, "上传文件")
+    WebDriverWait(student, 12).until(ec.presence_of_element_located((By.CSS_SELECTOR, "input[type=file]"))).send_keys(str(payload))
+    body_has(student, "已上传 1 个文件")
+    WebDriverWait(student, 12).until(lambda _: dataset.files.filter(name="wave_001.csv").exists())
+    first = dataset.files.get(name="wave_001.csv")
+    assert first.size == len(data) and first.sha256 == sha256(data).hexdigest()
+    with first.file.open("rb") as saved:
+        assert saved.read() == data
+    screenshot(student, "experiments-dataset-first-upload")
     visit(student, "/experiments")
     button(student, "新建实验记录").click()
     option(student, "项目", "导波螺栓松动")

@@ -47,3 +47,7 @@ AGENTS.md 要求改了页面、接口行为或权限后，按 verify-lab 在浏�
 ## Linux 托管试跑边界（仅前两份）
 
 Windows 验证脚本和本地浏览器限制当前环境。试跑分支先用 Ubuntu 自带 Chrome/ChromeDriver 运行实验记录和周报的合成场景，不给常规 CI 加浏览器门禁，也不改变其余项目的验收顺序。每项使用独立临时库和目录；通过前不把待走查项标记为完成。
+
+2026-11-19 试跑修正：runner.temp 仅在运行步骤的 env 中求值，避免 job env 不支持 runner 上下文而无法启动作业。实验记录试跑改为通过页面新建数据集、上传首个文件，ORM 仅做只读核对，不再代替上述 UI 操作。保持分支限定、只读 token 和托管合成预检；本地验证不伪造 GitHub 托管标记。
+
+本轮检查：actionlint 1.7.11 在原工作流报两处 runner 上下文错误，修复后通过；Bash/Python 编译与三项笔记检查通过。独立本地 PostgreSQL 17 迁移、合成 seed 及 Django/Vite 启动成功；Chromium 创建本地 socket 被 EPERM 拒绝，升级执行重试仍未创建浏览器会话，所以实验和周报 UI 均未在本地验收，等待远端试跑。

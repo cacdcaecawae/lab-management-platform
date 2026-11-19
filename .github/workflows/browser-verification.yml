@@ -42,8 +42,6 @@ jobs:
       DJANGO_SECRET_KEY: synthetic-browser-verification-only
       DJANGO_CSRF_TRUSTED_ORIGINS: http://127.0.0.1:5273
       VITE_BACKEND: http://127.0.0.1:8100
-      BROWSER_EVIDENCE: ${{ runner.temp }}/lab-browser-evidence
-      DATA_ROOT: ${{ runner.temp }}/lab-browser-data
     steps:
       - uses: actions/checkout@v6
         with:
@@ -60,6 +58,8 @@ jobs:
       - run: bash .claude/skills/verify-lab/scripts/browser/run.sh "$SCENARIO"
         env:
           SCENARIO: ${{ matrix.scenario }}
+          BROWSER_EVIDENCE: ${{ runner.temp }}/lab-browser-evidence
+          DATA_ROOT: ${{ runner.temp }}/lab-browser-data
       - uses: actions/upload-artifact@v7
         if: always()
         with:
