@@ -105,6 +105,7 @@ load()
           </el-page-header>
           <span class="grow" />
           <el-button @click="historyOpen = true">修改历史</el-button>
+          <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'specimen', ids: String(specimen.id) } })">打印标签</el-button>
           <el-button v-if="auth.isManager" @click="editing = true">编辑试件</el-button>
           <el-button v-if="canReturn" type="primary" @click="giveBack">登记归还</el-button>
           <el-button v-else-if="canBorrow" type="primary" @click="openBorrow">借用</el-button>

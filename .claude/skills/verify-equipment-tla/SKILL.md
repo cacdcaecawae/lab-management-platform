@@ -27,9 +27,9 @@ description: 用 TLA+ 模型检查器（TLC）穷举设备预约的并发交错�
 bash .claude/skills/verify-equipment-tla/scripts/check.sh
 ```
 
-依赖：Java 11 以上（本机 Java 17），以及 `~/.tlaplus/tla2tools.jar`，也可以用环境变量 `TLA2TOOLS` 指定路径。脚本会核对 jar 的 SHA256，要求是 tla2tools v1.7.4，也就是 TLC 2.19。全部运行约 30 秒。
+依赖：Java 11 以上（本机 Java 17），以及 `~/.tlaplus/tla2tools.jar`，也可以用环境变量 `TLA2TOOLS` 指定路径。脚本会核对 jar 的 SHA256，要求是 tla2tools v1.7.4，也就是 TLC 2.19。数据库设置检查需要 Python 3（默认使用 `python`，可传 `PYTHON`）。全部运行约 30 秒。
 
-脚本先列出被覆盖的代码自 `SYNC` 以来的改动（包括未提交的改动），再跑 10 次 TLC，把每次结果和脚本里写的预期比对：
+脚本先列出被覆盖的代码自 `SYNC` 以来的改动（分别检查 HEAD、暂存区及工作区），再跑 10 次 TLC，把每次结果和脚本里写的预期比对：
 
 - 退出码 0：结果全部符合预期，被覆盖的代码也没变。
 - 退出码 1：有一行是 `DIFF`，或者 TLC 没能运行。
@@ -61,7 +61,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 
 ## 覆盖范围（模型的每一步对应的代码）
 
-截至 `SYNC=e731809`。
+截至 `SYNC=e731809`。从同一基线对照设备模块的三个覆盖文件、设备表单及 `settings.py` 的数据库部分。数据库部分使用 Python AST 识别简单的顶层 `DATABASES` 字典、相关覆盖配置和环境初始化，不执行设置文件；注释和纯格式变化不触发复核。提取不确定（例如动态表达式、二次赋值、通配符导入）时按有改动复核。基线提交不可读取时退出 1，不自动改 `SYNC`。
 
 | 模型动作 | 代码 | 说明 |
 |---|---|---|
