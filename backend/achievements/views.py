@@ -20,7 +20,9 @@ from core.history import serialize_history
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Achievement
+from .queries import filter_status
 from .serializers import AchievementSerializer
+from .stats import export_stats, stats as build_stats
 
 FULLTEXT_TYPES = {".pdf"}
 FULLTEXT_MAX_SIZE = 50 * 1024**2
@@ -51,10 +53,7 @@ class AchievementViewSet(viewsets.ModelViewSet):
         params = self.request.query_params
         if kind := params.get("type"):
             items = items.filter(type=kind) if kind in Achievement.Type.values else items.none()
-        if statuses := [s for s in params.get("status", "").split(",") if s]:  # e.g. accepted,published
-            if set(statuses) - set(Achievement.Status.values):
-                raise ValidationError({"status": ["未知的状态"]})
-            items = items.filter(status__in=statuses)
+        items = filter_status(items, params.get("status"))
         if year := params.get("year"):
             if not year.isdigit():
                 raise ValidationError({"year": ["年份应为数字"]})
@@ -114,6 +113,14 @@ class AchievementViewSet(viewsets.ModelViewSet):
     @action(detail=True)
     def history(self, request, pk=None):
         return Response(serialize_history(self.get_object()))
+
+    @action(detail=False)
+    def stats(self, request):
+        return Response(build_stats(self.get_queryset(), request.user.group_id, request.query_params))
+
+    @action(detail=False, url_path="stats/export")
+    def stats_export(self, request):
+        return export_stats(build_stats(self.get_queryset(), request.user.group_id, request.query_params))
 
     @action(detail=False)
     def export(self, request):

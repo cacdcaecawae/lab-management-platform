@@ -543,3 +543,9 @@
 
 `GET /api/system/logins/` 仅运维。可选 `username`（现有账号的精确登录名）、`outcome=success|failed|throttled`、`from`（含）和 `to`（不含，ISO 8601），使用标准分页。每行为 `{id, at, outcome, account: {id, username} | null, ip: string | null}`。
 `audit_enabled` 表示新采集是否开启。`top_failed_24h` 不受列表筛选影响，仅列已知账号的认证失败次数前五。限流记录每分钟最多一行，不含账号或地址，也不代表拒绝次数。
+
+### 成果统计
+
+- `GET /api/achievements/stats/` 本组成员；可选 `year_from`、`year_to`（均含）、`status`（默认 `formal`，亦可指定 `all` 或逗号分隔的状态）。原成果列表与导出也接受 `status=formal`，依类型分别选已录用及已发表论文、已授权专利、获奖及已登记软著。
+- 返回 `{status, by_year, by_member, total}`。分组分别附 `year`、`user:{id,name}`；计数列为 `paper,patent,award,software,total`。只展示有符合条件成果的年；本组成员每项各计一次，组总计按成果去重，不要求存在组内作者。
+- `GET /api/achievements/stats/export/` 参数、权限与聚合口径同上，下载两页 Excel，不附全文；按成员页包含成员 ID 列，用于区分同名成员。
