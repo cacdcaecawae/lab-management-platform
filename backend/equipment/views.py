@@ -20,6 +20,7 @@ from core.history import serialize_history
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Booking, Equipment, UsageReport
+from .queries import calibration_within
 from .serializers import BookingSerializer, EquipmentSerializer, UsageReportSerializer
 
 logger = logging.getLogger(__name__)
@@ -83,12 +84,20 @@ class EquipmentViewSet(
         equipment = scope_group(
             Equipment.objects.select_related("custodian", "purchase"), self.request.user
         ).annotate(in_use=in_use_now())
-        status_filter = self.request.query_params.get("status")
-        if self.action != "list" or not status_filter:  # list filters must not turn detail URLs into 404s
+        if self.action != "list":  # list filters must not turn detail URLs into 404s
             return equipment
-        if status_filter not in Equipment.Status.values:
-            return equipment.none()
-        return equipment.filter(status=status_filter)
+        params = self.request.query_params
+        if value := params.get("calibration_within"):
+            try:
+                days = int(value)
+                if not 0 <= days <= 3650:
+                    raise ValueError
+            except ValueError:
+                raise ValidationError({"calibration_within": ["请输入 0 到 3650 的整数天数。"]}) from None
+            equipment = calibration_within(equipment, days).order_by("calibration_due", "id")
+        if status_filter := params.get("status"):
+            equipment = equipment.filter(status=status_filter) if status_filter in Equipment.Status.values else equipment.none()
+        return equipment
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)

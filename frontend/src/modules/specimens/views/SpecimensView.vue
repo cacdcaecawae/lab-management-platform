@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { specimensApi } from '../api'
 import type { Specimen } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
@@ -11,7 +11,16 @@ import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
-const filters = reactive({ search: '', kind: '', status: '', on_loan: '' as 1 | '', mine: '' as 1 | '' })
+const route = useRoute()
+const queryFlag = (value: unknown): 1 | '' => value === '1' ? 1 : ''
+const filters = reactive({
+  search: '',
+  kind: '',
+  status: '',
+  on_loan: queryFlag(route.query.on_loan),
+  mine: queryFlag(route.query.mine),
+  overdue: queryFlag(route.query.overdue),
+})
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(specimensApi.list, filters)
 const creating = ref(false)
@@ -31,6 +40,7 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
       </el-select>
       <el-checkbox v-model="filters.on_loan" :true-value="1" false-value="">只看借出的</el-checkbox>
       <el-checkbox v-model="filters.mine" :true-value="1" false-value="">我借的</el-checkbox>
+      <el-checkbox v-model="filters.overdue" :true-value="1" false-value="">逾期未还</el-checkbox>
       <span class="grow" />
       <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增试件</el-button>
     </div>
