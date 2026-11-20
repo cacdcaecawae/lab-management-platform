@@ -5,10 +5,12 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +28,7 @@ exit 0
 '''
 
 DOCKER = r'''
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 root = pathlib.Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 with (root / 'calls').open('a') as f:
@@ -55,6 +57,31 @@ elif args[-1:] == ['config']:
           'volumes:\n  labdata:\n    name: infra_labdata\n  pgdata:\n    name: infra_pgdata\n  static:\n    name: infra_static')
 if 'pull' in args and mode == 'pull-fails':
     sys.exit(1)
+if 'pull' in args and mode == 'slow-pull':
+    time.sleep(2)  # the other install runs its checks meanwhile
+if args[:2] == ['ps', '-aq'] and mode == 'existing-containers':
+    print('3f2a9c1d0b7e')  # another "infra" project's container, with no named volumes
+networks = root / 'networks'
+if args[:1] == ['network'] and args[1] in ('create', 'rm', 'inspect'):
+    import fcntl
+    with (root / 'networks.lock').open('a') as guard:  # the daemon serialises network changes
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        names = networks.read_text().split() if networks.exists() else []
+        if args[1] == 'inspect':
+            sys.exit(0 if args[-1] in names else 1)
+        if args[1] == 'create' and mode == 'network-fails':
+            print('Error response from daemon: all predefined address pools have been fully subnetted', file=sys.stderr)
+            sys.exit(1)
+        if args[1] == 'create' and args[-1] in names:
+            print(f'Error response from daemon: network with name {args[-1]} already exists', file=sys.stderr)
+            sys.exit(1)
+        if args[1] == 'create':
+            names.append(args[-1])
+            print('id-' + args[-1])  # Docker prints the new network's ID
+        else:
+            assert args[-1].startswith('id-'), 'removed by name, not by the ID it created'
+            names.remove(args[-1][3:])
+        networks.write_text(''.join(n + '\n' for n in names))
 if args[0] == 'compose' and 'run' in args:
     create('infra_labdata')  # Compose creates the volumes a service mounts before running it
 if args[-1] == 'init' and mode == 'init-fails-once' and not (root / 'init_failed').exists():  # e.g. not writable
@@ -136,6 +163,10 @@ class Install(unittest.TestCase):
         path = self.root / 'calls'
         return path.read_text().splitlines() if path.exists() else []
 
+    def locks(self):
+        path = self.root / 'networks'
+        return path.read_text().split() if path.exists() else []
+
     def started(self):
         return any('"up"' in c for c in self.calls())
 
@@ -156,10 +187,10 @@ class Install(unittest.TestCase):
         self.assertEqual(env['DJANGO_CSRF_TRUSTED_ORIGINS'], 'http://localhost:8090,http://127.0.0.1:8090')
         self.assertEqual(env['BACKUP_REPO'], str(self.root / 'site' / 'lab-backup'))
         self.assertTrue((self.root / 'site' / 'lab-backup').is_dir())
-        self.assertFalse((self.dir / '.install-lock').exists())
+        self.assertEqual(self.locks(), [])  # released
         self.assertEqual([p.name for p in self.dir.glob('.env.*')], [])
         calls = self.calls()
-        pull = next(i for i, c in enumerate(calls) if '"pull", "backend", "web"' in c)
+        pull = next(i for i, c in enumerate(calls) if c.endswith('"--profile", "ops", "pull"]'))  # every image
         init = next(i for i, c in enumerate(calls) if c.startswith('["run"') and c.endswith('"restic/restic:0.19.1", "init"]'))
         up = next(i for i, c in enumerate(calls) if c.endswith('"up", "-d", "--no-build"]'))
         self.assertLess(pull, init)
@@ -200,7 +231,7 @@ class Install(unittest.TestCase):
                 self.assertFalse((self.root / 'shell_input').exists())  # no ops account on a wrong site
 
     def test_host_opens_the_port_and_port_80_has_no_suffix(self):
-        r = self.install('--host', '192.168.1.20', '--port', '80')
+        r = self.install('--host', '192.168.1.20', '--port', '080')  # Compose reads "080" as 80
         self.assertEqual(r.returncode, 0, r.stderr)
         env = self.settings()
         self.assertEqual(env['HTTP_PORT'], '80')
@@ -222,6 +253,10 @@ class Install(unittest.TestCase):
         words = shlex.split(cron)
         self.assertEqual(words[:2], ['cd', str(self.dir)])
         self.assertEqual(words[-2:], [f'{self.dir}-backup.log', '2>&1'])
+        # cron's own PATH (/usr/bin:/bin) may lack docker, and its sh is not the bash 4 the scripts need
+        self.assertEqual(words[3], f'PATH={self.root / "bin"}:/usr/bin:/bin')
+        self.assertTrue(os.path.isabs(words[4]) and words[4].endswith('bash'), words)
+        self.assertEqual(words[5], 'scripts/backup.sh')
         update = re.search(r'更新：\s+(.+)$', r.stdout, re.M).group(1)
         self.assertEqual(shlex.split(update)[:2], ['cd', str(self.dir)])
 
@@ -236,15 +271,31 @@ class Install(unittest.TestCase):
 
     def test_an_install_in_progress_is_left_alone(self):
         shutil.copytree(self.env['FIXTURE'], self.dir)
-        (self.dir / '.install-lock').mkdir()
+        (self.root / 'networks').write_text('lab-platform-install\n')  # held by another install
         (self.dir / '.env.tmp').write_text('theirs')
         r = self.install()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('另一个安装正在进行', r.stderr)
-        self.assertTrue((self.dir / '.install-lock').is_dir())  # not ours to remove
+        self.assertEqual(self.locks(), ['lab-platform-install'])  # not ours to release
         self.assertEqual((self.dir / '.env.tmp').read_text(), 'theirs')
         self.assertFalse((self.dir / '.env').exists())
         self.assertFalse(self.started())
+
+    def test_two_directories_at_once_only_one_reaches_the_start(self):
+        # Both use Compose project "infra" and its volumes; neither sees the other's volumes before `up`.
+        env = dict(self.env, MODE='slow-pull')
+        runs = []
+        for name in ('one', 'two'):  # both read the script at once, as two `curl | bash` would
+            with (ROOT / 'scripts/install.sh').open() as script:
+                runs.append(subprocess.Popen(['bash', '-s', '--', '--dir', str(self.root / 'site' / name)], env=env,
+                                             text=True, stdin=script, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        results = [run.communicate(timeout=60) for run in runs]
+        codes = sorted(run.returncode for run in runs)
+        self.assertEqual(codes[0], 0, results)
+        self.assertNotEqual(codes[1], 0, results)
+        self.assertEqual(sum('"up"' in c for c in self.calls()), 1)
+        self.assertIn('另一个安装正在进行', ''.join(err for _, err in results))
+        self.assertEqual(self.locks(), [])
 
     def test_run_from_inside_a_clone_installs_that_clone(self):
         shutil.copytree(self.env['FIXTURE'], self.dir)
@@ -258,8 +309,9 @@ class Install(unittest.TestCase):
         self.assertFalse(any(c.startswith('git clone') for c in self.calls()))
 
     def test_failures_before_start_leave_nothing_behind(self):
-        cases = (('existing-volumes', None), ('unlabeled-volume', None), ('volume-query-fails', None),
-                 ('pull-fails', None), ('', 'no release'), ('', 'release without tag'))
+        cases = (('existing-volumes', None), ('unlabeled-volume', None), ('existing-containers', None),
+                 ('volume-query-fails', None), ('pull-fails', None), ('network-fails', None),
+                 ('', 'no release'), ('', 'release without tag'))
         for mode, release in cases:
             with self.subTest(mode=mode, release=release):
                 for leftover in (self.dir, self.root / 'site' / 'lab-backup'):
@@ -275,10 +327,44 @@ class Install(unittest.TestCase):
                 self.assertNotEqual(r.returncode, 0)
                 self.assertFalse((self.dir / '.env').exists())
                 self.assertEqual([p.name for p in self.dir.glob('.env.*')], [])
-                self.assertFalse((self.dir / '.install-lock').exists())
+                self.assertEqual(self.locks(), [])
                 self.assertFalse((self.root / 'site' / 'lab-backup').exists())
                 self.assertFalse(self.started())
                 self.assertNotIn('down -v', r.stderr)  # never suggest deleting volumes it did not create
+                if 'volumes' in mode or mode.endswith('volume'):
+                    self.assertEqual(r.stderr.count('infra_pgdata'), 1, r.stderr)  # named once, by name or label
+                if mode.startswith('existing') or mode.endswith('volume'):
+                    # It may be another application's: never tell the operator to delete it.
+                    self.assertIn('也可能属于别的应用', r.stderr)
+                    self.assertNotIn('再删除', r.stderr)
+                    self.assertNotIn('volume rm', r.stderr)
+                if mode == 'network-fails':
+                    self.assertIn('建不了安装锁', r.stderr)
+                    self.assertNotIn('另一个安装正在进行', r.stderr)
+
+    def test_interrupted_install_cleans_up_like_a_failure(self):
+        # Ctrl-C (INT to the process group), kill (TERM), a dropped SSH session (HUP), while pulling images.
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=sig.name):
+                for leftover in (self.dir, self.root / 'site' / 'lab-backup'):
+                    shutil.rmtree(leftover, ignore_errors=True)
+                for leftover in ('calls', 'volumes', 'networks'):
+                    (self.root / leftover).unlink(missing_ok=True)
+                with (ROOT / 'scripts/install.sh').open() as script:
+                    run = subprocess.Popen(['bash', '-s', '--', '--dir', str(self.dir)], stdin=script, text=True,
+                                           env=dict(self.env, MODE='slow-pull'), start_new_session=True,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                deadline = time.time() + 20
+                while not any(c.endswith('"pull"]') for c in self.calls()):
+                    self.assertLess(time.time(), deadline, 'never reached the image pull')
+                    time.sleep(0.05)
+                os.killpg(run.pid, sig)
+                out, err = run.communicate(timeout=30)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertFalse((self.dir / '.env').exists(), err)  # else a retry says "already installed"
+                self.assertFalse((self.root / 'site' / 'lab-backup').exists())
+                self.assertEqual(self.locks(), [])
+                self.assertFalse(self.started())
 
     def test_failed_backup_init_can_simply_be_retried(self):
         r = self.install(mode='init-fails-once')
@@ -297,8 +383,10 @@ class Install(unittest.TestCase):
         # The volumes it names were checked to be absent before the install; never a blanket `down -v`.
         self.assertIn('docker volume rm infra_labdata infra_pgdata infra_static', r.stderr)
         self.assertNotIn('down -v', r.stderr)
+        # An operator's shell may export COMPOSE_PROJECT_NAME for another stack: the printed commands name theirs.
+        self.assertIn("docker compose -p 'infra' -f infra/docker-compose.prod.yml --env-file .env down", r.stderr)
         self.assertFalse((self.root / 'shell_input').exists())
-        self.assertFalse((self.dir / '.install-lock').exists())
+        self.assertEqual(self.locks(), [])
 
     def test_bad_arguments_and_missing_docker_stop_before_anything(self):
         for args, mode in ((['--host', 'http://x'], ''), (['--port', '0'], ''), (['--bogus'], ''), ([], 'docker-down')):

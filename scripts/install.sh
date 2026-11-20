@@ -2,8 +2,8 @@
 # One-command install of the newest release, on a machine with Docker (compose plugin), git and curl:
 #   curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash
 #   curl -fsSL .../scripts/install.sh | bash -s -- --host 192.168.1.20 --port 80 --dir /srv/lab-management-platform
-# Linux; Windows inside WSL; macOS with a bash 4+ (brew install bash). Run from inside a clone
-# (bash scripts/install.sh) to install that clone instead.
+# Linux; Windows inside WSL. Not macOS: update.sh (GNU sed -i) and the printed cron line (bash 4) do not run
+# there. Run from inside a clone (bash scripts/install.sh) to install that clone instead.
 # Clones the repository at the newest published GitHub release, writes .env with random secrets (readable by the
 # owner only, plain HTTP), pulls that release's images, initialises a backup repository next to the install
 # directory, starts the site and creates the ops account with a one-time password. Later: scripts/update.sh
@@ -16,11 +16,15 @@ rand() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
 sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; } # one shell word, for the commands printed to copy
 
 # What this run created, for cleanup: a failed or concurrent run removes only its own files.
-dir='' backup='' tmp='' locked='' env_created='' backup_created='' started='' volume_names=''
+dir='' backup='' tmp='' lock_id='' env_created='' backup_created='' started='' project='' volume_names=''
+LOCK=lab-platform-install
 
 main() {
-  [ "${BASH_VERSINFO[0]}" -ge 4 ] || die "需要 bash 4 以上。Mac 先 brew install bash，再用新装的 bash 运行"
-  case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) die "Windows 上请在 WSL 里运行（Docker Desktop 打开 WSL 集成）" ;; esac
+  [ "${BASH_VERSINFO[0]}" -ge 4 ] || die "需要 bash 4 以上"
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) die "Windows 上请在 WSL 里运行（Docker Desktop 打开 WSL 集成）" ;;
+    Darwin) die "暂不支持 Mac：装好以后的更新和每日备份脚本在 Mac 上还不能运行。请用 Linux，或者 Windows 的 WSL" ;;
+  esac
 
   local port=8090 host='' self=${BASH_SOURCE[0]:-}
   dir=lab-management-platform
@@ -34,7 +38,8 @@ main() {
       *) die "不认识的参数：$1（可用：--dir 安装目录、--port 端口、--host 让别的电脑用这个 IP 或域名访问）" ;;
     esac
   done
-  [[ $port =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "端口应是 1 到 65535：$port"
+  [[ $port =~ ^[0-9]{1,5}$ ]] && port=$((10#$port)) && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] ||
+    die "端口应是 1 到 65535：$port" # 10#: "080" is port 80, as Compose reads it
   # shortcut: host names and IPv4 only; IPv6 literals need brackets in the origins, add them when someone needs it
   [[ -z $host || $host =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] ||
     die "--host 只写主机名或 IP，不带 http:// 和端口：$host"
@@ -56,10 +61,18 @@ main() {
   cd "$dir"
   dir=$PWD
   trap 'cleanup $?' EXIT
-  # One install per directory at a time (mkdir is atomic); the checks below hold only under this lock.
-  mkdir .install-lock 2>/dev/null ||
-    die "$dir 里有另一个安装正在进行。确认没有安装在运行后，删掉 $dir/.install-lock 再重试"
-  locked=1
+  # On a signal the EXIT trap would see the last command's status (0) and clean up as after a success.
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  # One install at a time on this Docker, held to the end: every install uses Compose project "infra" and its
+  # volumes, so two at once (even from two directories, or WSL and another distro) would both pass the volume
+  # check below. A network name is unique per Docker daemon and creating one is atomic. Released by its ID.
+  lock_id=$(docker network create --label "lab-platform.install=$dir" "$LOCK") || {
+    docker network inspect "$LOCK" >/dev/null 2>&1 &&
+      die "这台电脑的 Docker 上另一个安装正在进行。等它结束；确认没有安装在运行后，运行 docker network rm $LOCK 再重试"
+    die "建不了安装锁（Docker 网络 $LOCK），原因见上面 Docker 的报错"
+  }
   [ ! -e .env ] || die "$dir 已经安装过。更新用：cd $(sq "$dir") && bash scripts/update.sh"
   git diff --quiet HEAD || die "$dir 里有未提交的改动（git status 查看），处理后再安装"
 
@@ -68,7 +81,7 @@ main() {
   local version
   version=$(curl -fsSL "${LAB_RELEASE_API:-https://api.github.com/repos/cacdcaecawae/lab-management-platform/releases/latest}" |
     sed -nE 's/.*"tag_name":[[:space:]]*"(v[0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1) || true
-  [ -n "$version" ] || die "查不到已发布的正式版本：还没有发布过，或者连不上 api.github.com"
+  [ -n "$version" ] || die "查不到已发布的正式版本：还没有发布过、连不上 api.github.com，或者请求太频繁（稍后再试）"
   git rev-parse -q --verify "refs/tags/$version" >/dev/null || die "仓库里没有 $version 这个标签"
   git checkout --quiet "$version"
 
@@ -115,23 +128,26 @@ main() {
   export ENV_FILE=.env COMPOSE_FILE=infra/docker-compose.prod.yml
   # shellcheck source=server-env.sh
   source scripts/server-env.sh
-  # Any volume this stack would use, by its real name: Compose reuses one created by hand or moved back without
-  # its labels. Plus any volume labelled with the project.
-  local config project existing labelled clash
+  # Nothing of Compose project "infra" may exist yet: any volume this stack would use, by its real name (Compose
+  # reuses one created by hand or moved back without labels), and any volume or container labelled with the
+  # project ("infra" is a common directory name: another application's containers would be replaced).
+  local config existing labelled containers clash
   config=$(dc config) || die "读不出 Docker Compose 的配置"
   project=$(sed -n 's/^name: //p' <<<"$config" | head -n 1)
   volume_names=$(awk '/^volumes:/ { v = 1; next } /^[^ ]/ { v = 0 } v && /^    name: / { print $2 }' <<<"$config")
   [ -n "$project" ] && [ -n "$volume_names" ] || die "读不出 Docker Compose 的项目名和数据卷名"
-  existing=$(docker volume ls -q) && labelled=$(docker volume ls -q --filter "label=com.docker.compose.project=$project") ||
-    die "查不出这台电脑上已有哪些 Docker 数据卷，停止安装"
+  existing=$(docker volume ls -q) &&
+    labelled=$(docker volume ls -q --filter "label=com.docker.compose.project=$project") &&
+    containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") ||
+    die "查不出这台电脑的 Docker 上已有哪些数据卷和容器，停止安装"
   clash=$(grep -xF -f <(printf '%s\n' "$volume_names") <<<"$existing" || true)
-  [ -z "$clash$labelled" ] ||
-    die "这台电脑上已经有平台的数据卷：$(echo $clash $labelled)。不要覆盖它们：换一台电脑，或者先备份再删除这些数据卷"
+  [ -z "$clash$labelled$containers" ] ||
+    die "这台电脑的 Docker 上已经有 Compose 项目 $project 的数据卷或容器（数据卷：$(printf '%s\n' $clash $labelled | sort -u | tr '\n' ' ')容器 $(wc -w <<<"$containers") 个）。它们可能是这个平台以前的安装，也可能属于别的应用；安装不会动它们。换一台电脑，或者先查清它们是什么"
   volume_names=$(echo $volume_names) # one line, for the retry hint
 
   echo "== 下载 $version 的镜像"
-  dc pull backend web ||
-    die "拉不到 $version 的镜像。确认 GitHub 的 Packages 页里两个镜像是 Public；国内可以先 export IMAGE_PREFIX=<镜像仓库地址> 再安装"
+  dc --profile ops pull ||
+    die "拉不到 $version 的镜像。平台的两个镜像：确认 GitHub 的 Packages 页里是 Public，国内可以先 export IMAGE_PREFIX=<镜像仓库地址> 再安装；postgres、restic 来自 Docker Hub，拉不到时给 Docker 配置镜像加速"
 
   echo "== 初始化备份仓库 $backup"
   mkdir "$backup"
@@ -164,8 +180,10 @@ main() {
   printf 'from accounts.models import User\nUser.objects.create_superuser("ops", password="%s")\n' "$password" |
     dc exec -T backend python manage.py shell >/dev/null
 
+  # cron runs with PATH=/usr/bin:/bin: name docker's directory and this bash (4+, which the scripts need).
   local cron
-  cron="30 2 * * * cd $(sq "$dir") && bash scripts/backup.sh >> $(sq "$dir-backup.log") 2>&1"
+  cron="30 2 * * * cd $(sq "$dir") && PATH=$(sq "$(dirname "$(command -v docker)"):/usr/bin:/bin") $(sq "$BASH")"
+  cron+=" scripts/backup.sh >> $(sq "$dir-backup.log") 2>&1"
   cat <<EOF
 
 安装完成：$version
@@ -178,7 +196,8 @@ main() {
               备份密码是 .env 里的 BACKUP_PASSWORD，另外抄一份保存，丢了备份就打不开。
   每天备份：  crontab -e 加一行：
               ${cron//%/\\%}
-  更新：      cd $(sq "$dir") && bash scripts/update.sh
+  更新：      cd $(sq "$dir") && bash scripts/update.sh <新版本号>
+              新版本号看"系统管理 → 版本"，那里只列正式发布了的版本
 EOF
   if [ -n "$host" ]; then
     echo "  别的电脑打不开时，检查防火墙是否放行了 $port 端口。现在是 HTTP，只在内网用；公网要先配 HTTPS（README）。"
@@ -198,7 +217,8 @@ cleanup() {
     fi
     [ -z "$env_created" ] || echo "安装没有完成，本次生成的配置和备份目录已删除。处理好上面的问题后重新运行。" >&2
   elif [ "$rc" != 0 ]; then
-    compose="docker compose -f infra/docker-compose.prod.yml --env-file .env"
+    # -p: an operator's shell may export COMPOSE_PROJECT_NAME for another stack (README, manual restore).
+    compose="docker compose -p $(sq "$project") -f infra/docker-compose.prod.yml --env-file .env"
     echo "安装没有完成，网站可能已经部分启动。查看原因：cd $(sq "$dir") && $compose logs backend" >&2
     echo "要从头重装，依次运行（下面这些数据卷是这次安装新建的，安装前已确认它们都不存在）：" >&2
     echo "  cd $(sq "$dir")" >&2
@@ -206,7 +226,7 @@ cleanup() {
     echo "  docker volume rm $volume_names" >&2
     echo "  rm .env && sudo rm -rf $(sq "$backup")" >&2
   fi
-  [ -z "$locked" ] || rmdir -- "$dir/.install-lock" 2>/dev/null || true
+  [ -z "$lock_id" ] || docker network rm "$lock_id" >/dev/null 2>&1 || echo "请手动释放安装锁：docker network rm $LOCK" >&2
 }
 
 # Everything runs from main: piped from curl, and git checkout may replace this file while it runs.
