@@ -19,6 +19,9 @@ if args[0] != "compose":
     if os.environ.get("MODE") == "collision":
         print("existing")
     sys.exit(0)
+if "record_ops_run" in args:  # the status line on the live stack, not the drill project
+    assert args[1:3] == ["--env-file", os.environ["ENV_FILE"]] and os.environ["COMPOSE_FILE"] == "infra/docker-compose.prod.yml"
+    sys.exit(int(os.environ.get("MODE") == "record-fails"))
 if os.environ.get("MODE") == "ok":
     assert os.environ["BACKUP_REPO"] == "/fixture-repository" and "BACKUP_PASSWORD" not in os.environ
 assert args[1] == "--project-name" and args[2].startswith("labdrill-")
@@ -67,7 +70,8 @@ class RestoreDrillTests(unittest.TestCase):
             check({("app", "0003")}, disk)
 
     def test_restore_drill(self):
-        for mode in ("ok", "missing", "corrupt", "cleanup", "collision", "right-id", "wrong-id", "missing-id", "missing-mount"):
+        for mode in ("ok", "missing", "corrupt", "cleanup", "collision", "right-id", "wrong-id", "missing-id", "missing-mount",
+                     "record-fails"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 self.run_case(mode, Path(directory))
 
@@ -104,8 +108,16 @@ class RestoreDrillTests(unittest.TestCase):
         assert not list(tmp_path.glob("labdrill.*"))
         assert ("down --volumes --remove-orphans" in calls) == (mode != "collision")
         assert ("dump " in calls) == (mode not in ("collision", "wrong-id"))
-        assert (result.returncode == 0) == (mode in ("ok", "right-id")), (result.stdout, result.stderr)
-        assert ("演练通过" in result.stdout) == (mode in ("ok", "right-id"))
+        passed = mode in ("ok", "right-id", "record-fails")
+        assert (result.returncode == 0) == passed, (result.stdout, result.stderr)
+        assert ("演练通过" in result.stdout) == passed
+        [record] = [line.split(" record_ops_run ")[1] for line in calls.splitlines() if "record_ops_run" in line]
+        if passed:
+            assert record == "drill ok --snapshot aaaaaaaa --detail 附件校验：1 项", record
+        else:
+            assert record.startswith("drill failed --snapshot " + ("aaaaaaaa" if mode in ("missing", "corrupt", "cleanup") else "")), record
+            assert "退出码 1" in record
+        assert ("没能记到网站上" in result.stderr) == (mode == "record-fails")
         if mode == "wrong-id":
             assert "身份不符" in result.stderr and "snapshots" not in calls and "up -d" not in calls
         if mode == "corrupt":

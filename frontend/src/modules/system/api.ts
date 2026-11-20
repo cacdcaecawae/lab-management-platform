@@ -12,7 +12,14 @@ import type {
   VersionInfo,
 } from '@/api/types'
 
-export type StorageInfo = { primary: 'nas' | 'local'; nas_ready: boolean | null }
+export type OpsRun = { finished_at: string; ok: boolean; snapshot: string; detail: string }
+export type StorageInfo = {
+  primary: 'nas' | 'local'
+  nas_ready: boolean | null
+  backup: { last_ok: OpsRun | null; last_failure: OpsRun | null; overdue: boolean; failing: boolean }
+  drill: { last: OpsRun | null; overdue: boolean }
+  attention: boolean
+}
 
 export const systemApi = {
   storage: () => api.get<StorageInfo>('/api/system/storage-status/'),

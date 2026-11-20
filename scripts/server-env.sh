@@ -11,6 +11,12 @@ die() { echo "$*" >&2; exit 1; }
 dc() { docker compose --env-file "$ENV_FILE" "$@"; }
 envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1 | tr -d '\r'; }
 restic() { dc --profile ops run --rm -T restic "$@"; }
+# Tell the site (系统管理 → 存储与备份) how a job ended. A one-off container, because update.sh backs up with backend
+# stopped; failing to record only warns, and a job that never records shows as overdue there.
+record_ops_run() {
+  dc run --rm --no-deps -T backend python manage.py record_ops_run "$@" </dev/null >/dev/null 2>&1 ||
+    echo "结果没能记到网站上，不影响这次任务本身" >&2
+}
 
 # Supported paths are absolute local bind mounts. Ensure the same values are used by shell
 # checks and Compose even if an interactive environment inherited a conflicting value.

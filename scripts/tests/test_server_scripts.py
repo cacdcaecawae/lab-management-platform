@@ -13,13 +13,19 @@ A = 'a' * 64
 B = 'b' * 64
 
 DOCKER = r'''
-import json, os, pathlib, sys
+import json, os, pathlib, signal, sys
 root = pathlib.Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 with (root / 'calls').open('a') as f:
     f.write(json.dumps(args) + '\n')
 command = ' '.join(args)
 mode = os.environ.get('MODE', '')
+if 'record_ops_run' in args:
+    sys.exit(1 if mode == 'record-fails' else 0)
+if 'restic backup' in command:
+    if mode != 'no-snapshot':
+        print('snapshot abcdef12 saved')
+    sys.exit(0)
 if 'cat config' in command:
     assert 'BACKUP_REPO_ID' not in os.environ
     if mode == 'bad-repo':
@@ -29,8 +35,10 @@ if 'cat config' in command:
     print(json.dumps(config, indent=2) if mode != 'malformed-config' else '{"id": "wrong"}')
     sys.exit(0)
 if 'pg_dump' in command:
+    if mode == 'dump-int':
+        os.kill(os.getppid(), signal.SIGINT)  # Ctrl-C reaches backup.sh while it waits for the dump
     print('synthetic dump')
-    sys.exit(0)
+    sys.exit(1 if mode == 'dump-fails' else 0)
 if args[-2:] == ['config', '--quiet'] and mode == 'bad-compose':
     sys.exit(1)
 if '--single-transaction' in command and 'psql' in command:
@@ -496,7 +504,7 @@ class ServerScripts(unittest.TestCase):
                     self.assertNotIn('untrusted backend diagnostics', r.stdout + r.stderr)
         self.assertTrue(any('cat' in c for c in self.calls()))
         self.assertFalse(any(set(c) & {'exec', 'stop', 'up', 'pull', 'init', 'dump', 'backup', 'restore', 'forget'}
-                             for c in self.calls()))
+                             for c in self.calls() if 'record_ops_run' not in c))
 
     def test_matching_pin_can_backup_and_is_not_logged(self):
         self.configure_repository_pin(A)
@@ -508,6 +516,38 @@ class ServerScripts(unittest.TestCase):
         db_step = next(i for i, c in enumerate(calls) if any('pg_dump' in arg for arg in c))
         self.assertLess(digest_step, db_step)
         self.assertTrue(any('backup' in c for c in calls))
+
+    def records(self):
+        return [c[c.index('record_ops_run') + 1:] for c in self.calls() if 'record_ops_run' in c]
+
+    def test_backup_records_its_result_on_the_site(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        r = self.run_script('backup.sh', 'before-v0.2.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.count('snapshot abcdef12 saved'), 1)  # update.sh needs exactly one
+        self.assertEqual(self.records(), [['backup', 'ok', '--snapshot', 'abcdef12', '--detail', '标签 before-v0.2.0']])
+        # update.sh backs up with backend stopped, so this must be a one-off container, not exec.
+        record = next(c for c in self.calls() if 'record_ops_run' in c)
+        self.assertEqual(record[:8], ['compose', '--env-file', '.env', 'run', '--rm', '--no-deps', '-T', 'backend'])
+
+    def test_backup_failure_and_interruption_are_recorded_with_the_step(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        for mode, rc, step in [('bad-repo', 1, '检查备份仓库'), ('dump-fails', 1, '导出数据库'),
+                               ('dump-int', 130, '导出数据库'), ('no-snapshot', 1, '写入备份仓库')]:
+            with self.subTest(mode=mode):
+                (self.root / 'calls').unlink(missing_ok=True)
+                r = self.run_script('backup.sh', mode=mode)
+                self.assertEqual(r.returncode, rc, r.stderr)
+                [[kind, result, _, snap, _, detail]] = self.records()
+                self.assertEqual((kind, result, snap), ('backup', 'failed', ''))
+                self.assertIn(f'{step}失败', detail)
+                self.assertIn(f'退出码 {rc}', detail)
+
+    def test_failing_to_record_never_changes_the_backup_result(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        r = self.run_script('backup.sh', mode='record-fails')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('没能记到网站上', r.stderr)
 
     def test_optional_pin_also_verifies_non_mount_repo(self):
         self.configure_repository_pin(A, mounted=False)

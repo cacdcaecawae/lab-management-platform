@@ -43,7 +43,7 @@ export DRILL_APP_VERSION=$version DRILL_SCRIPT=$PWD/scripts/restore-drill-verify
 export COMPOSE_PROFILES=
 project=labdrill-${DRILL_DIR##*.}
 project=${project,,}
-started=no
+started=no id= summary=
 dc() { docker compose --project-name "$project" --file infra/docker-compose.drill.yml --env-file "$env_file" "$@"; }
 cleanup() {
   local rc=$?
@@ -53,7 +53,16 @@ cleanup() {
     rc=1
   fi
   rm -rf -- "$DRILL_DIR" || rc=1
-  if [[ $rc != 0 ]]; then echo "演练失败（项目 $project，退出码 $rc，见上方日志）" >&2; fi
+  local result=ok
+  if [[ $rc != 0 ]]; then
+    echo "演练失败（项目 $project，退出码 $rc，见上方日志）" >&2
+    result=failed summary="退出码 $rc，见演练日志"
+  fi
+  [[ "$id" =~ ^[0-9a-f]{64}$ ]] || id=
+  # The one write to the live stack: a status line for 系统管理 → 存储与备份. It never changes the drill's result.
+  COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml} docker compose --env-file "$env_file" \
+    run --rm --no-deps -T backend python manage.py record_ops_run drill "$result" --snapshot "${id:0:8}" \
+    --detail "$summary" </dev/null >/dev/null 2>&1 || echo "演练结果没能记到网站上，不影响演练本身" >&2
   exit "$rc"
 }
 trap cleanup EXIT
@@ -94,10 +103,11 @@ while IFS=$'\t' read -r kind path checksum; do
   checked=$((checked + 1))
 done < "$DRILL_DIR/includes"
 if [[ "$checked" == 0 ]]; then
-  echo "备份无这两类附件；未验证文件内容"
+  summary="备份无这两类附件；未验证文件内容"
 else
-  echo "附件校验：$checked 项"
+  summary="附件校验：$checked 项"
 fi
+echo "$summary"
 dc down --volumes --remove-orphans
 started=no
 echo "演练通过"

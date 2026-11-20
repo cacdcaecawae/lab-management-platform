@@ -3,12 +3,18 @@ from pathlib import Path
 
 import pytest
 from django.core.files.base import ContentFile
+from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from core.nas_storage import MARKER, NasFileStorage, StorageUnavailable
 
 URL = "/api/system/storage-status/"
 IDENTITY = "isolated-synthetic-test"
+
+
+def storage(client):
+    data = client.get(URL).json()
+    return data["primary"], data["nas_ready"]
 
 
 def mount(settings, tmp_path):
@@ -52,13 +58,16 @@ def test_absent_directory_is_not_created(settings, tmp_path):
 @pytest.mark.django_db
 def test_status_is_read_only_and_restricted(settings, tmp_path, api, ops, manager):
     client = api(ops)
-    assert client.get(URL).json() == {"primary": "local", "nas_ready": None}
+    assert storage(client) == ("local", None)
     assert client.post(URL, {"primary": "nas"}, format="json").status_code == 405
     assert api(manager).get(URL).status_code == 403
     assert APIClient().get(URL).status_code in (401, 403)
     root, marker = mount(settings, tmp_path)
-    assert client.get(URL).json() == {"primary": "nas", "nas_ready": True}
+    call_command("record_ops_run", "backup", "ok")
+    assert storage(client) == ("nas", True)
+    assert client.get(URL).json()["attention"] is False
     marker.unlink()
     marker.symlink_to(tmp_path / "not-the-nas")
-    assert client.get(URL).json() == {"primary": "nas", "nas_ready": False}
+    assert storage(client) == ("nas", False)
+    assert client.get(URL).json()["attention"] is True  # file operations are paused
     assert list(Path(root).iterdir()) == []

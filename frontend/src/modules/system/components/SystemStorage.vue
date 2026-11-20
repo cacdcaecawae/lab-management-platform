@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { systemApi, type StorageInfo } from '@/modules/system/api'
+import { systemApi, type OpsRun, type StorageInfo } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
+import { formatTime } from '@/utils/format'
 
-const info = ref<StorageInfo | null>(null)
+// Shared with SystemView, whose tab label says when something here needs attention.
+const info = defineModel<StorageInfo | null>('info', { default: null })
 const checking = ref(false)
 
 async function check() {
@@ -16,6 +18,10 @@ async function check() {
   } finally {
     checking.value = false
   }
+}
+
+function describe(run: OpsRun) {
+  return [formatTime(run.finished_at), run.snapshot && `快照 ${run.snapshot.slice(0, 8)}`, run.detail].filter(Boolean).join('，')
 }
 
 onMounted(check)
@@ -31,7 +37,39 @@ onMounted(check)
     </el-descriptions-item>
   </el-descriptions>
   <p>NAS 挂载和凭据由服务器运维配置。此处只检查读取，不写入文件，也不代表备份已成功。</p>
-  <el-button :loading="checking" @click="check">检查连接</el-button>
-  <h3>备份</h3>
-  <p>备份需保存在独立目标。请由运维在服务器查看备份任务日志和恢复演练结果。</p>
+  <el-button :loading="checking" @click="check">重新检查</el-button>
+  <el-descriptions v-if="info" title="备份" :column="1" border class="backup">
+    <el-descriptions-item label="最近成功的备份">
+      <template v-if="info.backup.last_ok">{{ describe(info.backup.last_ok) }}</template>
+      <template v-else>尚无成功备份：确认已按安装结束时的提示加了每日定时任务</template>
+      <el-tag v-if="info.backup.overdue && info.backup.last_ok" type="danger" size="small">逾期</el-tag>
+    </el-descriptions-item>
+    <el-descriptions-item label="最近一次失败">
+      <span v-if="info.backup.last_failure" :class="info.backup.failing ? 'failing' : 'old'">
+        {{ describe(info.backup.last_failure) }}
+      </span>
+      <template v-else>无</template>
+    </el-descriptions-item>
+    <el-descriptions-item label="最近一次恢复演练">
+      <template v-if="info.drill.last">
+        <el-tag :type="info.drill.last.ok ? 'success' : 'danger'" size="small">{{ info.drill.last.ok ? '通过' : '失败' }}</el-tag>
+        {{ describe(info.drill.last) }}
+      </template>
+      <template v-else>尚无恢复演练</template>
+      <el-tag v-if="info.drill.overdue" type="danger" size="small">逾期</el-tag>
+    </el-descriptions-item>
+  </el-descriptions>
+  <p>备份由服务器上的每日定时任务运行；超过 26 小时没有成功的备份、或超过 35 天没有通过的恢复演练，会标为逾期。</p>
 </template>
+
+<style scoped>
+.backup {
+  margin-top: 24px;
+}
+.failing {
+  color: var(--el-color-danger);
+}
+.old {
+  color: var(--el-text-color-secondary);
+}
+</style>
