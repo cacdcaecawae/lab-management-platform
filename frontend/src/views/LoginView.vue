@@ -41,6 +41,7 @@ async function submit() {
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="auth-alert" />
         <el-button type="primary" native-type="submit" :loading="loading" class="auth-submit">登录</el-button>
       </el-form>
+      <p class="auth-sub">还没有账号？打开课题组管理员发的注册链接申请。</p>
     </div>
   </div>
 </template>

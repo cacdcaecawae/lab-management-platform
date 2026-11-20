@@ -74,13 +74,18 @@ class AccountSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "username", "name", "role", "group", "email", "phone", "research_direction", "is_active",
-            "must_change_password", "last_login",
+            "must_change_password", "pending", "last_login",
         ]
-        read_only_fields = ["username", "must_change_password", "last_login"]
+        read_only_fields = ["username", "must_change_password", "pending", "last_login"]
         extra_kwargs = {"name": {"allow_blank": False}}
 
     def get_group(self, user):
         return {"id": user.group_id, "name": user.group.name} if user.group_id else None
+
+    def update(self, user, validated_data):
+        if validated_data.get("is_active"):
+            validated_data["pending"] = False  # ops switching an applicant on is an approval
+        return super().update(user, validated_data)
 
 
 class AccountCreateSerializer(NewAccountMixin, AccountSerializer):
@@ -89,7 +94,7 @@ class AccountCreateSerializer(NewAccountMixin, AccountSerializer):
 
     class Meta(AccountSerializer.Meta):
         fields = [*AccountSerializer.Meta.fields, "group_id", "password"]
-        read_only_fields = ["is_active", "must_change_password", "last_login"]
+        read_only_fields = ["is_active", "must_change_password", "pending", "last_login"]
         # Keep the format check but drop DRF's UniqueValidator: duplicates are a 409, as on the members page.
         extra_kwargs = {
             "name": {"required": True, "allow_blank": False},

@@ -33,10 +33,11 @@ class GroupMemberField(serializers.PrimaryKeyRelatedField):
 
 
 class AnyGroupMemberField(GroupMemberField):
-    """Also former (inactive) members: for records that outlive membership, e.g. a graduate's achievements."""
+    """Also former (inactive) members: for records that outlive membership, e.g. a graduate's achievements.
+    Not applicants waiting for approval: they were never members."""
 
     def get_queryset(self):
-        return scope_group(User.objects.all(), self.context["request"].user)
+        return scope_group(User.objects.filter(pending=False), self.context["request"].user)
 
 
 class GroupProjectField(serializers.PrimaryKeyRelatedField):
