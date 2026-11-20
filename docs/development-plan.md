@@ -183,3 +183,12 @@ AI 额度与 Magpie 对接；团队培养与毕业交接；分片上传与断点
 - 用独立 Compose 项目恢复完整数据库；校验迁移记录及抽样附件 SHA256。备份源只读，网站和正式数据库不参与。
 - 已验证：合成命令替身覆盖成功、缺失、损坏、清理失败、同名项目；迁移编号匹配规则通过单元测试。
 - 未验证：真实 Docker、PostgreSQL、restic 组合演练和生产定时任务；没有变更部署。
+
+## 一键安装（2026-11-19）
+
+方案见[一键安装](../.agents/notes/implemented/process/2026-11-19-one-line-install.md)。
+
+- `curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash`：下载最新正式版本，生成随机密钥和密码，按 HTTP 配好，初始化备份仓库，启动并新建运维账号 `ops`（一次性密码）。已装过、已有数据卷或备份目录时不覆盖。
+- 发布说明固定写新安装和升级命令；新增 `SECURITY.md`，仓库打开私密漏洞报告和 Dependabot 安全更新。
+- 验证：8 个脚本测试；WSL Ubuntu 上用临时标签实际安装、首次登录改密、备份、拒绝重装、`update.sh` 升级到下一个临时版本。
+- 未验证：从 ghcr.io 拉取（还没发版）、Mac、`--host` 下其他电脑访问。

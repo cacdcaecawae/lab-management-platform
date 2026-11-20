@@ -43,6 +43,13 @@ jobs:
           push: true
           tags: ${{ env.IMAGE }}/web:${{ github.ref_name }}
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+      # --notes goes above the generated list of merged PRs
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --notes "$NOTES"
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES: |
+            **新安装**：`curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash`（README"一键安装"）
+
+            **从旧版本升级**：在安装目录运行 `bash scripts/update.sh ${{ github.ref_name }}`。会先停站备份；新版本起不来时，没改数据库结构的自动退回，改过的停站等运维处理（README"服务器部署"）。
+
+            升级前看一遍下面合并的 PR；改了部署、配置或需要手动操作的，以对应 PR 的说明为准。
