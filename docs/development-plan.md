@@ -99,7 +99,7 @@
 方案见[发版、更新与备份](../.agents/notes/implemented/process/2026-11-18-release-update-backup.md)。
 
 - GitHub Actions：推送 `main` 和每个 PR 跑 `scripts/check.sh`；推送 `vX.Y.Z` 标签时先跑同样的检查，再从这条提交构建镜像推到 ghcr.io，并生成发布说明。
-- 服务器：`.env` 的 `APP_VERSION` 选用镜像；`scripts/update.sh` 拉取 → 备份 → 切换 → 健康检查，失败自动退回（新版本改过数据库结构时先恢复数据库）；`scripts/backup.sh`、`restore.sh` 用 restic，每天一份留 30 天、每月一份留 12 个月。
+- 服务器：`.env` 的 `APP_VERSION` 选用镜像；`scripts/update.sh` 拉取 → 停站备份 → 切换 → 健康检查；失败时，迁移记录没变就自动退回，变了或无法核对就停站保留数据，由运维处理（见下文和 README）；`scripts/backup.sh`、`restore.sh` 用 restic，每天一份留 30 天、每月一份留 12 个月。
 - "系统管理 → 版本"：当前版本、GitHub 上的最新版本和更新命令，有新版本时标签页写"有更新"。
 
 验证范围（2026-11-18）：后端 370 个、前端 66 个测试和生产构建通过；"系统管理 → 版本"在浏览器里看过（从源码运行、仓库还没有正式发布时的显示，GitHub 实际返回 404）。在本机用一个本地镜像仓库代替 ghcr.io，造了三个测试版本，用真实的 Docker 和 restic 走过：
