@@ -7,5 +7,9 @@ COPY frontend/ .
 RUN npm run build
 
 FROM nginx:1.29-alpine
+# The HTTPS-only readiness probe uses system CA verification and connects to loopback.
+RUN apk add --no-cache curl
 COPY infra/nginx.conf /etc/nginx/conf.d/default.conf
+COPY infra/nginx.health.inc /etc/nginx/lab/health.inc
+COPY infra/nginx.site.inc /etc/nginx/lab/site.inc
 COPY --from=build /src/dist /usr/share/nginx/html

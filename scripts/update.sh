@@ -34,6 +34,14 @@ main() {
   dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
   check_backup_repository
 
+  if tls_mode; then
+    for file in infra/docker-compose.https.yml infra/nginx.https.conf.template infra/nginx.acme.inc \
+      infra/nginx.health.inc infra/nginx.site.inc; do
+      git cat-file -e "refs/tags/$target:$file" 2>/dev/null ||
+        die "$target 不支持当前的 HTTPS 配置（缺少 $file），未停止网站；跨旧版本请按 README 手动处理"
+    done
+  fi
+
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web
   previous=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)

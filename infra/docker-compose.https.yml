@@ -1,0 +1,49 @@
+# Only enable AFTER certbot has created live/$HTTPS_DOMAIN/{fullchain,privkey}.pem.
+# Use instead of docker-compose.acme.yml, never together.
+services:
+  backend:
+    environment:
+      DJANGO_SECURE_COOKIES: "1"
+      DJANGO_ALLOWED_HOSTS: "${HTTPS_DOMAIN:?set HTTPS_DOMAIN}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "https://${HTTPS_DOMAIN:?set HTTPS_DOMAIN}"
+  web:
+    environment:
+      HTTPS_DOMAIN: "${HTTPS_DOMAIN:?set HTTPS_DOMAIN}"
+      HTTPS_HSTS_MAX_AGE: "${HTTPS_HSTS_MAX_AGE:-300}"
+      NGINX_ENVSUBST_FILTER: '^HTTPS_(DOMAIN|HSTS_MAX_AGE)$'
+    ports:
+      - "443:443"
+    volumes:
+      # The image's official entrypoint renders this over default.conf; that file remains writable.
+      - type: bind
+        source: "./nginx.https.conf.template"
+        target: /etc/nginx/templates/default.conf.template
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "./nginx.acme.inc"
+        target: /etc/nginx/lab/acme.inc
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ACME_WEBROOT:-/srv/lab-certbot/www}"
+        target: /srv/certbot/www
+        read_only: true
+        bind:
+          create_host_path: false
+      # Mount only this lineage. live/ symlinks still reach archive/ on renewal;
+      # ACME account credentials and other lineages never enter the container.
+      - type: bind
+        source: "${ACME_CERT_ROOT:-/etc/letsencrypt}/live/${HTTPS_DOMAIN:?set HTTPS_DOMAIN}"
+        target: /etc/letsencrypt/live/${HTTPS_DOMAIN:?set HTTPS_DOMAIN}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ACME_CERT_ROOT:-/etc/letsencrypt}/archive/${HTTPS_DOMAIN:?set HTTPS_DOMAIN}"
+        target: /etc/letsencrypt/archive/${HTTPS_DOMAIN:?set HTTPS_DOMAIN}
+        read_only: true
+        bind:
+          create_host_path: false
