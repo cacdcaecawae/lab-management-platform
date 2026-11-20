@@ -16,18 +16,18 @@ curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platfor
 
 - 支持 Linux。Windows 在 WSL 里运行（Docker Desktop 打开 WSL 集成）；Mac 要 bash 4 以上（`brew install bash`）。
 - 脚本依次：下载仓库并切到最新发布的版本 → 生成 `.env`（随机密钥和密码，只有本人能读，按 HTTP 配好）→ 拉取这个版本的镜像 → 在安装目录旁边建备份仓库 → 启动，核对运行的镜像和监听地址 → 新建运维账号 `ops`，打印一次性密码，第一次登录必须改。
-- 端口、版本等都以生成的 `.env` 为准，终端里导出的同名变量（例如 `HTTP_PORT`、`APP_VERSION`）不起作用。
+- 端口、版本、数据库用户名等都以生成的 `.env` 和 Compose 文件里的默认值为准，终端里导出的同名变量（例如 `HTTP_PORT`、`APP_VERSION`、`POSTGRES_USER`）不起作用。
 - 默认装在当前目录的 `lab-management-platform/`，只有这台电脑能打开 <http://localhost:8090>。参数加在 `bash -s --` 后面：
 
   ```bash
   curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash -s -- --host 192.168.1.20 --port 80 --dir /srv/lab-management-platform
   ```
 
-  `--host` 让别的电脑用这个 IP 或域名访问，`--port` 改端口，`--dir` 改安装目录。已经 clone 了仓库的，在仓库里运行 `bash scripts/install.sh`，就装在这份仓库里。
+  `--host` 让别的电脑用这个 IP 或域名访问，`--port` 改端口，`--dir` 改安装目录。已经 clone 了仓库的，在仓库里运行 `bash scripts/install.sh`，就装在这份仓库里；国内打不开 `raw.githubusercontent.com` 时也这样装。
 - 装好后是 HTTP，只在内网或 VPN 里用；放到公网前，先按下文"正式域名 HTTPS"配好证书。
 - 备份和网站在同一块硬盘上：换到第二块硬盘或 NAS 见下文"备份与恢复"；每天备份的定时任务，按安装结束时的提示加上。
 - 更新：`cd lab-management-platform && bash scripts/update.sh`，见下文"服务器部署"。国内拉不动 ghcr.io 时，安装前先 `export IMAGE_PREFIX=<镜像仓库地址>`，以后更新也会用它。
-- 已经有一套数据（同名的 Docker 数据卷）、查不出有没有数据、目录已经装过、备份目录已存在、同一目录里另一个安装正在进行时，脚本直接停下，不覆盖任何东西。安装被强行中断后，如果提示有另一个安装正在进行，确认没有在运行，再删掉目录里的 `.install-lock`。
+- 已经有一套数据（同名的 Docker 数据卷，带不带 Compose 标签都算）、查不出有没有数据、目录已经装过、备份目录已存在、同一目录里另一个安装正在进行时，脚本直接停下，不覆盖任何东西。安装被强行中断后，如果提示有另一个安装正在进行，确认没有在运行，再删掉目录里的 `.install-lock`。
 
 ## 本机试用（和服务器上同一套）
 

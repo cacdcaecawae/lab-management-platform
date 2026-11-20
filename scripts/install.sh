@@ -16,7 +16,7 @@ rand() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
 sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; } # one shell word, for the commands printed to copy
 
 # What this run created, for cleanup: a failed or concurrent run removes only its own files.
-dir='' backup='' tmp='' locked='' env_created='' backup_created='' started=''
+dir='' backup='' tmp='' locked='' env_created='' backup_created='' started='' volume_names=''
 
 main() {
   [ "${BASH_VERSINFO[0]}" -ge 4 ] || die "需要 bash 4 以上。Mac 先 brew install bash，再用新装的 bash 运行"
@@ -104,20 +104,30 @@ main() {
   tmp='' env_created=1
 
   # Only .env decides: Compose prefers a variable exported in this shell (an HTTP_PORT without 127.0.0.1, another
-  # APP_VERSION...), and later updates read .env alone.
+  # APP_VERSION, a POSTGRES_USER...), and later updates from a clean shell read .env and the defaults alone.
   while IFS='=' read -r key _; do
     if [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then unset "$key"; fi
   done < <(grep -v '^#' .env)
+  for key in $(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' infra/docker-compose.prod.yml | cut -c3- | sort -u); do
+    unset "$key"
+  done
   unset COMPOSE_PROJECT_NAME COMPOSE_PROFILES
   export ENV_FILE=.env COMPOSE_FILE=infra/docker-compose.prod.yml
   # shellcheck source=server-env.sh
   source scripts/server-env.sh
-  local project volumes
-  project=$(dc config | sed -n 's/^name: //p' | head -n 1) && [ -n "$project" ] || die "读不出 Docker Compose 的项目名"
-  volumes=$(docker volume ls -q --filter "label=com.docker.compose.project=$project") ||
+  # Any volume this stack would use, by its real name: Compose reuses one created by hand or moved back without
+  # its labels. Plus any volume labelled with the project.
+  local config project existing labelled clash
+  config=$(dc config) || die "读不出 Docker Compose 的配置"
+  project=$(sed -n 's/^name: //p' <<<"$config" | head -n 1)
+  volume_names=$(awk '/^volumes:/ { v = 1; next } /^[^ ]/ { v = 0 } v && /^    name: / { print $2 }' <<<"$config")
+  [ -n "$project" ] && [ -n "$volume_names" ] || die "读不出 Docker Compose 的项目名和数据卷名"
+  existing=$(docker volume ls -q) && labelled=$(docker volume ls -q --filter "label=com.docker.compose.project=$project") ||
     die "查不出这台电脑上已有哪些 Docker 数据卷，停止安装"
-  [ -z "$volumes" ] ||
-    die "这台电脑上已经有一套平台的数据（Docker 项目 $project 的数据卷）。不要覆盖它：换一台电脑，或者先备份再删除那些数据卷"
+  clash=$(grep -xF -f <(printf '%s\n' "$volume_names") <<<"$existing" || true)
+  [ -z "$clash$labelled" ] ||
+    die "这台电脑上已经有平台的数据卷：$(echo $clash $labelled)。不要覆盖它们：换一台电脑，或者先备份再删除这些数据卷"
+  volume_names=$(echo $volume_names) # one line, for the retry hint
 
   echo "== 下载 $version 的镜像"
   dc pull backend web ||
@@ -126,7 +136,12 @@ main() {
   echo "== 初始化备份仓库 $backup"
   mkdir "$backup"
   backup_created=1
-  bash scripts/backup.sh --init >/dev/null
+  # Only the backup directory is mounted. Compose's restic service also mounts the data volume, so running it
+  # would create that volume before the site starts, and a retry after a failed init would find "existing data".
+  local restic_image
+  restic_image=$(dc --profile ops config --images | grep -m 1 '^restic/restic:') || die "读不出备份工具 restic 的镜像名"
+  RESTIC_PASSWORD=$(envget BACKUP_PASSWORD) docker run --rm -e RESTIC_REPOSITORY=/repo -e RESTIC_PASSWORD \
+    -v "$backup:/repo" "$restic_image" init >/dev/null || die "备份仓库初始化失败：确认 $backup 可以写入"
 
   echo "== 启动 $version"
   started=1
@@ -185,8 +200,11 @@ cleanup() {
   elif [ "$rc" != 0 ]; then
     compose="docker compose -f infra/docker-compose.prod.yml --env-file .env"
     echo "安装没有完成，网站可能已经部分启动。查看原因：cd $(sq "$dir") && $compose logs backend" >&2
-    echo "要从头重装（数据卷是这次安装新建的，安装前已确认没有旧数据）：" >&2
-    echo "  cd $(sq "$dir") && $compose down -v && rm .env && sudo rm -rf $(sq "$backup")" >&2
+    echo "要从头重装，依次运行（下面这些数据卷是这次安装新建的，安装前已确认它们都不存在）：" >&2
+    echo "  cd $(sq "$dir")" >&2
+    echo "  $compose down" >&2
+    echo "  docker volume rm $volume_names" >&2
+    echo "  rm .env && sudo rm -rf $(sq "$backup")" >&2
   fi
   [ -z "$locked" ] || rmdir -- "$dir/.install-lock" 2>/dev/null || true
 }

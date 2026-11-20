@@ -34,19 +34,36 @@ with (root / 'calls').open('a') as f:
 mode = os.environ.get('MODE', '')
 def env_file(key):
     return [l.split('=', 1)[1] for l in pathlib.Path('.env').read_text().splitlines() if l.startswith(key + '=')][-1]
+volumes = root / 'volumes'  # what Compose has created, like the Docker daemon remembers it
+def create(*names):
+    with volumes.open('a') as f:
+        f.write(''.join(n + '\n' for n in names))
 if args[:1] == ['info'] and mode == 'docker-down':
     sys.exit(1)
 if args[:2] == ['volume', 'ls']:
     if mode == 'volume-query-fails':
         sys.exit(1)
-    if mode == 'existing-volumes':
-        print('infra_pgdata')
-if args[-1:] == ['config']:
-    print('name: infra\nservices:')
+    labelled = any(a.startswith('label=') for a in args)
+    if mode == 'existing-volumes' or (mode == 'unlabeled-volume' and not labelled):
+        print('infra_pgdata')  # unlabeled: created by hand, or moved back from another machine
+    if volumes.exists():
+        print(volumes.read_text(), end='')
+if args[0] == 'compose' and 'config' in args and '--images' in args:
+    print('postgres:17-alpine\nghcr.io/x/backend:v\nghcr.io/x/web:v\nrestic/restic:0.19.1')
+elif args[-1:] == ['config']:
+    print('name: infra\nservices:\n  backend:\n    volumes:\n      - source: labdata\n'
+          'volumes:\n  labdata:\n    name: infra_labdata\n  pgdata:\n    name: infra_pgdata\n  static:\n    name: infra_static')
 if 'pull' in args and mode == 'pull-fails':
     sys.exit(1)
+if args[0] == 'compose' and 'run' in args:
+    create('infra_labdata')  # Compose creates the volumes a service mounts before running it
+if args[-1] == 'init' and mode == 'init-fails-once' and not (root / 'init_failed').exists():  # e.g. not writable
+    (root / 'init_failed').touch()
+    sys.exit(1)
 if 'up' in args:
-    keys = ('APP_VERSION', 'HTTP_PORT', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'ENV_FILE', 'IMAGE_PREFIX')
+    create('infra_labdata', 'infra_pgdata', 'infra_static')
+    keys = ('APP_VERSION', 'HTTP_PORT', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'ENV_FILE', 'IMAGE_PREFIX',
+            'POSTGRES_USER', 'POSTGRES_DB', 'MAX_UPLOAD_SIZE')
     (root / 'up_env').write_text(json.dumps({k: os.environ.get(k) for k in keys}))
 if 'ps' in args and '--format' in args:
     service = args[-1]
@@ -76,7 +93,8 @@ class Install(unittest.TestCase):
         (fixture / '.git').mkdir(parents=True)
         (fixture / 'infra').mkdir()
         shutil.copytree(ROOT / 'scripts', fixture / 'scripts', ignore=shutil.ignore_patterns('tests', '__pycache__'))
-        shutil.copyfile(ROOT / 'infra/server.env.example', fixture / 'infra/server.env.example')
+        for name in ('server.env.example', 'docker-compose.prod.yml'):
+            shutil.copyfile(ROOT / 'infra' / name, fixture / 'infra' / name)
         (self.root / 'bin').mkdir()
         self.executable('git', GIT)
         self.executable('docker', '#!' + sys.executable + '\n' + DOCKER)
@@ -142,23 +160,29 @@ class Install(unittest.TestCase):
         self.assertEqual([p.name for p in self.dir.glob('.env.*')], [])
         calls = self.calls()
         pull = next(i for i, c in enumerate(calls) if '"pull", "backend", "web"' in c)
-        init = next(i for i, c in enumerate(calls) if '"restic", "init"' in c)
+        init = next(i for i, c in enumerate(calls) if c.startswith('["run"') and c.endswith('"restic/restic:0.19.1", "init"]'))
         up = next(i for i, c in enumerate(calls) if c.endswith('"up", "-d", "--no-build"]'))
         self.assertLess(pull, init)
         self.assertLess(init, up)
+        self.assertIn(f'"{self.root / "site" / "lab-backup"}:/repo"', calls[init])  # nothing but the backup directory
+        self.assertFalse(any(c.startswith('["compose"') and '"run"' in c for c in calls))
         password = re.search(r'初始密码：\s+([0-9a-f]{16})', r.stdout).group(1)
         self.assertIn(f'create_superuser("ops", password="{password}")', (self.root / 'shell_input').read_text())
-        self.assertFalse(any(password in c for c in calls))  # never on a command line
+        self.assertFalse(any(p in c for c in calls for p in (password, env['BACKUP_PASSWORD'])))  # no command line
         for secret in secrets:
             self.assertNotIn(secret, r.stdout + r.stderr)
 
     def test_exported_variables_never_override_the_generated_settings(self):
+        # POSTGRES_USER, POSTGRES_DB and MAX_UPLOAD_SIZE are not in .env: a later update from a clean shell uses the
+        # Compose defaults, so the install must too.
         self.env.update(HTTP_PORT='18090', APP_VERSION='v0.9.0', COMPOSE_PROJECT_NAME='other',
-                        COMPOSE_FILE='infra/docker-compose.prod.yml:infra/docker-compose.https.yml', ENV_FILE='other.env')
+                        COMPOSE_FILE='infra/docker-compose.prod.yml:infra/docker-compose.https.yml', ENV_FILE='other.env',
+                        POSTGRES_USER='other', POSTGRES_DB='other', MAX_UPLOAD_SIZE='1')
         r = self.install()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads((self.root / 'up_env').read_text()), {
             'APP_VERSION': None, 'HTTP_PORT': None, 'COMPOSE_PROJECT_NAME': None, 'IMAGE_PREFIX': None,
+            'POSTGRES_USER': None, 'POSTGRES_DB': None, 'MAX_UPLOAD_SIZE': None,
             'COMPOSE_FILE': 'infra/docker-compose.prod.yml', 'ENV_FILE': '.env'})
         self.assertEqual(self.settings()['HTTP_PORT'], '127.0.0.1:8090')
 
@@ -167,7 +191,8 @@ class Install(unittest.TestCase):
             with self.subTest(mode=mode):
                 for leftover in (self.dir, self.root / 'site' / 'lab-backup'):
                     shutil.rmtree(leftover, ignore_errors=True)
-                (self.root / 'shell_input').unlink(missing_ok=True)
+                for leftover in ('shell_input', 'volumes'):
+                    (self.root / leftover).unlink(missing_ok=True)
                 r = self.install(mode=mode)
                 self.assertNotEqual(r.returncode, 0)
                 self.assertIn('不是' if mode == 'old-image' else '地址不对', r.stderr)
@@ -233,12 +258,14 @@ class Install(unittest.TestCase):
         self.assertFalse(any(c.startswith('git clone') for c in self.calls()))
 
     def test_failures_before_start_leave_nothing_behind(self):
-        cases = (('existing-volumes', None), ('volume-query-fails', None), ('pull-fails', None),
-                 ('', 'no release'), ('', 'release without tag'))
+        cases = (('existing-volumes', None), ('unlabeled-volume', None), ('volume-query-fails', None),
+                 ('pull-fails', None), ('', 'no release'), ('', 'release without tag'))
         for mode, release in cases:
             with self.subTest(mode=mode, release=release):
-                shutil.rmtree(self.dir, ignore_errors=True)
-                (self.root / 'calls').unlink(missing_ok=True)
+                for leftover in (self.dir, self.root / 'site' / 'lab-backup'):
+                    shutil.rmtree(leftover, ignore_errors=True)
+                for leftover in ('calls', 'volumes'):
+                    (self.root / leftover).unlink(missing_ok=True)
                 self.release('v0.10.0')
                 if release == 'no release':
                     (self.root / 'latest.json').unlink()
@@ -253,11 +280,23 @@ class Install(unittest.TestCase):
                 self.assertFalse(self.started())
                 self.assertNotIn('down -v', r.stderr)  # never suggest deleting volumes it did not create
 
+    def test_failed_backup_init_can_simply_be_retried(self):
+        r = self.install(mode='init-fails-once')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('备份仓库初始化失败', r.stderr)
+        self.assertFalse((self.dir / '.env').exists())
+        self.assertFalse((self.root / 'site' / 'lab-backup').exists())
+        self.assertFalse((self.root / 'volumes').exists())  # no data volume left to block the retry
+        r = self.install(mode='init-fails-once')  # the cause is fixed: the second init succeeds
+        self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_failed_start_keeps_settings_and_says_how_to_retry(self):
         r = self.install(mode='unhealthy')
         self.assertNotEqual(r.returncode, 0)
         self.assertTrue((self.dir / '.env').exists())
-        self.assertIn('down -v', r.stderr)
+        # The volumes it names were checked to be absent before the install; never a blanket `down -v`.
+        self.assertIn('docker volume rm infra_labdata infra_pgdata infra_static', r.stderr)
+        self.assertNotIn('down -v', r.stderr)
         self.assertFalse((self.root / 'shell_input').exists())
         self.assertFalse((self.dir / '.install-lock').exists())
 

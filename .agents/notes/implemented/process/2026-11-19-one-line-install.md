@@ -18,12 +18,15 @@ Status: implemented
   - `git clone` 后，切到 **GitHub 上最新发布的正式 Release** 对应的标签（`releases/latest` 的 `tag_name`，不含草稿和预发布），而不是最大的标签：标签推送后发版流程才开始检查、构建和推送镜像，发版失败时标签也还在；Release 是在两个镜像都推送之后才创建的。在已有的 clone 里运行，就装在这份 clone 里。
   - 同一个安装目录同时只允许一个安装：用原子的 `mkdir .install-lock` 加锁，"是否已安装"等检查都在锁内再做一次。
   - 从 `infra/server.env.example` 生成 `.env`：先写进 `mktemp` 新建的私有文件（权限 600），再改名为 `.env`；密钥、数据库密码、备份密码各取 32 字节随机数；`DJANGO_SECURE_COOKIES=0`。模板缺少要填的项时报错。设了 `IMAGE_PREFIX`（国内镜像仓库）就写进 `.env`，以后更新也用它。
-  - **只以 `.env` 为准**：写好后，把 `.env` 里出现的每个变量从当前 shell 里清掉，并清掉 `COMPOSE_PROJECT_NAME`、`COMPOSE_PROFILES`，固定 `COMPOSE_FILE=infra/docker-compose.prod.yml`、`ENV_FILE=.env`。Compose 会优先用 shell 里导出的变量；以后的 `update.sh` 只读 `.env`，安装时也必须一样。
+  - **只以 `.env` 和 Compose 的默认值为准**：写好后，从当前 shell 里清掉 `.env` 里出现的每个变量、`infra/docker-compose.prod.yml` 里引用的每个变量（包括不在 `.env` 里的 `POSTGRES_USER`、`POSTGRES_DB`、`MAX_UPLOAD_SIZE`），以及 `COMPOSE_PROJECT_NAME`、`COMPOSE_PROFILES`；固定 `COMPOSE_FILE=infra/docker-compose.prod.yml`、`ENV_FILE=.env`。Compose 会优先用 shell 里导出的变量；以后在干净的终端里运行 `update.sh` 时只有 `.env` 和默认值，安装时也必须一样，否则重建容器后会连不上原来的数据库。
   - 不带 `--host` 时，只监听 `127.0.0.1`，允许的主机和 CSRF 来源只有 `localhost`、`127.0.0.1`。带 `--host` 时监听所有网卡，并把这个地址加进去。端口是 80 时，来源地址不带端口号。
-  - 查询这台机器上同一 Compose 项目的数据卷：查询失败就停，查到了也停。然后先 `pull` 这个版本的 backend、web 镜像，拉不到就停；再用 `backup.sh --init` 在安装目录旁边的 `<目录>-backup` 初始化备份仓库；最后 `up -d --no-build`，不会退回到用这份代码现场编译。
+  - 查已有数据卷：从 `compose config` 读出这套服务实际要用的卷名（`infra_pgdata` 等），逐个和 `docker volume ls` 比对；再查带本项目标签的卷。任何一个存在都停——手工建的、从别的机器迁回的卷没有 Compose 标签，Compose 却会直接复用它。查询失败也停。
+  - 先 `pull` 这个版本的 backend、web 镜像，拉不到就停。
+  - 在安装目录旁边的 `<目录>-backup` 初始化备份仓库：直接 `docker run` 备份工具 restic 的镜像（镜像名取自 `compose config --images`），只挂载备份目录，密码经环境变量传入。不用 Compose 的 restic 服务：它还挂载数据卷，`run` 会在网站启动前就建出 `infra_labdata`，初始化失败后重试时，就会被自己留下的卷挡住。
+  - 最后 `up -d --no-build`，不会退回到用这份代码现场编译。
   - 健康检查通过后，还要核对两项：`compose ps` 显示 backend、web 运行的都是这个版本的镜像；`compose port web 80` 只有预期的地址（本机模式只有 `127.0.0.1:<端口>`，`--host` 模式是 `0.0.0.0` 或 `[::]`）。都对上才用 `manage.py shell` 从标准输入建超级用户 `ops`，密码不出现在任何命令行里。
   - 打印网址、一次性密码、更新命令和每日备份的 crontab 行；不打印数据库密码和密钥。打印的命令里，路径都用单引号括起，crontab 行里的 `%` 转义。
-  - **只清理本次运行自己创建的东西**：记下这次建了 `.env`、临时文件、备份目录、锁中的哪几样，失败时只删这些。启动前失败，删掉本次生成的 `.env` 和备份目录，可以直接重跑；启动后才失败，保留现场，打印查看日志和从头重装的命令（这时的数据卷是本次新建的，安装前已确认没有旧数据）。目录已经装过、备份目录已存在、锁被别人持有时，什么都不删。
+  - **只清理本次运行自己创建的东西**：记下这次建了 `.env`、临时文件、备份目录、锁中的哪几样，失败时只删这些。启动前失败，删掉本次生成的 `.env` 和备份目录，可以直接重跑；启动后才失败，保留现场，打印查看日志和从头重装的步骤。重装步骤里按名字列出要删的数据卷（安装前已确认这些名字都不存在），不给笼统的 `down -v`。目录已经装过、备份目录已存在、锁被别人持有时，什么都不删。
   - 整个脚本包在 `main` 里：从管道读入时要先读完再执行；`git checkout` 也可能在运行中替换这个文件。
 - 发布说明（`release.yml`）在自动生成的 PR 列表上方，固定写新安装和升级的命令。
 - `SECURITY.md` 说明怎么私下报告漏洞。仓库打开了 GitHub 的私密漏洞报告、Dependabot 漏洞提醒和 Dependabot 安全更新。
@@ -55,16 +58,18 @@ Status: implemented
 
 ## Verification
 
-- `scripts/tests/test_install.py` 有 12 个用例，用模拟的 git、docker 和本地的 Release JSON 运行真实脚本，由 `backend/tests/test_server_scripts.py` 纳入 Linux CI。覆盖：
+- `scripts/tests/test_install.py` 有 13 个用例，用模拟的 git、docker 和本地的 Release JSON 运行真实脚本，由 `backend/tests/test_server_scripts.py` 纳入 Linux CI。模拟的 docker 会像 Compose 一样，在 `up` 和 `run` 时建出数据卷。覆盖：
   - 新装的 `.env` 内容和权限，密钥互不相同，密码不出现在命令行和输出里，选中已发布的 Release 而不是更新的未发布标签，先拉镜像、再初始化备份、最后 `up --no-build`；
-  - 导出的 `HTTP_PORT`、`APP_VERSION`、`COMPOSE_FILE`、`COMPOSE_PROJECT_NAME`、`ENV_FILE` 不影响启动；
+  - 导出的 `HTTP_PORT`、`APP_VERSION`、`COMPOSE_FILE`、`COMPOSE_PROJECT_NAME`、`ENV_FILE`，以及不在 `.env` 里的 `POSTGRES_USER`、`POSTGRES_DB`、`MAX_UPLOAD_SIZE`，都不影响启动；
+  - 备份初始化只挂载备份目录，不经过 Compose；初始化失败后不留数据卷，原因修好后直接重跑就能成功；
   - 运行的镜像版本不对、监听地址不对时失败，并且不建运维账号；
   - `--host` 和 80 端口、保留 `IMAGE_PREFIX`、路径里有空格和单引号时打印的命令仍是正确的 shell 词；
   - 已安装目录不动，锁被别人持有时不删它的锁和临时文件，不沿用已有的固定名临时文件；
-  - 已有数据卷、数据卷查询失败、拉不到镜像、没有已发布版本、Release 的标签不在仓库里，这几种都在启动前停下，什么都不留，也不提示 `down -v`；启动后失败保留现场；参数错误或 Docker 没开时什么都不做。
-  2026-11-20 对提交 `94b53d0` 的外部审查提了这些问题；新测试在 `94b53d0` 的脚本上有 11 个失败，修复后 12 个全部通过。WSL Ubuntu 里 `scripts/tests` 全部通过。
+  - 已有带标签的数据卷、已有没有标签的同名卷、数据卷查询失败、拉不到镜像、没有已发布版本、Release 的标签不在仓库里，这几种都在启动前停下，什么都不留，也不提示 `down -v`；启动后失败保留现场，重装步骤按名字列出数据卷；参数错误或 Docker 没开时什么都不做。
+  2026-11-20 的两轮外部审查分别针对提交 `94b53d0` 和 `113b485`。第一轮的问题对应的新测试，在 `94b53d0` 上有 11 个失败；第二轮的三条（无标签同名卷、初始化失败留下数据卷、数据库变量），在 `113b485` 上对应的测试全部失败。修复后 13 个全部通过，WSL Ubuntu 里 `scripts/tests` 全部通过。
 - 2026-11-19、11-20 在 WSL Ubuntu（Docker Desktop 29.3.1）上做了真实安装。用临时仓库造了标签，镜像用本机构建的，脚本用管道喂给 bash 运行。
   - 第一轮（`94b53d0`）：只有标签 `v9.9.9`，镜像在本机。安装成功，`.env` 权限 600，从 Windows 能打开网站。用一次性密码登录 `ops` 后，接口要求先改密码；改之前系统管理返回 403，改完返回 200，旧密码随后被拒绝。`backup.sh` 备份成功；再次运行安装脚本被拒绝。临时起一个本地镜像仓库发布 `v9.9.10` 后，`update.sh` 停站备份、切换、检查都通过，backend、web 都运行新版本镜像。
   - 第二轮（修复后）：本地镜像仓库只有 `v9.9.9` 的镜像，临时仓库另有未发布的标签 `v9.9.10`，Release JSON 指向 `v9.9.9`。终端里先导出 `HTTP_PORT=18090` 和 `APP_VERSION=v0.9.0` 再安装：装的是 `v9.9.9`；网站只监听 `127.0.0.1:18093`，18090 没有打开；两个服务都运行 `v9.9.9` 的镜像；没有留下 `.install-lock`。把打印出的每日备份命令原样执行，备份成功。清掉后用 `--host lab.local --port 18094` 重装：Compose 报告的地址是 `0.0.0.0:18094`，检查通过。
+  - 第三轮（第二次修复后）：先手工建一个没有标签的空卷 `infra_pgdata` 再安装，安装报出这个卷名后停下，没有留下 `.env`、锁和备份目录，那个卷原样保留。删掉它，在终端里导出 `POSTGRES_USER=other`、`POSTGRES_DB=other`、`HTTP_PORT=18090` 后重跑（复用上次留下的 clone）：数据库容器用的是 `lab` 用户和 `lab` 库，网站只监听 `127.0.0.1:18093`；在干净的终端里运行 `backup.sh` 成功，重建 backend 后网站照常响应。
   - 测试环境、镜像标签、临时镜像仓库和临时目录都已清理。
 - 没有验证：从 ghcr.io 和真实 GitHub API 安装（还没发过版本）、Mac、`--host` 下别的电脑访问、发布说明的实际渲染（要等第一次发版）。

@@ -188,7 +188,7 @@ AI 额度与 Magpie 对接；团队培养与毕业交接；分片上传与断点
 
 方案见[一键安装](../.agents/notes/implemented/process/2026-11-19-one-line-install.md)。
 
-- `curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash`：装 GitHub 上最新发布的正式版本，生成随机密钥和密码（只以 `.env` 为准，终端导出的变量不起作用），按 HTTP 配好，先拉镜像再初始化备份仓库并启动，核对运行的镜像和监听地址后新建运维账号 `ops`（一次性密码）。已装过、已有数据卷或备份目录、另一个安装正在进行时不覆盖。
+- `curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash`：装 GitHub 上最新发布的正式版本，生成随机密钥和密码（只以 `.env` 和 Compose 默认值为准，终端导出的变量不起作用），按 HTTP 配好，先拉镜像再初始化备份仓库并启动，核对运行的镜像和监听地址后新建运维账号 `ops`（一次性密码）。已装过、已有同名数据卷（不论有没有标签）或备份目录、另一个安装正在进行时不覆盖；备份初始化只挂载备份目录，失败后可直接重跑。
 - 发布说明固定写新安装和升级命令；新增 `SECURITY.md`，仓库打开私密漏洞报告和 Dependabot 安全更新。
-- 验证：12 个脚本测试（其中 11 个在外部审查的提交 `94b53d0` 上失败）；WSL Ubuntu 上用临时标签和本地镜像仓库实际安装两轮：首次登录改密、备份、拒绝重装、`update.sh` 升级，导出 `HTTP_PORT`、`APP_VERSION` 后安装仍按 `.env` 启动，未发布的标签不会被选中，`--host` 下的监听地址检查通过。
+- 验证：13 个脚本测试，两轮外部审查指出的问题在审查时的提交上都能复现、修复后通过；WSL Ubuntu 上用临时标签和本地镜像仓库实际安装两轮：首次登录改密、备份、拒绝重装、`update.sh` 升级，导出 `HTTP_PORT`、`APP_VERSION` 后安装仍按 `.env` 启动，未发布的标签不会被选中，`--host` 下的监听地址检查通过；预先手工建的无标签同名卷会让安装停下，导出 `POSTGRES_USER`、`POSTGRES_DB` 后数据库仍用默认的 `lab`。
 - 未验证：从 ghcr.io 拉取（还没发版）、Mac、`--host` 下其他电脑访问。
