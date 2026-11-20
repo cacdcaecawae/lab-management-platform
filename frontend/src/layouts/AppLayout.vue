@@ -5,6 +5,8 @@ import { Lock, Menu, SwitchButton } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import AppMenu from './AppMenu.vue'
 import NotificationBell from '@/components/NotificationBell.vue'
+import RoutePage from './RoutePage.vue'
+import SiteSearch from '@/components/SiteSearch.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -40,6 +42,7 @@ async function logout() {
           <span class="title">{{ route.meta.title }}</span>
         </div>
         <div class="right">
+          <SiteSearch />
           <NotificationBell v-if="auth.user?.group && !auth.user.must_change_password" :key="auth.user.id + ':' + auth.user.group.id + ':' + auth.user.role" />
           <el-dropdown trigger="click" placement="bottom-end">
             <span class="user">
@@ -55,8 +58,7 @@ async function logout() {
         </div>
       </header>
       <main class="main">
-        <!-- not keyed: xxx-new -> xxx-edit after the first save keeps the same view instance (and its field errors) -->
-        <RouterView />
+        <RoutePage />
       </main>
     </div>
   </div>

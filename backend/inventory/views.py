@@ -42,9 +42,16 @@ class ConsumableViewSet(
             .annotate(stock=Sum("txns__quantity", default=0), stock_version=Max("txns__id", default=0))
             .order_by("name", "spec", "id")
         )
+        if self.action == "list" and (item := self.request.query_params.get("item")):
+            return consumables.filter(pk=item) if item.isascii() and item.isdigit() and len(item) <= 18 else consumables.none()
         if self.action == "list" and self.request.query_params.get("low") == "1":
             consumables = consumables.filter(stock__lt=F("safety_stock"))
         return consumables
+
+    def filter_queryset(self, queryset):
+        if self.action == "list" and self.request.query_params.get("item"):
+            return queryset  # exact search destination is independent of the list keyword
+        return super().filter_queryset(queryset)
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -68,10 +69,11 @@ function body(): MeetingWrite {
 async function save() {
   saving.value = true
   try {
+    const source = router.currentRoute?.value
     const saved = meeting.value ? await meetingsApi.update(meeting.value.id, body()) : await meetingsApi.create(body())
     ElMessage.success('已保存')
     editing.value = false
-    if (!meeting.value) router.replace({ name: 'meeting-detail', params: { id: saved.id } })
+    if (!meeting.value && source) void replaceSavedEditor(router, source, { name: 'meeting-detail', params: { id: saved.id } })
     meeting.value = saved
   } catch (e) {
     errors.handle(e) // row errors arrive as agenda / actions lists and show under the section

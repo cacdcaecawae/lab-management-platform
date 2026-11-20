@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { achievementsApi } from '@/modules/achievements/api'
@@ -23,13 +24,22 @@ import AchievementStatsPanel from './AchievementStatsPanel.vue'
 
 const auth = useAuthStore()
 const statsOpen = ref(false)
+const route = useRoute()
+const router = useRouter()
+const routeItem = () => typeof route.query.item === 'string' ? route.query.item : ''
 const thisYear = new Date().getFullYear()
 const years = Array.from({ length: 10 }, (_, i) => thisYear - i)
 
 // "已录用及以上" is what most applications ask for: accepted and published papers.
 const STATUS_FILTERS: Record<string, string> = { formal: '正式成果（按类型）', 'accepted,published': '已录用（含已发表）', ...ACHIEVEMENT_STATUS_LABELS }
-const filters = reactive({ search: '', type: '', year: '' as number | '', status: '', member: '' as number | '' })
+const filters = reactive({ item: routeItem(), search: '', type: '', year: '' as number | '', status: '', member: '' as number | '' })
 const keyword = ref('')
+watch(routeItem, (item) => { filters.item = item })
+function showAll() {
+  const query = { ...route.query }
+  delete query.item
+  return router.replace({ query, hash: route.hash })
+}
 const { items, count, page, pageSize, loading, load } = usePagedList(achievementsApi.list, filters)
 const members = useOptions(() => membersApi.list({ page_size: 100 })) // former members too: they stay authors
 const exportQuery = computed(() => ({ ...filters }))
@@ -132,6 +142,7 @@ async function removeFulltext() {
 <template>
   <el-card class="card">
     <div class="page-toolbar">
+      <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索标题、作者、出处" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.type" placeholder="全部类型" aria-label="类型" clearable>
         <el-option v-for="(label, k) in ACHIEVEMENT_TYPE_LABELS" :key="k" :label="label" :value="k" />

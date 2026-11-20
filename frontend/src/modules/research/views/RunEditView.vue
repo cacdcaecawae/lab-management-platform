@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -112,10 +113,11 @@ async function save(): Promise<ProcessingRun | null> {
       : { ...form, script_dataset_id: null }
   saving.value = true
   try {
+    const source = router.currentRoute?.value
     const r = record.value ? await runsApi.update(record.value.id, body) : await runsApi.create(body)
     errors.clear()
     // Replace right away so a second click updates this draft instead of creating another one.
-    if (!record.value) router.replace({ name: 'run-edit', params: { id: r.id } })
+    if (!record.value && source) void replaceSavedEditor(router, source, { name: 'run-edit', params: { id: r.id } })
     fill(r)
     return r
   } catch (e) {

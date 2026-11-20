@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -126,11 +127,12 @@ function body(): PurchaseWrite {
 async function save(): Promise<PurchaseDetail | null> {
   busy.value = true
   try {
+    const source = router.currentRoute?.value
     const before = record.value
     const r = before ? await purchasesApi.update(before.id, body()) : await purchasesApi.create(body())
     clearErrors()
     // Replace right away so a second click updates this draft instead of creating another one.
-    if (!before) router.replace({ name: 'purchase-detail', params: { id: r.id } })
+    if (!before && source) void replaceSavedEditor(router, source, { name: 'purchase-detail', params: { id: r.id } })
     fill(r)
     correcting.value = false
     if (before && before.status !== 'draft' && r.status !== before.status) ElMessage.warning('明细已修改，申请重新进入审批')

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -89,10 +90,11 @@ async function load(id: number) {
 async function save(): Promise<WeeklyReport | null> {
   saving.value = true
   try {
+    const source = router.currentRoute?.value
     const r = record.value ? await reportsApi.update(record.value.id, form) : await reportsApi.create(form)
     errors.clear()
     // Replace right away so a second click updates this report instead of creating another one.
-    if (!record.value) router.replace({ name: 'report-edit', params: { id: r.id } })
+    if (!record.value && source) void replaceSavedEditor(router, source, { name: 'report-edit', params: { id: r.id } })
     fill(r)
     return r
   } catch (e) {

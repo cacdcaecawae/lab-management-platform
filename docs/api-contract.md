@@ -549,3 +549,7 @@
 - `GET /api/achievements/stats/` 本组成员；可选 `year_from`、`year_to`（均含）、`status`（默认 `formal`，亦可指定 `all` 或逗号分隔的状态）。原成果列表与导出也接受 `status=formal`，依类型分别选已录用及已发表论文、已授权专利、获奖及已登记软著。
 - 返回 `{status, by_year, by_member, total}`。分组分别附 `year`、`user:{id,name}`；计数列为 `paper,patent,award,software,total`。只展示有符合条件成果的年；本组成员每项各计一次，组总计按成果去重，不要求存在组内作者。
 - `GET /api/achievements/stats/export/` 参数、权限与聚合口径同上，下载两页 Excel，不附全文；按成员页包含成员 ID 列，用于区分同名成员。
+
+### 全站搜索
+
+`GET /api/search/?q=关键字`：须为已改密、已分组的登录账号。去掉首尾空白后须为 2 至 100 个字符，否则返回 400。返回非空模块组的数组，每组为 `{module, label, items:[{id,title,subtitle,link}]}`；每组最多 5 条，按 ID 倒序。沿用各模块可见范围；不搜索试件缺陷、报告正文或附件。周报支持按 ISO 日期文本匹配。响应禁止缓存。
