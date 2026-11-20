@@ -321,7 +321,7 @@ def login_logout(stack):
     for label, value in (("原密码", SEED_PASSWORD), ("新密码", new_password), ("确认新密码", new_password)):
         label_input(first, label).send_keys(value)
     button(first, "确认修改").click()
-    wait_path(first, "/")
+    wait_path(first, "/datasets")
     body_has(first, "新同学（验证课题组）")
     user = User.objects.get(username="s_new")
     assert not user.must_change_password and user.check_password(new_password)
