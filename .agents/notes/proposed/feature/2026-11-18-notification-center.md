@@ -44,7 +44,7 @@ Notification(recipient → User, title ≤200, body Text, link ≤300（前端�
 - 页面可见时每 60 秒取一次未读数，路由切换时也取。
 - 点开显示最近 10 条，点某条就标记已读并跳转；底部"查看全部"进入 `/notifications` 列表页。
 - 接口文件 `src/api/notifications.ts` 属于公共部分：布局是公共代码，不能引用 `src/modules/`。
-- **清理**：已读超过 180 天的通知，由[每日提醒邮件](2026-11-18-scheduled-reminder-mail.md)的命令顺带删除；那篇还没做时，就加一个独立命令 `purge_notifications`。
+- **清理**：已读超过 180 天的通知，由[每日提醒邮件](../../implemented/feature/2026-11-18-scheduled-reminder-mail.md)的命令顺带删除；那篇还没做时，就加一个独立命令 `purge_notifications`。
 
 ## Alternatives considered
 

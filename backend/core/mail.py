@@ -92,14 +92,14 @@ def send(subject, body, recipients, *, test=False):
         timeout=TIMEOUT,
     )
     try:
-        django_mail.send_mail(subject, body, config.sender, recipients, connection=connection)
+        sent = django_mail.send_mail(subject, body, config.sender, recipients, connection=connection)
     except Exception as exc:
         # update(), not save(): a failure is not a settings change and must not show in the settings history
         SiteSettings.objects.filter(pk=config.pk).update(last_mail_error=describe(exc), last_mail_error_at=timezone.now())
         raise
-    if config.last_mail_error:
+    if sent and config.last_mail_error:
         SiteSettings.objects.filter(pk=config.pk).update(last_mail_error="", last_mail_error_at=None)
-    return True
+    return bool(sent)
 
 
 def send_quietly(subject, body, recipients, what):
