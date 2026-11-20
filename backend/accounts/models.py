@@ -46,3 +46,26 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.display_name} ({self.username})"
+
+
+class LoginEvent(models.Model):
+    """Minimal account login outcomes; a throttled row means at least one rejection in that minute."""
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "success", "登录成功"
+        FAILED = "failed", "认证失败"
+        THROTTLED = "throttled", "限流发生分钟"
+
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    outcome = models.CharField(max_length=12, choices=Outcome.choices)
+    at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ["-at", "-pk"]
+        indexes = [models.Index(fields=["outcome", "at"], name="login_outcome_at_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["at"], condition=models.Q(outcome="throttled"), name="login_one_throttle_per_minute",
+            ),
+        ]

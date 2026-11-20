@@ -3,12 +3,14 @@ from django.urls import path
 from rest_framework.routers import SimpleRouter
 
 from . import views
+from .login_events import LoginEventsView
 
 router = SimpleRouter()
 router.register("groups", views.SystemGroupViewSet, basename="system-group")
 router.register("accounts", views.AccountViewSet, basename="system-account")
 
 urlpatterns = [
+    path("logins/", LoginEventsView.as_view(), name="system-login-events"),
     path("mail/", views.MailSettingsView.as_view()),
     path("mail/history/", views.MailHistoryView.as_view()),
     path("mail/test/", views.MailTestView.as_view()),
