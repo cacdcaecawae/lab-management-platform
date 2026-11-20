@@ -21,6 +21,9 @@ const filters = reactive({
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(equipmentApi.list, filters)
 const creating = ref(false)
+const selected = ref<number[]>([])
+const selectLabels = (rows: Equipment[]) => { selected.value = rows.map((row) => row.id) }
+const printSelected = () => router.push({ name: 'labels', query: { type: 'equipment', ids: selected.value.join(',') } })
 
 const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', params: { id: e.id } })
 </script>
@@ -36,9 +39,11 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
       <el-checkbox v-model="filters.calibration_within" :true-value="30" false-value="">校准到期（含已过期）</el-checkbox>
       <el-button @click="router.push({ name: 'bookings' })">预约日历</el-button>
       <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
+      <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
       <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增设备</el-button>
     </div>
-    <el-table v-loading="loading" :data="items">
+    <el-table v-loading="loading" :data="items" @selection-change="selectLabels">
+      <el-table-column v-if="auth.isManager" type="selection" width="44" />
       <el-table-column label="编号" min-width="100">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'equipment-detail', params: { id: row.id } }">{{ row.code }}</RouterLink>

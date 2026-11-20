@@ -48,6 +48,7 @@ load()
           </el-page-header>
           <span style="flex: 1" />
           <el-button @click="historyOpen = true">修改历史</el-button>
+          <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })">打印标签</el-button>
           <el-button v-if="auth.isManager" @click="editing = true">编辑设备</el-button>
           <el-button type="primary" @click="router.push({ name: 'bookings', query: { equipment: equipment.id } })">预约</el-button>
         </div>

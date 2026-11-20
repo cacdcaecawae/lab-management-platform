@@ -24,6 +24,9 @@ const filters = reactive({
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(specimensApi.list, filters)
 const creating = ref(false)
+const selected = ref<number[]>([])
+const selectLabels = (rows: Specimen[]) => { selected.value = rows.map((row) => row.id) }
+const printSelected = () => router.push({ name: 'labels', query: { type: 'specimen', ids: selected.value.join(',') } })
 
 const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params: { id: s.id } })
 </script>
@@ -42,9 +45,11 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
       <el-checkbox v-model="filters.mine" :true-value="1" false-value="">我借的</el-checkbox>
       <el-checkbox v-model="filters.overdue" :true-value="1" false-value="">逾期未还</el-checkbox>
       <span class="grow" />
+      <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
       <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增试件</el-button>
     </div>
-    <el-table v-loading="loading" :data="items">
+    <el-table v-loading="loading" :data="items" @selection-change="selectLabels">
+      <el-table-column v-if="auth.isManager" type="selection" width="44" />
       <el-table-column label="编号" min-width="110">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'specimen-detail', params: { id: row.id } }">{{ row.code }}</RouterLink>
