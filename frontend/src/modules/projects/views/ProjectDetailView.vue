@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatTime, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
+import ProjectBoard from '@/components/ProjectBoard.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
 
 const auth = useAuthStore()
@@ -18,6 +19,7 @@ const id = Number(route.params.id)
 const project = ref<Project | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const editing = ref(false)
+const boardTab = ref(route.query.tab === "tasks" ? "tasks" : "progress")
 const canEdit = computed(() => !!project.value && (auth.isSupervisor || project.value.leader.id === auth.user?.id))
 
 async function load() {
@@ -99,7 +101,13 @@ loadLogs(true)
       </el-descriptions>
     </el-card>
 
-    <el-card class="card" header="项目进展">
+    <el-tabs v-model="boardTab">
+      <el-tab-pane label="进展" name="progress" />
+      <el-tab-pane label="任务" name="tasks" />
+      <el-tab-pane label="里程碑" name="milestones" />
+    </el-tabs>
+    <ProjectBoard :project="project" :session-user-id="auth.user?.id" :can-manage="canEdit" :tab="boardTab" />
+    <el-card v-if="boardTab === 'progress'" class="card" header="项目进展">
       <el-form v-if="canEdit" label-position="top" class="log-form" @submit.prevent="addLog">
         <el-form-item label="日期" :error="logErrors.fe('date')">
           <el-date-picker v-model="logForm.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />

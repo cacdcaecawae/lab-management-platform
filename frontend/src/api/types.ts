@@ -303,6 +303,7 @@ export interface Dashboard {
     borrowed_specimens: BorrowedSpecimenReminder[]
     borrowed_specimens_count: number
     action_items: MyActionItem[]
+    tasks: WorkbenchTask[]
     reports_needing_revision: WeeklyReportBrief[]
     draft_experiments: ExperimentBrief[]
     current_week_report: WeeklyReportBrief | null
@@ -856,3 +857,38 @@ export interface AchievementWrite {
   link: string
   notes: string
 }
+
+export type TaskStatus = 'todo' | 'doing' | 'done'
+export interface WorkbenchTask {
+  id: number
+  title: string
+  due_date: string | null
+  status: TaskStatus
+  project: { id: number; name: string }
+}
+
+export interface ProjectTask extends Omit<WorkbenchTask, 'project'> {
+  description: string
+  assignee: (UserBrief & { current: boolean }) | null
+  milestone: { id: number; title: string } | null
+  created_by: number
+  history: { actor: string; changes: Record<string, { before: unknown; after: unknown }>; created_at: string }[]
+}
+
+export interface TaskWrite {
+  title: string
+  description: string
+  assignee_id: number | null
+  milestone_id: number | null
+  due_date: string | null
+  status: TaskStatus
+}
+export interface ProjectMilestone {
+  id: number
+  title: string
+  due_date: string | null
+  done_at: string | null
+  task_total: number
+  task_done: number
+}
+export type MilestoneWrite = Pick<ProjectMilestone, 'title' | 'due_date'> & { done: boolean }

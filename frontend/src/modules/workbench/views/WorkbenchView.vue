@@ -125,6 +125,16 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
             </li>
           </ul>
         </el-card>
+        <el-card v-if="data.my.tasks?.length" header="我的任务" class="wb-card">
+          <ul class="rows">
+            <li v-for="task in data.my.tasks" :key="task.id">
+              <RouterLink :to="{ name: 'project-detail', params: { id: task.project.id }, query: { tab: 'tasks' } }">
+                {{ task.title }}
+              </RouterLink>
+              <span>{{ task.project.name }}<template v-if="task.due_date"> · {{ task.due_date }}</template></span>
+            </li>
+          </ul>
+        </el-card>
         <el-card v-if="data.my.action_items.length" header="我的行动项" class="wb-card">
           <ul class="rows">
             <li v-for="a in data.my.action_items" :key="a.id">
