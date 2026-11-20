@@ -1,5 +1,5 @@
 import { api, type Page } from '@/api/client'
-import { uploadForm } from '@/api/datasets'
+import { uploadForm } from '@/modules/datasets/api'
 import type { Doc, DocDetail, DocVersion, DocWrite, HistoryEntry, ListQuery } from '@/api/types'
 
 export const docsApi = {

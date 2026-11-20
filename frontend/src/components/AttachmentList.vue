@@ -3,13 +3,12 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { ApiError } from '@/api/client'
-import { attachmentsApi } from '@/api/procurement'
 import type { Attachment, AttachmentKind, MeetingFile } from '@/api/types'
 import { ATTACHMENT_KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { showError } from '@/utils/errors'
 
 // upload: omitted when the viewer may not add files; canDelete: per file (the server checks again).
-// Meeting files have no kind: pass withKinds=false and their own remove.
+// Meeting files have no kind: pass withKinds=false; all callers supply their own remover.
 type FileItem = Attachment | MeetingFile
 const props = withDefaults(
   defineProps<{
@@ -18,7 +17,7 @@ const props = withDefaults(
     canDelete: (a: FileItem) => boolean
     defaultKind?: AttachmentKind
     withKinds?: boolean
-    remove?: (id: number) => Promise<unknown>
+    remove: (id: number) => Promise<unknown>
     accept?: string
     hint?: string
   }>(),
@@ -26,7 +25,6 @@ const props = withDefaults(
     defaultKind: undefined,
     upload: undefined,
     withKinds: true,
-    remove: attachmentsApi.remove,
     accept: '.pdf,.jpg,.jpeg,.png',
     hint: 'PDF、JPG、PNG，单个不超过 20 MB',
   },

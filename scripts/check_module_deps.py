@@ -1,7 +1,7 @@
 """Module dependency rules (.agents/notes/implemented/architecture/2026-11-17-module-boundaries.md, docs/architecture.md).
 
 Backend: an app may import only the apps listed for it below, and never another app's views / urls / admin.
-Frontend: a page (in src/modules/<module>/ or the not yet moved src/views/) may import another module's `api`
+Frontend: a page (in src/modules/<module>/) may import another module's `api`
 only; shared code may not import src/modules/ at all (the router may import each module's index).
 Tests, migrations and conftest.py are not checked: fixtures build data across modules.
 Usage: python scripts/check_module_deps.py   (exit 1 and one line per violation)
@@ -69,8 +69,7 @@ IMPORT = re.compile(r"""(?:from|import)\s*\(?\s*['"]([^'"]+)['"]""")
 def frontend_violations(rel, source):
     """rel: path from frontend/src, e.g. modules/equipment/views/EquipmentDetailView.vue"""
     parts = rel.split("/")
-    # Pages still in src/views/ (not moved into a module yet) are pages too: they may use a module's api.
-    own = parts[1] if parts[0] == "modules" else "views" if parts[0] == "views" else None
+    own = parts[1] if parts[0] == "modules" else None
     found = []
     for lineno, line in enumerate(source.splitlines(), 1):
         for target in IMPORT.findall(line):

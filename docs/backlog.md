@@ -9,7 +9,7 @@
 | # | 内容 | 方案笔记 | 大小 | 依赖 | 模型检查 |
 |---|---|---|---|---|---|
 | 1 | 设备并发模型检查聚焦 settings.py 的数据库设置（已实现） | [process/…-tla-check-database-settings-only](../.agents/notes/implemented/process/2026-11-18-tla-check-database-settings-only.md) | S | — | 改检查脚本本身 |
-| 2 | 前端其余页面迁入 `src/modules/` | [architecture/…-frontend-modules-rest](../.agents/notes/proposed/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 否 |
+| 2 | 前端其余页面迁入 `src/modules/`（迁移完成，浏览器待验收） | [architecture/…-frontend-modules-rest](../.agents/notes/implemented/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 是（设备表单 import 变更） |
 | 3 | 补走浏览器验证欠账 | [testing/…-browser-verification-backlog](../.agents/notes/proposed/testing/2026-11-18-browser-verification-backlog.md) | M（可拆开做） | 最好在 2 之后 | 否 |
 | 4 | 工作台提醒：我借的试件、逾期未还、校准到期 | [feature/…-workbench-reminders](../.agents/notes/proposed/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
 | 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/proposed/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |

@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { specimensApi } from '../api'
-import { membersApi } from '@/api/members'
+import { membersApi } from '@/modules/members/api'
 import type { Defect, Specimen, SpecimenWrite, UserBrief } from '@/api/types'
 import { DEFECT_KIND_LABELS, SPECIMEN_KIND_LABELS, SPECIMEN_STATUSES, STATUS, mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
