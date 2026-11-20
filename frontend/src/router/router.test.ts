@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Me } from '@/api/types'
 import { router } from './index'
+import { postAuthTarget } from './post-auth'
+import { ApiError, authRequired } from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
 
 const me = vi.hoisted(() => vi.fn())
 vi.mock('@/api/auth', () => ({ authApi: { me } }))
@@ -37,4 +40,56 @@ describe('route guard', () => {
     await router.push('/')
     expect(router.currentRoute.value.name).toBe('system')
   })
+
+  const student: Me = {
+    ...ops, id: 2, username: 'student', is_superuser: false, group: { id: 1, name: '测试课题组' },
+    must_change_password: false,
+  }
+
+  it.each(['/equipment/11', '/specimens/12'])('opens %s with a ready session', async (path) => {
+    me.mockResolvedValue({ ...student })
+    await router.push(path)
+    expect(router.currentRoute.value.fullPath).toBe(path)
+  })
+
+  it('retains the original route through sign-in and the initial password guard', async () => {
+    const target = '/specimens/42?tab=history#anchor'
+    me.mockRejectedValue(new ApiError(403, { code: 'not_authenticated', message: '请登录' }))
+    await router.push(target)
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.next).toBe(target)
+    const auth = useAuthStore()
+    auth.user = { ...student, must_change_password: true }
+    await router.replace(postAuthTarget(router, router.currentRoute.value.query.next)!)
+    expect(router.currentRoute.value.name).toBe('password')
+    expect(router.currentRoute.value.query.next).toBe(target)
+    auth.user.must_change_password = false
+    await router.replace(postAuthTarget(router, router.currentRoute.value.query.next)!)
+    expect(router.currentRoute.value.fullPath).toBe(target)
+  })
+
+  it('retains the open equipment route when the API requests a password change', async () => {
+    me.mockResolvedValue({ ...student })
+    await router.push('/equipment/21')
+    authRequired.handler?.('password_change_required')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('password'))
+    expect(router.currentRoute.value.query.next).toBe('/equipment/21')
+  })
+
+  it('admits only managers to the label preview, including after login', async () => {
+    me.mockResolvedValue({ ...student })
+    await router.push('/labels?type=equipment&ids=1')
+    expect(router.currentRoute.value.name).toBe('workbench')
+    const auth = useAuthStore()
+    auth.user = { ...student, role: 'manager' }
+    await router.push('/labels?type=equipment&ids=1')
+    expect(router.currentRoute.value.name).toBe('labels')
+  })
+
 })
+
+
+it.each(['https://other.example/', '//other.example/', '/\\other.example/', '/login?next=/equipment/1', '/password', '/unknown', ['/equipment/1']])(
+  'does not accept a non-app or auth route as return target: %s',
+  (candidate) => expect(postAuthTarget(router, candidate)).toBeUndefined(),
+)

@@ -13,7 +13,6 @@ COVERED=(
   backend/equipment/views.py
   backend/equipment/serializers.py
   backend/equipment/models.py
-  backend/config/settings.py
   frontend/src/modules/equipment/components/EquipmentFormDialog.vue
 )
 JAR=${TLA2TOOLS:-$HOME/.tlaplus/tla2tools.jar}
@@ -22,14 +21,28 @@ RUN=${TLA_RUN_DIR:-${TEMP:-${TMPDIR:-/tmp}}/verify-equipment-tla}   # TLC output
 
 winpath() { (cd "$1" && { pwd -W 2>/dev/null || pwd; }); }   # Java on Windows needs C:/... paths
 
-echo "== covered code changed since $SYNC (committed and uncommitted)"
-drift=$(git -C "$REPO" diff --stat "$SYNC" -- "${COVERED[@]}") || { echo "git diff against $SYNC failed"; exit 1; }
-if [ -n "$drift" ]; then
-  echo "$drift"
-  git -C "$REPO" diff "$SYNC" -- "${COVERED[@]}" | grep -E '^@@' | sed 's/^/   hunk in: /'
-else
-  echo "none"
-fi
+echo "== covered code changed since $SYNC (committed, staged and unstaged)"
+drift=''
+for ref in head index worktree; do
+  case $ref in
+    head) args=("$SYNC" HEAD) ;;
+    index) args=(--cached "$SYNC") ;;
+    worktree) args=("$SYNC") ;;
+  esac
+  delta=$(git -C "$REPO" diff --stat "${args[@]}" -- "${COVERED[@]}") ||
+    { echo "git diff against $SYNC failed"; exit 1; }
+  if [ -n "$delta" ]; then
+    printf '%s:\n%s\n' "$ref" "$delta"
+    drift=1
+  fi
+done
+db_drift=$("${PYTHON:-python}" "$HERE/check_database_settings.py" "$REPO" "$SYNC")
+case $? in
+  0) ;;
+  2) printf '%s\n' "$db_drift"; drift=1 ;;
+  *) printf '%s\n' "$db_drift"; echo "database settings check failed"; exit 1 ;;
+esac
+[ -n "$drift" ] || echo "none"
 
 [ -f "$JAR" ] || { echo "TLC not found at $JAR (set TLA2TOOLS)"; exit 1; }
 sum=$( (sha256sum 2>/dev/null || shasum -a 256) <"$JAR" | cut -d' ' -f1)   # stdin: a backslash in the path would prefix the hash

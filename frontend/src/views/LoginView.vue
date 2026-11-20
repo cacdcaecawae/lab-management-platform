@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import { postAuthTarget } from '@/router/post-auth'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -16,7 +17,7 @@ async function submit() {
   loading.value = true
   try {
     await auth.login(form.username, form.password)
-    router.replace(typeof route.query.next === 'string' ? route.query.next : '/')
+    await router.replace(postAuthTarget(router, route.query.next) ?? { name: 'workbench' })
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '登录失败，请稍后重试'
   } finally {
