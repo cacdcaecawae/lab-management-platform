@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authRequired } from '@/api/client'
+import { postAuthTarget } from './post-auth'
 import AppLayout from '@/layouts/AppLayout.vue'
 // Business modules (src/modules/<module>/); the pages still in src/views/ move in once the pilot is confirmed.
 import * as equipment from '@/modules/equipment'
@@ -68,6 +69,7 @@ export const appRoutes: RouteRecordRaw[] = [
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
   { path: '/password', name: 'password', component: () => import('@/views/ChangePasswordView.vue') },
+  { path: '/labels', name: 'labels', component: () => import('@/views/LabelsView.vue'), meta: { title: '打印标签', manager: true } },
   { path: '/', component: AppLayout, children: appRoutes },
   { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
 ]
@@ -78,19 +80,37 @@ authRequired.handler = (code) => {
   const auth = useAuthStore()
   if (code === 'password_change_required') {
     if (auth.user) auth.user.must_change_password = true
-    router.push({ name: 'password' })
+    const current = router.currentRoute.value
+    if (current.name !== 'password') {
+      const next = postAuthTarget(router, current.fullPath)
+      router.replace({ name: 'password', query: next ? { next } : {} })
+    }
   } else {
     auth.user = null
-    router.push({ name: 'login', query: { next: router.currentRoute.value.fullPath } })
+    const current = router.currentRoute.value
+    if (current.name !== 'login') {
+      const next = postAuthTarget(router, current.name === 'password' ? current.query.next : current.fullPath)
+      router.replace({ name: 'login', query: next ? { next } : {} })
+    }
   }
 }
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.load()
-  if (to.meta.public) return auth.user && to.name === 'login' ? { name: 'workbench' } : true
-  if (!auth.user) return { name: 'login', query: { next: to.fullPath } }
-  if (auth.user.must_change_password && to.name !== 'password') return { name: 'password' }
+  if (to.meta.public) {
+    return auth.user && to.name === 'login'
+      ? postAuthTarget(router, to.query.next) ?? { name: 'workbench' }
+      : true
+  }
+  if (!auth.user) {
+    const next = postAuthTarget(router, to.name === 'password' ? to.query.next : to.fullPath)
+    return { name: 'login', query: next ? { next } : {} }
+  }
+  if (auth.user.must_change_password && to.name !== 'password') {
+    const next = postAuthTarget(router, to.fullPath)
+    return { name: 'password', query: next ? { next } : {} }
+  }
   if (to.meta.supervisor && !auth.isSupervisor) return { name: 'workbench' }
   if (to.meta.manager && !auth.isManager) return { name: 'workbench' }
   if (to.meta.superuser && !auth.isSuperuser) return { name: 'workbench' }
