@@ -8,7 +8,7 @@
 
 | # | 内容 | 方案笔记 | 大小 | 依赖 | 模型检查 |
 |---|---|---|---|---|---|
-| 1 | 设备并发模型检查只看 settings.py 的数据库设置 | [process/…-tla-check-database-settings-only](../.agents/notes/proposed/process/2026-11-18-tla-check-database-settings-only.md) | S | — | 改检查脚本本身 |
+| 1 | 设备并发模型检查聚焦 settings.py 的数据库设置（已实现） | [process/…-tla-check-database-settings-only](../.agents/notes/implemented/process/2026-11-18-tla-check-database-settings-only.md) | S | — | 改检查脚本本身 |
 | 2 | 前端其余页面迁入 `src/modules/` | [architecture/…-frontend-modules-rest](../.agents/notes/proposed/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 否 |
 | 3 | 补走浏览器验证欠账 | [testing/…-browser-verification-backlog](../.agents/notes/proposed/testing/2026-11-18-browser-verification-backlog.md) | M（可拆开做） | 最好在 2 之后 | 否 |
 | 4 | 工作台提醒：我借的试件、逾期未还、校准到期 | [feature/…-workbench-reminders](../.agents/notes/proposed/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
@@ -36,7 +36,7 @@
 3. **模块边界**：后端只能引用分层表允许的模块；别的模块只能引用对方的 `models`、`serializers`、`mixins`、`versions.py`、`queries.py`。跨模块汇总放在 `workbench`。新增模块或依赖时，同时改 `scripts/check_module_deps.py` 和 `docs/architecture.md`。前端新页面放在 `src/modules/<模块>/`；页面只能引用别的模块的 `api`；布局、公共组件不能引用 `src/modules/`。
 4. **权限和隔离要有测试**：每个新接口都要测"学生看不到别人的个人数据（404）""外组 404""角色不对 403"。权限只在后端判断，前端隐藏按钮只是界面上的处理。
 5. **完整检查**：`DB_TEST_NAME=<自己的库名> PYTHON=<python> bash scripts/check.sh` 全部通过，PR 上的 GitHub CI 也要通过。改了数据模型，`makemigrations --check` 要干净，迁移文件随提交一起。
-6. **设备并发模型检查**：改了 `backend/equipment/` 的 `views.py`、`serializers.py`、`models.py`，`backend/config/settings.py`（第 1 项完成前是任何改动，之后只算数据库设置），或 `EquipmentFormDialog.vue` 后，运行 `bash .claude/skills/verify-equipment-tla/scripts/check.sh`：
+6. **设备并发模型检查**：改了 `backend/equipment/` 的 `views.py`、`serializers.py`、`models.py`，`backend/config/settings.py`（只算数据库设置；无法可靠提取时人工复核），或 `EquipmentFormDialog.vue` 后，运行 `bash .claude/skills/verify-equipment-tla/scripts/check.sh`：
    - 退出码 2 时，按 SKILL.md 核对改动是否影响模型；不影响的，在单独一条提交里更新 `SYNC`；
    - 退出码 1 时，按 SKILL.md 判断是代码缺陷还是模型错误，不要为了通过去改模型。
 7. **浏览器验证**：改了页面、接口行为或权限，按 `.claude/skills/verify-lab/SKILL.md` 在隔离实例里走一遍，证据放在 `backend/var/verify-evidence/`（不提交），同时更新或新增 `features/` 下的功能文件和 README 表格。没在浏览器里看过的，不要写成"已验证"。
