@@ -17,3 +17,26 @@ export const achievementsApi = {
   // plain links: the browser downloads with the session cookie; files=1 adds the full texts (a .zip)
   exportUrl: (q: ListQuery, files = false) => withQuery('/api/achievements/export/', { ...q, files: files ? 1 : undefined }),
 }
+
+export interface AchievementStatsQuery {
+  year_from?: number
+  year_to?: number
+  status?: string
+}
+export interface AchievementCounts {
+  paper: number
+  patent: number
+  award: number
+  software: number
+  total: number
+}
+export interface AchievementStats {
+  by_year: Array<AchievementCounts & { year: number }>
+  by_member: Array<AchievementCounts & { user: { id: number; name: string } }>
+  total: AchievementCounts
+  status: string
+}
+export const achievementStatsApi = {
+  list: (query: AchievementStatsQuery) => api.get<AchievementStats>('/api/achievements/stats/', { ...query }),
+  exportUrl: (query: AchievementStatsQuery) => withQuery('/api/achievements/stats/export/', { ...query }),
+}
