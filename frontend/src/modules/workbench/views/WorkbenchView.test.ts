@@ -20,7 +20,7 @@ const loan = {
 const base: Dashboard = {
   my: {
     borrowed_specimens: [loan], borrowed_specimens_count: 21,
-    action_items: [], reports_needing_revision: [], draft_experiments: [],
+    tasks: [], action_items: [], reports_needing_revision: [], draft_experiments: [],
     current_week_report: null, upcoming_bookings: [], unreported_bookings: [], returned_purchases: [],
   },
   supervisor: null,

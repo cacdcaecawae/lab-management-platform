@@ -18,6 +18,7 @@ import * as inventory from '@/modules/inventory'
 import * as procurement from '@/modules/procurement'
 import * as meetings from '@/modules/meetings'
 import * as achievements from '@/modules/achievements'
+import * as labels from '@/modules/labels'
 import * as system from '@/modules/system'
 
 // meta.title: page title; meta.menu: menu item to highlight on detail pages;
@@ -46,7 +47,7 @@ export const appRoutes: RouteRecordRaw[] = [
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
   { path: '/password', name: 'password', component: () => import('@/views/ChangePasswordView.vue') },
-  { path: '/labels', name: 'labels', component: () => import('@/views/LabelsView.vue'), meta: { title: '打印标签', manager: true } },
+  ...labels.routes,
   { path: '/', component: AppLayout, children: appRoutes },
   { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
 ]

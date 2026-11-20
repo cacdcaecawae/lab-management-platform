@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatTime, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
-import ProjectBoard from '@/components/ProjectBoard.vue'
+import ProjectBoard from '@/modules/projects/components/ProjectBoard.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
 
 const auth = useAuthStore()

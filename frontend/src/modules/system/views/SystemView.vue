@@ -8,7 +8,7 @@ import SystemMail from '@/modules/system/components/SystemMail.vue'
 import SystemVersion from '@/modules/system/components/SystemVersion.vue'
 import StorageUsage from '@/components/StorageUsage.vue'
 import SystemLoginEvents from '@/components/SystemLoginEvents.vue'
-import SystemStorage from '@/components/SystemStorage.vue'
+import SystemStorage from '@/modules/system/components/SystemStorage.vue'
 import { showError } from '@/utils/errors'
 
 const tab = ref('mail')

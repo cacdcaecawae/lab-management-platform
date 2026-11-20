@@ -1,11 +1,11 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { describe, expect, it, vi } from 'vitest'
-import { projectsApi } from '@/api/projects'
+import { projectsApi } from '@/modules/projects/api'
 import type { Project, ProjectMilestone, ProjectTask } from '@/api/types'
 import ProjectBoard from './ProjectBoard.vue'
 
-vi.mock('@/api/projects', () => ({ projectsApi: { tasks: vi.fn(), updateTask: vi.fn(), milestones: vi.fn(), updateMilestone: vi.fn() } }))
+vi.mock('@/modules/projects/api', () => ({ projectsApi: { tasks: vi.fn(), updateTask: vi.fn(), milestones: vi.fn(), updateMilestone: vi.fn() } }))
 
 const project: Project = {
   id: 4, name: '测试项目', leader: { id: 1, name: '负责人' }, members: [{ id: 2, name: '同学' }],

@@ -1,9 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemStorage from './SystemStorage.vue'
-import { systemApi } from '@/api/system'
+import { systemApi } from '@/modules/system/api'
 
-vi.mock('@/api/system', () => ({ systemApi: { storage: vi.fn() } }))
+vi.mock('@/modules/system/api', () => ({ systemApi: { storage: vi.fn() } }))
 vi.mock('@/utils/errors', () => ({ showError: vi.fn() }))
 
 const stubs = {

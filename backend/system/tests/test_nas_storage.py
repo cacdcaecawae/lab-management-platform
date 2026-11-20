@@ -17,7 +17,7 @@ def mount(settings, tmp_path):
     settings.MEDIA_ROOT = root
     settings.LAB_NAS_STORAGE_ID = IDENTITY
     marker = root.parent / MARKER
-    marker.write_text(IDENTITY + "\n")
+    marker.write_bytes(IDENTITY.encode("ascii") + b"\n")
     return root, marker
 
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { projectsApi } from '@/api/projects'
+import { projectsApi } from '@/modules/projects/api'
 import type { MilestoneWrite, Project, ProjectMilestone, ProjectTask, TaskStatus, TaskWrite } from '@/api/types'
 import { errorMessage } from '@/utils/errors'
 import { toDateStr } from '@/utils/format'

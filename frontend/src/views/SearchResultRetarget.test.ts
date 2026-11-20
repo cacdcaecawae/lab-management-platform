@@ -2,15 +2,15 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { expect, it, vi } from 'vitest'
-import AchievementsView from './AchievementsView.vue'
-import ConsumablesView from './ConsumablesView.vue'
+import AchievementsView from '@/modules/achievements/views/AchievementsView.vue'
+import ConsumablesView from '@/modules/inventory/views/ConsumablesView.vue'
 
 const api = vi.hoisted(() => ({ achievements: vi.fn(), consumables: vi.fn(), other: vi.fn() }))
-vi.mock('@/api/achievements', () => ({ achievementsApi: { list: api.achievements, exportUrl: () => '#' } }))
-vi.mock('@/api/inventory', () => ({ consumablesApi: { list: api.consumables } }))
-vi.mock('@/api/members', () => ({ membersApi: { list: api.other } }))
-vi.mock('@/api/projects', () => ({ projectsApi: { list: api.other } }))
-vi.mock('@/api/procurement', () => ({ purchasesApi: { list: api.other } }))
+vi.mock('@/modules/achievements/api', () => ({ achievementsApi: { list: api.achievements, exportUrl: () => '#' } }))
+vi.mock('@/modules/inventory/api', () => ({ consumablesApi: { list: api.consumables } }))
+vi.mock('@/modules/members/api', () => ({ membersApi: { list: api.other } }))
+vi.mock('@/modules/projects/api', () => ({ projectsApi: { list: api.other } }))
+vi.mock('@/modules/procurement/api', () => ({ purchasesApi: { list: api.other } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 }, isManager: false }) }))
 
 it.each([

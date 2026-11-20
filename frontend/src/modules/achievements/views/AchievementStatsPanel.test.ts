@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 import AchievementStatsPanel from './AchievementStatsPanel.vue'
 
 const stats = vi.hoisted(() => ({ list: vi.fn(), exportUrl: vi.fn().mockReturnValue('/filtered-export') }))
-vi.mock('@/api/achievements', () => ({ achievementStatsApi: stats }))
+vi.mock('@/modules/achievements/api', () => ({ achievementStatsApi: stats }))
 
 it('loads formal outcomes and exports the query that produced the displayed totals', async () => {
   stats.list.mockResolvedValue({

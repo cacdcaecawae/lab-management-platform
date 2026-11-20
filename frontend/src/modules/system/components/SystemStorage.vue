@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { systemApi, type StorageInfo } from '@/api/system'
+import { systemApi, type StorageInfo } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
 
 const info = ref<StorageInfo | null>(null)

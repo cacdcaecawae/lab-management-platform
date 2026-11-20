@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { achievementStatsApi, type AchievementStatsQuery, type AchievementStats } from '@/api/achievements'
+import { achievementStatsApi, type AchievementStatsQuery, type AchievementStats } from '@/modules/achievements/api'
 import { ACHIEVEMENT_STATUS_LABELS, ACHIEVEMENT_TYPE_LABELS } from '@/utils/format'
 import { showError } from '@/utils/errors'
 
