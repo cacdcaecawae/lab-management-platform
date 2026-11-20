@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from accounts.models import ResearchGroup
 from achievements.models import Achievement
+from core.nas_storage import NasFileStorage, nas_ready
 from core.permissions import IsActiveMember, IsSupervisor, IsSuperuser, scope_group
 from datasets.models import DataFile
 from equipment.models import UsageReport
@@ -42,6 +43,8 @@ def mount_info():
     # Django's backend is lazy; isinstance delegates to its wrapped class.
     if not isinstance(default_storage, FileSystemStorage):
         return {"kind": "non_local", "filesystem": None}
+    if isinstance(default_storage, NasFileStorage) and not nas_ready(default_storage.location):
+        return {"kind": "local", "filesystem": None}
     try:
         total, used, free = shutil.disk_usage(default_storage.location)
     except OSError:

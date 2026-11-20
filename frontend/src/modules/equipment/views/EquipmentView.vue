@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { equipmentApi } from '../api'
 import type { Equipment } from '@/api/types'
@@ -13,11 +13,15 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 // ?status= comes from the workbench tile (待检查的设备)
-const filters = reactive({
+const routeFilters = () => ({
   status: String(route.query.status ?? ''),
-  search: '',
   calibration_within: route.query.calibration_within === '30' ? 30 as number | '' : '',
 })
+const filters = reactive({
+  search: '',
+  ...routeFilters(),
+})
+watch(() => route.query, () => Object.assign(filters, routeFilters()))
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(equipmentApi.list, filters)
 const creating = ref(false)

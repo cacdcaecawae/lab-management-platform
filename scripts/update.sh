@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Update the server to a release: pull its images, stop the site and back up, switch the deployment files and images,
-# check that the site answers with them; if not, switch back by itself (and restore the database if the new version
-# migrated it).
+# check the running release. After a schema change leave failed releases stopped for recovery.
 # Usage, from the repository root on the server: scripts/update.sh [vX.Y.Z]   (default: the newest release)
 set -euo pipefail
 
@@ -30,10 +29,6 @@ main() {
     done
   fi
 
-  need_live_backup_settings
-  dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
-  check_backup_repository
-
   if tls_mode; then
     for file in infra/docker-compose.https.yml infra/nginx.https.conf.template infra/nginx.acme.inc \
       infra/nginx.health.inc infra/nginx.site.inc; do
@@ -41,6 +36,10 @@ main() {
         die "$target 不支持当前的 HTTPS 配置（缺少 $file），未停止网站；跨旧版本请按 README 手动处理"
     done
   fi
+
+  need_live_backup_settings
+  dc --profile ops config --quiet || die "当前 Compose 配置无法解析，未停止网站"
+  check_backup_repository
 
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
   APP_VERSION=$target dc pull backend web
@@ -73,17 +72,17 @@ main() {
     exit 0
   fi
 
-  echo "== $target 没有正常启动，退回 $current" >&2
+  echo "== $target 验收失败，停止网站并核对迁移" >&2
   dc logs --tail 40 backend >&2 || true
   dc stop backend web || die "无法停止失败的版本，不执行回退；更新前快照为 $snap"
+  recovery="网站保持停止，数据库与上传文件保留在现场。原版本 $current，当前部署 $target，更新前快照 $snap。请按 README 备份现场并核对更新期间的写入，再决定恢复。"
+  after=$(applied_migrations) || die "无法核对数据库迁移。$recovery"
+  if [ "$after" != "$migrations" ]; then
+    die "新旧数据库迁移记录不同。$recovery"
+  fi
   git checkout --quiet "$previous"
   setenv APP_VERSION "$current"
   export APP_VERSION="$current"
-  after=$(applied_migrations) || die "无法核对数据库迁移，退回未完成，更新前快照为 $snap"
-  if [ "$after" != "$migrations" ]; then
-    echo "== $target 已经改了数据库结构，用更新前的备份恢复数据库" >&2
-    bash "$SCRIPTS/restore.sh" "$snap" --db-only --yes --keep-stopped-on-swap-failure
-  fi
   start_version || die "退回 $current 未通过启动、健康或镜像检查，请查看生产 Compose 的 ps 和 logs"
   die "已退回 $current，没有更新。原因见上面的日志"
 }

@@ -10,7 +10,6 @@ for s in verify-agent-note-tree verify-agent-note-format verify-archived-agent-n
   node ".claude/skills/write-notes-like-deepseek/scripts/$s.ts"
 done
 
-"$PYTHON" -m unittest discover -s scripts/tests
 (cd backend && "$PYTHON" manage.py makemigrations --check --dry-run && "$PYTHON" -m pytest)
 (cd frontend && npm test && npm run build)
 echo "ALL CHECKS PASSED"

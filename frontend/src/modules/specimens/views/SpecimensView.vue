@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { specimensApi } from '../api'
 import type { Specimen } from '@/api/types'
@@ -13,14 +13,18 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const queryFlag = (value: unknown): 1 | '' => value === '1' ? 1 : ''
-const filters = reactive({
-  search: '',
-  kind: '',
-  status: '',
+const routeFilters = () => ({
   on_loan: queryFlag(route.query.on_loan),
   mine: queryFlag(route.query.mine),
   overdue: queryFlag(route.query.overdue),
 })
+const filters = reactive({
+  search: '',
+  kind: '',
+  status: '',
+  ...routeFilters(),
+})
+watch(() => route.query, () => Object.assign(filters, routeFilters()))
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(specimensApi.list, filters)
 const creating = ref(false)

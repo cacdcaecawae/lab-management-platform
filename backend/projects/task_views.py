@@ -8,8 +8,9 @@ from rest_framework.response import Response
 from core.permissions import IsActiveMember, scope_group
 
 from .models import Milestone, Project, Task, TaskChange
+from .queries import board_tasks
 from .task_board import (
-    MilestoneSerializer, TaskSerializer, board_manager, board_milestones, board_tasks,
+    MilestoneSerializer, TaskSerializer, board_manager, board_milestones,
     record_change, task_editor, task_snapshot,
 )
 

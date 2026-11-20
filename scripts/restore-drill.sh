@@ -8,14 +8,14 @@ envget() { sed -n "s/^$1=//p" "$env_file" | tail -n 1 | tr -d '\r'; }
 unset BACKUP_REPO_ID # Ignore an interactive shell override.
 repo_id=$(envget BACKUP_REPO_ID)
 backup_mountpoint=$(envget BACKUP_MOUNTPOINT)
+BACKUP_REPO=$(envget BACKUP_REPO)
+export BACKUP_REPO
+unset BACKUP_PASSWORD # Use the same configured credentials as the scheduled backup.
 if [[ -n "$backup_mountpoint" ]]; then
   [[ -n "$repo_id" ]] || {
     echo "使用备份挂载点时，须先核实仓库并在 $env_file 中设置 BACKUP_REPO_ID" >&2
     exit 1
   }
-  BACKUP_REPO=$(envget BACKUP_REPO)
-  export BACKUP_REPO
-  unset BACKUP_PASSWORD # The isolated Compose must use the same config as scheduled jobs.
   mount=$(realpath -e -- "$backup_mountpoint") &&
     [[ "$backup_mountpoint" == /* && "$mount" != / ]] &&
     mountpoint -q -- "$mount" || { echo "备份挂载点未挂载" >&2; exit 1; }

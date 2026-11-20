@@ -142,3 +142,13 @@ def test_admin_photo_replacement_clear_and_unchanged(tmp_path, settings, group, 
     report.refresh_from_db()
     assert not report.photo and report.photo_size is None and report.photo_uploaded_at is None
     assert amounts() == (0, 0, 0)
+
+def test_wrong_nas_volume_has_no_capacity(settings, tmp_path, monkeypatch):
+    from core.nas_storage import MARKER, NasFileStorage
+
+    settings.LAB_NAS_STORAGE_ID = "expected"
+    files = tmp_path / "files"
+    files.mkdir()
+    (tmp_path / MARKER).write_bytes(b"other-volume\n")
+    monkeypatch.setattr(storage, "default_storage", NasFileStorage(location=str(files)))
+    assert storage.mount_info()["filesystem"] is None

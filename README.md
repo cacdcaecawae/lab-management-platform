@@ -83,8 +83,17 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 ```
 
 - 更新前先核对版本是有 Git 祖先关系的较新正式标签并检查 Compose、备份仓库和迁移记录，再拉取镜像、停站备份。不支持用更新命令直接降级。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
-- 新版本起不来就自动退回原版本；如果新版本已经改了已应用迁移名单（不仅是迁移数量），先用刚才的备份恢复数据库。失败的新版先停下来；无法确认回退时不会把旧镜像启动到新库上。备份前网站已经停止，所以恢复不会丢掉更新前保存的内容。
-- 如果断电或脚本被强制终止，先看更新日志。确认新版本**尚未启动**时，切回更新前的 Git 版本，把 `.env` 的 `APP_VERSION` 改回原值，在仓库根目录执行 `env -u APP_VERSION docker compose -f infra/docker-compose.prod.yml --env-file .env up -d`。如果新版本可能已启动，先核对迁移状态；需要回退数据库时，切回原版本并改回 `.env` 后，运行 `env -u APP_VERSION bash scripts/restore.sh <更新日志中的快照编号> --db-only`。恢复会覆盖备份之后的数据库写入。
+- 新版启动后，验收期间可能已有用户写入。验收失败会先停止网站。只有数据库迁移名单与更新前完全相同时，脚本才自动切回旧版。迁移已变或暂时无法核对时，数据库、上传文件以及新版部署保留在现场，日志给出原版本、新版与更新前快照。
+- 手动恢复前，回到原部署目录，使用与上线时相同的 Compose 项目名、配置文件和 `.env`。以下以同时启用 HTTPS 和 NAS 为例；只保留实际使用的覆盖文件。项目名可从现有 db 容器的 `com.docker.compose.project` 标签核对。
+
+  ```bash
+  export COMPOSE_PROJECT_NAME=实际部署项目名
+  export COMPOSE_FILE=infra/docker-compose.prod.yml:infra/docker-compose.https.yml:infra/docker-compose.nas.yml
+  export ENV_FILE=.env
+  unset APP_VERSION
+  ```
+
+  若确认新版尚未启动，切回原 Git 版本并改回 `.env` 中的版本，运行 `docker compose --env-file "$ENV_FILE" up -d`。如果新版可能已接收写入，先保持停站，暂停定时清理，在独立位置保存当前数据库导出和上传文件，并核对更新窗口内的新记录。在隔离环境确认恢复与补回写入的方案后，才切回选定版本；如确需回到更新前的数据库，使用 `bash scripts/restore.sh <日志中的快照编号> --db-only`。恢复会覆盖当前数据库。保存现场时请勿对唯一的更新前快照执行清理。
 - 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
 
 备份与恢复：
@@ -95,6 +104,10 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 - 每天备份一次，保留每天一份 30 天、每月一份 12 个月。在宿主机 `crontab -e` 加一行：
 
   ```cron
+  # 按实际部署设置。仅基础安装时，COMPOSE_FILE 只填第一项。
+  COMPOSE_PROJECT_NAME=实际部署项目名
+  COMPOSE_FILE=infra/docker-compose.prod.yml:infra/docker-compose.https.yml:infra/docker-compose.nas.yml
+  ENV_FILE=.env
   30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
   ```
 

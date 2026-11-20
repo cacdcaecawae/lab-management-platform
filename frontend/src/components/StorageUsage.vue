@@ -43,7 +43,7 @@ onMounted(load)
         剩余 {{ bytes(opsResult.disk.filesystem.free_bytes) }}
       </p>
       <p v-else-if="opsResult.disk.kind === 'non_local'">默认存储不是本地文件系统存储；不报告本机磁盘作为其容量。</p>
-      <p v-else>本地文件系统容量暂不可用。</p>
+      <p v-else>当前上传存储的容量暂不可用。</p>
       <h3>按课题组</h3>
       <el-table :data="opsResult.groups">
         <el-table-column prop="name" label="课题组" />

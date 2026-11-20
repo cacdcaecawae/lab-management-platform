@@ -1,14 +1,14 @@
 """Project board permissions, queries and serializers."""
 
-from django.db.models import Count, Exists, F, OuterRef, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.models import User
 from core.permissions import is_supervisor
 
-from .models import Milestone, Project, Task
-from .serializers import GroupMemberField, ProjectBriefSerializer
+from .models import Milestone, Task
+from .serializers import GroupMemberField
 
 
 def board_manager(user, project):
@@ -21,14 +21,6 @@ def eligible_members(project):
 
 def task_editor(user, project):
     return board_manager(user, project) or eligible_members(project).filter(pk=user.pk).exists()
-
-
-def board_tasks(queryset):
-    member = Project.members.through.objects.filter(project_id=OuterRef("project_id"), user_id=OuterRef("assignee_id"))
-    return queryset.annotate(
-        assignee_current=(Exists(member) | Q(assignee_id=F("project__leader_id")))
-        & Q(assignee__is_active=True, assignee__group_id=F("project__group_id")),
-    ).select_related("milestone").order_by(F("due_date").asc(nulls_last=True), "id")
 
 
 def board_milestones(queryset):
@@ -115,11 +107,3 @@ class MilestoneSerializer(serializers.ModelSerializer):
             done = attrs.pop("done")
             attrs["done_at"] = (getattr(self.instance, "done_at", None) or timezone.now()) if done else None
         return attrs
-
-
-class WorkbenchTaskSerializer(serializers.ModelSerializer):
-    project = ProjectBriefSerializer(read_only=True)
-
-    class Meta:
-        model = Task
-        fields = ["id", "title", "due_date", "status", "project"]

@@ -19,6 +19,8 @@ if args[0] != "compose":
     if os.environ.get("MODE") == "collision":
         print("existing")
     sys.exit(0)
+if os.environ.get("MODE") == "ok":
+    assert os.environ["BACKUP_REPO"] == "/fixture-repository" and "BACKUP_PASSWORD" not in os.environ
 assert args[1] == "--project-name" and args[2].startswith("labdrill-")
 assert args[3:5] == ["--file", "infra/docker-compose.drill.yml"]
 args = args[7:]
@@ -80,6 +82,8 @@ class RestoreDrillTests(unittest.TestCase):
             repo_id if mode in ("right-id", "wrong-id") else
             "BACKUP_MOUNTPOINT=/fixture\n" if mode == "missing-id" else ""
         )
+        with env_file.open("a") as config:
+            config.write("BACKUP_REPO=/fixture-repository\n")
         if mode == "missing-mount":
             with env_file.open("a") as config:
                 config.write(repo_id + f"BACKUP_MOUNTPOINT={tmp_path}\n")
@@ -88,6 +92,7 @@ class RestoreDrillTests(unittest.TestCase):
             mountpoint.chmod(0o755)
         result = subprocess.run(["bash", "scripts/restore-drill.sh", "v0.1.0"], cwd=ROOT,
                                 env=dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}",
+                                         BACKUP_REPO="/other-repository", BACKUP_PASSWORD="other",
                                          ENV_FILE=str(env_file), MODE=mode, DOCKER_LOG=str(log), TMPDIR=str(tmp_path)),
                                 text=True, capture_output=True)
         if mode in ("missing-id", "missing-mount"):

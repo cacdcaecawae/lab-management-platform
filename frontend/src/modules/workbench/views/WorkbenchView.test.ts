@@ -42,7 +42,7 @@ async function setup(path: string, data = base) {
     url === '/api/dashboard/' ? data : { results: [], count: 0, next: null, previous: null },
   ), { status: 200 })))
   vi.stubGlobal('fetch', fetch)
-  return { fetch, global: { plugins: [ElementPlus, createPinia(), router] } }
+  return { fetch, router, global: { plugins: [ElementPlus, createPinia(), router] } }
 }
 
 it('shows actual totals and links each reminder to its matching filter', async () => {
@@ -71,10 +71,16 @@ it.each([
   ['/specimens?overdue=1', SpecimensView, '/api/specimens/', 'overdue', '1'],
   ['/equipment?calibration_within=30', EquipmentView, '/api/equipment/', 'calibration_within', '30'],
 ] as const)('initializes its filter from %s', async (path, view, endpoint, key, value) => {
-  const { global, fetch } = await setup(path)
+  const { global, fetch, router } = await setup(path)
   const wrapper = mount(view, { global })
   await flushPromises()
   const url = new URL(fetch.mock.calls.find(([url]) => url.startsWith(endpoint))![0], 'https://example.test')
   expect(url.searchParams.get(key)).toBe(value)
+  fetch.mockClear()
+  await router.push(path.split('?')[0]!)
+  await flushPromises()
+  const clean = fetch.mock.calls.find(([url]) => url.startsWith(endpoint))
+  expect(clean).toBeDefined()
+  expect(new URL(clean![0], 'https://example.test').searchParams.has(key)).toBe(false)
   wrapper.unmount()
 })

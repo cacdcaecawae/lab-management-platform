@@ -16,7 +16,8 @@ from inventory.serializers import ConsumableSerializer
 from meetings.models import ActionItem
 from meetings.serializers import MyActionItemSerializer
 from projects.models import Task
-from projects.task_board import WorkbenchTaskSerializer, board_tasks
+from projects.queries import board_tasks
+from projects.serializers import WorkbenchTaskSerializer
 from procurement.models import PurchaseRequest
 from procurement.queries import awaiting_review, returned_flag
 from procurement.serializers import PurchaseSerializer

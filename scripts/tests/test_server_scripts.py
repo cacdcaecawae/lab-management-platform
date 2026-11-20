@@ -35,7 +35,7 @@ if args[-2:] == ['config', '--quiet'] and mode == 'bad-compose':
     sys.exit(1)
 if '--single-transaction' in command and 'psql' in command:
     (root / 'rename_sql').write_text(sys.stdin.read())
-    sys.exit(1 if mode in ('swap-fails', 'swap-ambiguous', 'changed-swap-fails') else 0)
+    sys.exit(1 if mode in ('swap-fails', 'swap-ambiguous') else 0)
 if 'psql' in command and '-qtA' in command:
     sys.stdin.read()
     print('unknown' if mode == 'swap-ambiguous' else 'original')
@@ -66,12 +66,12 @@ elif 'ps' in args and '--format' in args:
 elif 'FROM django_migrations' in command:
     if mode == 'unknown-migrations' and (root / 'up_count').exists():
         sys.exit(1)
-    print('["core","new"]' if mode in ('changed-migrations', 'changed-swap-fails') and (root / 'up_count').exists() else '["core","old"]')
+    print('["core","new"]' if mode == 'changed-migrations' and (root / 'up_count').exists() else '["core","old"]')
 elif args[-2:] == ['up', '-d'] or args[-4:] == ['up', '-d', 'backend', 'web']:
     counter = root / 'up_count'
     n = int(counter.read_text()) + 1 if counter.exists() else 1
     counter.write_text(str(n))
-    if mode in ('start-fails', 'unknown-migrations', 'changed-migrations', 'changed-swap-fails') and n == 1:
+    if mode in ('start-fails', 'unknown-migrations', 'changed-migrations') and n == 1:
         print('recreation failed; old containers still serving', file=sys.stderr)
         sys.exit(1)
     version = os.environ.get('APP_VERSION') or [
@@ -538,18 +538,16 @@ class ServerScripts(unittest.TestCase):
                 self.assertFalse(any('restore' in c for c in calls))
                 self.assertEqual(any('up' in c for c in calls), mode == 'swap-fails')
 
-    def test_changed_migration_names_even_with_same_count_restore_snapshot(self):
+    def test_changed_migrations_leave_live_data_and_target_checkout_for_recovery(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='changed-migrations')
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn('已退回 v0.1.0', r.stderr)
-        self.assertEqual((self.root / 'database_dump').read_text().strip(), 'database:abcdef12')
-        self.assertEqual((self.root / 'backend').read_text(), 'v0.1.0')
-
-    def test_failed_rollback_swap_does_not_boot_old_image_on_new_schema(self):
-        r = self.run_script('update.sh', 'v0.2.0', mode='changed-swap-fails')
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn('保持网站停止', r.stderr)
+        for detail in ('保持停止', 'v0.1.0', 'v0.2.0', 'abcdef12'):
+            self.assertIn(detail, r.stderr)
+        self.assertIn('APP_VERSION=v0.2.0', (self.root / '.env').read_text())
         self.assertEqual((self.root / 'up_count').read_text(), '1')
+        self.assertTrue(any('stop' in c for c in self.calls()[self.calls().index(
+            ['compose', '--env-file', '.env', 'up', '-d']) + 1:]))
+        self.assertFalse(any('dump' in c or 'restore' in c for c in self.calls()))
 
 
 if __name__ == '__main__':

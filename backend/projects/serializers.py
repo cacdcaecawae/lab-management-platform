@@ -6,7 +6,7 @@ from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.permissions import scope_group
 
-from .models import Project, ProjectLog
+from .models import Project, ProjectLog, Task
 
 
 class ProjectBriefSerializer(serializers.ModelSerializer):
@@ -81,3 +81,11 @@ class ProjectSerializer(serializers.ModelSerializer):
         except IntegrityError:  # a concurrent request created the same name after validate_name
             raise Conflict("本组已有同名项目")
         return project
+
+
+class WorkbenchTaskSerializer(serializers.ModelSerializer):
+    project = ProjectBriefSerializer(read_only=True)
+
+    class Meta:
+        model = Task
+        fields = ["id", "title", "due_date", "status", "project"]
