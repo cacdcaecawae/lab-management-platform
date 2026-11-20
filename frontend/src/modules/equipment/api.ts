@@ -1,4 +1,4 @@
-import { api, type Page } from '@/api/client'
+import { api, withQuery, type Page } from '@/api/client'
 import type {
   Booking,
   BookingWrite,
@@ -34,4 +34,22 @@ export const bookingsApi = {
     if (body.photo) form.append('photo', body.photo)
     return api.post<Booking>(`/api/bookings/${id}/report/`, form)
   },
+}
+
+export type UsageDimension = 'equipment' | 'user' | 'project' | 'month'
+export interface UsageStatsQuery {
+  from: string
+  to: string
+  by: UsageDimension
+}
+export interface UsageStatsRow {
+  key: { id: number | string | null; label: string }
+  booked_hours: number
+  reported_hours: number
+  bookings: number
+  abnormal: number
+}
+export const usageStatsApi = {
+  list: (q: UsageStatsQuery) => api.get<UsageStatsRow[]>('/api/equipment/usage-stats/', { ...q }),
+  exportUrl: (q: UsageStatsQuery) => withQuery('/api/equipment/usage-stats/export/', { ...q }),
 }
