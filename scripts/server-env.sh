@@ -106,9 +106,12 @@ http_health_status() {
   [ -n "$pid" ] && [ -n "$read_fd" ] && [ -n "$write_fd" ] || return 1
   if ! { printf 'GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$path" "$host" >&"$write_fd" &&
        IFS= read -r -t 3 -u "$read_fd" output; }; then
+    exec {write_fd}>&-
     wait "$pid" || :
     return 1
   fi
+  # Compose keeps its stdin pump alive until the writer closes, even after nc returns the status.
+  exec {write_fd}>&-
   wait "$pid" || return 1
   printf '%s\n' "$output" | awk '$1 ~ /^HTTP\/[0-9.]+$/ && $2 ~ /^[0-9][0-9][0-9]$/ { print $2 }'
 }

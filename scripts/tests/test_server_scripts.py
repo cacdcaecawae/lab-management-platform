@@ -107,6 +107,8 @@ elif 'nc' in args or 'curl' in args:
         print('HTTP/1.1 ' + code + ' Test\r\nConnection: close\r\n')
         if code == '301':
             print('HTTP/1.1 204 Not the first status')
+        sys.stdout.flush()
+        sys.stdin.read()  # Compose exec waits for the caller to close stdin.
 '''
 
 
