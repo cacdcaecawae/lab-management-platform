@@ -35,6 +35,36 @@ need_backup_settings() {
   fi
 }
 
+# Keep the primary-storage checks out of the independent read-only recovery drill.
+need_live_backup_settings() {
+  need_backup_settings
+  if nas_mode; then check_nas_paths; fi
+}
+
+nas_mode() {
+  case ":${COMPOSE_FILE}:" in
+    *:infra/docker-compose.nas.yml:*|*/docker-compose.nas.yml:*|*:docker-compose.nas.yml:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_nas_paths() {
+  local data repo
+  data=${LAB_NAS_ROOT:-$(envget LAB_NAS_ROOT)}
+  repo=$BACKUP_REPO
+  [[ "$data" == /* && "$repo" == /* ]] ||
+    die "NAS 模式需要以绝对路径设置 LAB_NAS_ROOT 和 BACKUP_REPO"
+  data=$(realpath -e -- "$data") && repo=$(realpath -e -- "$repo") ||
+    die "无法确认主存储或备份目录"
+  [[ "$data" != / && "$repo" != / && "$data/" != "$repo/"* && "$repo/" != "$data/"* ]] ||
+    die "NAS 主存储和备份目录必须独立、不能相互嵌套"
+}
+
+need_backup_repository() {
+  need_live_backup_settings
+  check_backup_repository
+}
+
 # Restic 0.19.1 emits an indented JSON Config with one top-level "id" line.
 # Do not accept snapshot IDs or print returned config/error details in unattended jobs.
 read_backup_repository_id() {
@@ -45,8 +75,7 @@ read_backup_repository_id() {
   printf '%s\n' "$id"
 }
 
-need_backup_repository() {
-  need_backup_settings
+check_backup_repository() {
   if [[ -n "$BACKUP_MOUNTPOINT" && -z "$BACKUP_REPO_ID" ]]; then
     die "使用备份挂载点时，须先核实仓库并在 $ENV_FILE 中设置 BACKUP_REPO_ID"
   fi

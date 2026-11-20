@@ -12,7 +12,10 @@ import type {
   VersionInfo,
 } from '@/api/types'
 
+export type StorageInfo = { primary: 'nas' | 'local'; nas_ready: boolean | null }
+
 export const systemApi = {
+  storage: () => api.get<StorageInfo>('/api/system/storage-status/'),
   mail: () => api.get<MailSettings>('/api/system/mail/'),
   saveMail: (body: MailSettingsWrite) => api.put<MailSettings>('/api/system/mail/', body),
   mailHistory: () => api.get<HistoryEntry[]>('/api/system/mail/history/'),

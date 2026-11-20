@@ -43,6 +43,9 @@ if 'psql' in command and '-qtA' in command:
 if 'snapshots --json' in command:
     print(os.environ['SNAPSHOT_JSON'])
     sys.exit(1 if mode == 'query-fails' else 0)
+if 'restic ls' in command:
+    assert args[-1].endswith(':/data/files')
+    sys.exit(1 if mode == 'missing-file-tree' else 0)
 if 'restic dump' in command:
     snap = args[args.index('dump') + 1]
     print('database:' + (('a' * 64) if snap == 'latest' else snap))
@@ -296,6 +299,39 @@ class ServerScripts(unittest.TestCase):
         self.assertFalse(any('snapshots' in c or 'restore' in c for c in self.calls()))
         self.assertFalse((self.root / 'files_snapshot').exists())
 
+
+    def enable_nas(self, data):
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.nas.yml'
+        data.mkdir(exist_ok=True)
+        with (self.root / '.env').open('a') as f:
+            f.write(f'LAB_NAS_ROOT={data}\n')
+
+    def test_nas_attach_and_repo_must_not_overlap(self):
+        self.enable_nas(self.root / 'repo')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('不能相互嵌套', r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_nas_release_without_overlay_support_fails_before_any_docker(self):
+        self.enable_nas(self.root / 'live-data')
+        self.executable('git', '#!/bin/bash\n[[ "$*" != cat-file*refs/tags*v0.2.0*nas-restic.sh ]]\n')
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('不支持 NAS 主存储', r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_missing_upload_tree_does_not_stop_or_change_live_database(self):
+        r = self.run_script('restore.sh', A, '--yes', mode='missing-file-tree')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('未停止网站', r.stderr)
+        self.assertFalse(any('stop' in c or 'dump' in c or 'restore' in c for c in self.calls()))
+
+    def test_restore_deletion_targets_only_attachment_tree(self):
+        r = self.run_script('restore.sh', A, '--yes')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        restore, = [c for c in self.calls() if 'restore' in c]
+        self.assertEqual(restore[-4:], [A + ':/data/files', '--target', '/data/files', '--delete'])
 
     def test_preflight_failures_never_stop_or_start_anything(self):
         for mode in ('bad-repo', 'bad-compose'):
