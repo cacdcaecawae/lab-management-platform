@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import * as equipment from '@/modules/equipment'
 import * as knowledge from '@/modules/knowledge'
 import * as specimens from '@/modules/specimens'
+import * as notifications from '@/modules/notifications'
 import * as workbench from '@/modules/workbench'
 import * as members from '@/modules/members'
 import * as projects from '@/modules/projects'
@@ -31,6 +32,7 @@ export const appRoutes: RouteRecordRaw[] = [
   ...reports.routes,
   ...equipment.routes,
   ...specimens.routes,
+  ...notifications.routes,
   ...inventory.routes,
   ...procurement.routes,
   ...knowledge.routes,

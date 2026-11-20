@@ -33,3 +33,24 @@ class SiteSettings(models.Model):
     @property
     def sender(self):
         return self.mail_from or self.mail_username
+
+
+class Notification(models.Model):
+    """Private event summary. The linked business endpoint still enforces its own permissions."""
+
+    recipient = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="+")
+    group = models.ForeignKey("accounts.ResearchGroup", on_delete=models.CASCADE, related_name="+")
+    audience_role = models.CharField(max_length=16, blank=True)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    link = models.CharField(max_length=300)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["recipient", "group", "-created_at", "-id"], name="notify_rec_group_latest"),
+            models.Index(fields=["recipient", "group", "read_at"], name="notify_rec_group_read"),
+            models.Index(fields=["read_at"], name="notify_retention"),
+        ]

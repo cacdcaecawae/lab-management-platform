@@ -134,6 +134,8 @@ CRON_TZ=Asia/Shanghai
 只使用支持 `CRON_TZ` 的 cron；若不支持，须先让调度端按 Asia/Shanghai 触发，再使用该时刻。每个账号每天只认领一份合并邮件。明确的 SMTP 临时拒绝可在**同一业务日**重跑，总尝试最多三次；永久拒绝须修复配置。SMTP 超时、接受后写库失败或进程中断时无法保证恰好一次送达；发送中/结果不明的记录不会自动重发，避免重复，请先在 SMTP 侧核对。命令对未确认的条目返回非零；发送日志只报告状态计数，不打印邮件正文。
 
 
+- 站内通知不依赖邮件。运维可以先运行 `python manage.py purge_notifications --dry-run` 查看待清理数量，再手动运行 `python manage.py purge_notifications` 清理已读超过 180 天的通知。不会清理未读，不会自动部署计划任务。
+
 ## 目录
 
 ```

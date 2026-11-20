@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, is_supervisor, scope_group
 
 from .models import Defect, Specimen, SpecimenLoan
@@ -114,4 +115,6 @@ class SpecimenViewSet(
             loan.returned_by = request.user
             loan.return_note = body.validated_data["note"]
             loan.save()
+            if loan.borrower_id != request.user.id:
+                notify(specimen.group_id, "管理员已登记试件归还", f"/specimens/{specimen.pk}", recipient_ids=[loan.borrower_id])
         return Response(LoanSerializer(loan).data)

@@ -31,6 +31,7 @@
 | 文件 | 内容 | 实际走通 |
 |---|---|---|
 | [datasets.md](./datasets.md) | 新建数据集、上传、同名拒绝、下载与 SHA256、跨账号隔离 | 2026-11-17，代码 `d01c121`（界面改版后重走） |
+| [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 未走过（组件与 PostgreSQL 回归已通过；需隔离真实浏览器） |
 | [login.md](./login.md) | 登录、首次登录改密、退出 | 没按本文件的步骤走过；2026-11-17 在本机试用栈（`scripts/trial.ps1`，不是 verify-lab 实例）上走过 `login-ok`、`login-wrong`、`login-first-change`（运维、管理员、学生各一次），`login-logout` 未走 |
 | [experiments.md](./experiments.md) | 新建实验记录、提交锁定、导师退回、修改历史 | 未走过 |
 | [reports.md](./reports.md) | 写周报、提交、需补充、重新提交、已阅 | 未走过 |

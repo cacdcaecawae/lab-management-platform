@@ -17,6 +17,7 @@ from accounts.models import User
 from core import mail
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Booking, Equipment, UsageReport
@@ -213,6 +214,7 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                         equipment.status = Equipment.Status.NEEDS_CHECK
                         equipment._change_reason = f"{request.user.display_name} 登记使用异常：{report.description}"
                         equipment.save()
+                    notify(equipment.group_id, "设备登记使用异常", f"/equipment/{equipment.pk}", role=User.Role.MANAGER)
                     transaction.on_commit(lambda: notify_managers(report))
         except Exception:
             # FileField writes before the database INSERT. Keep the instance even if save() fails.
