@@ -189,7 +189,7 @@ ReportLockBooking(p) ==
             /\ Goto(p, "report_insert")
             /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, rVars, loc, ghost>>
 
-\* body.save(booking=booking): INSERT INTO usage report. UsageReport.booking is a OneToOneField (unique): the
+\* report.save(): INSERT INTO usage report (photo metadata is outside the model). UsageReport.booking is a OneToOneField (unique): the
 \* insert waits for another open transaction inserting a report for the same booking; a duplicate raises
 \* IntegrityError, which report() does not catch: 500.
 ReportInsert(p) ==

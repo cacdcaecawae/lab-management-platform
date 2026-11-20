@@ -531,3 +531,10 @@
 - `GET /api/equipment/usage-stats/?from=YYYY-MM-DD&to=YYYY-MM-DD&by=equipment|user|project|month`：本组管理员或导师；范围按上海时区左闭右开，最长 366 天。统计未取消使用类预约与区间的交集。
 - 返回 `[{key: {id, label}, booked_hours, reported_hours, bookings, abnormal}]`。已登记预约小时指有使用登记的预约时长，不是实测机时。跨月时按月分摊小时，预约数和异常数仅计入窗口内第一个相交月。设备分组含零预约；成员和项目维度只显示当前本组标识，转组成员或外组项目的预约仍计入，分别合并为未归属成员或未关联项目。
 - `GET /api/equipment/usage-stats/export/`：相同参数、权限和聚合口径，下载 Excel。
+
+### 存储用量
+
+- `GET /api/system/storage/` 仅运维。返回 `{disk, groups, month_keys, projection}`。组内有 `id, name, known_bytes, unknown_files, modules, months`；月份为北京时间的 `YYYY-MM`，总字节统计仅含仍在账、大小已知的文件；按月统计还要求上传时间已知。设备照片更换按当前文件上传时间计，旧照片不以登记日期补造上传时间。
+- `disk.kind` 为 `local` 或 `non_local`；本地且取值成功时 `disk.filesystem` 含总量、已用、可用字节，其他场景为 `null`。文件系统统计不等于平台文件合计。
+- `projection` 可空；最近 3 个完整月份均有已知大小的文件时包含 `basis_months` 和 `annual_retained_known_bytes`，是对当前仍有记录的文件的同口径粗估，不是磁盘净增长或寿命。
+- `GET /api/storage-usage/` 本组管理员与导师。仅原始数据，返回 `{by_member, by_project}`，每行 `id, label, known_bytes, unknown_files`。不能归属本组身份的记录不返回外组标识。

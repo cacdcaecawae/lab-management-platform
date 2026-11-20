@@ -113,6 +113,8 @@ class UsageReport(models.Model):
     condition = models.CharField("设备状况", max_length=16, choices=Condition.choices)
     description = models.TextField("说明", blank=True)
     photo = models.FileField("照片", upload_to=usage_photo_upload_to, max_length=300, blank=True)
+    photo_size = models.PositiveBigIntegerField("照片字节数", null=True, blank=True, editable=False)
+    photo_uploaded_at = models.DateTimeField("当前照片上传时间", null=True, blank=True, editable=False)
     reported_at = models.DateTimeField("登记时间", auto_now_add=True)
 
     class Meta:
