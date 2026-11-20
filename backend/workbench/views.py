@@ -11,6 +11,7 @@ from equipment.models import Booking, Equipment
 from equipment.queries import calibration_within
 from equipment.serializers import BookingSerializer, EquipmentBriefSerializer
 from inventory.models import Consumable
+from inventory.queries import batch_details, batches_with_balance
 from inventory.serializers import ConsumableSerializer
 from meetings.models import ActionItem
 from meetings.serializers import MyActionItemSerializer
@@ -119,9 +120,14 @@ class DashboardView(APIView):
                 .annotate(stock=Sum("txns__quantity", default=0), stock_version=Max("txns__id", default=0))
                 .filter(stock__lt=F("safety_stock"))
                 .order_by("name", "spec", "id")
+                .prefetch_related(batch_details())
             )
             overdue = overdue_loans(open_in_group, today=today).select_related("specimen", "borrower").order_by("due_date", "id")
             calibration = calibration_within(scope_group(Equipment.objects.all(), user), today=today).order_by("calibration_due", "id")
+            expiring_batches = batches_with_balance().filter(
+                consumable__group_id=user.group_id, consumable__tracks_batches=True, stock__gt=0,
+                expires_on__range=(today, today + timedelta(days=30)),
+            ).values("id", "batch_no", "expires_on", "stock", "consumable__name")[:LIMIT]
             data["manager"] = {
                 "overdue_loans": [loan_preview(loan, today, include_borrower=True) for loan in overdue[:LIMIT]],
                 "overdue_loans_count": overdue.count(),
@@ -130,6 +136,7 @@ class DashboardView(APIView):
                     for device in calibration[:LIMIT]
                 ],
                 "calibration_due_count": calibration.count(),
+                "expiring_batches": list(expiring_batches),
                 "equipment_to_check": EquipmentBriefSerializer(to_check.order_by("code")[:LIMIT], many=True).data,
                 "low_stock": ConsumableSerializer(low_stock[:LIMIT], many=True).data,
             }

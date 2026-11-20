@@ -254,6 +254,14 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
             </li>
           </ul>
         </el-card>
+        <el-card v-if="data.manager?.expiring_batches?.length" header="30 天内到期的耗材批次" class="wb-card">
+          <ul class="rows">
+            <li v-for="b in data.manager.expiring_batches" :key="b.id">
+              <RouterLink :to="{ name: 'consumables', query: { expiring_within: '30' } }">{{ b.consumable__name }} · {{ b.batch_no }}</RouterLink>
+              <span class="hint">{{ b.expires_on }} 到期 · 库存 {{ b.stock }}</span>
+            </li>
+          </ul>
+        </el-card>
         <el-card v-if="data.manager" header="库存不足的耗材" class="wb-card">
           <el-empty v-if="!data.manager.low_stock.length" :image-size="40" description="耗材库存充足" />
           <ul v-else class="rows">
