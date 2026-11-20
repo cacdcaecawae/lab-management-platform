@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { docsApi } from '../api'
@@ -15,6 +15,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 
 // ?equipment=<id> comes from the equipment page ("资料"), ?doc=<id> opens one document.
 const initialEquipment = Number(route.query.equipment) || ''
@@ -32,6 +33,7 @@ const current = ref<DocDetail | null>(null)
 const dialogOpen = ref(false)
 const saving = ref(false)
 const historyOpen = ref(false)
+const detailLoading = ref(false)
 const writer = computed(() => !current.value || current.value.author.id === auth.user?.id || auth.isManager)
 const deviceOptions = computed(() => mergeById(devices.value, [current.value?.equipment]))
 
@@ -44,49 +46,99 @@ function fill(doc: DocDetail | null) {
   )
 }
 
-async function openDoc(id: number | null) {
+let detailGeneration = 0
+onBeforeUnmount(() => { ++detailGeneration })
+
+function resetDetail() {
+  ++detailGeneration
+  dialogOpen.value = false
+  historyOpen.value = false
+  detailLoading.value = false
+  saving.value = false
+  progress.value = null
   errors.clear()
   note.value = ''
-  try {
-    fill(id ? await docsApi.get(id) : null)
-    dialogOpen.value = true
-  } catch (e) {
-    showError(e)
+  fill(null)
+}
+
+function closeDetail() {
+  const routeDoc = route.query.doc
+  resetDetail()
+  if (routeDoc != null) {
+    const query = { ...route.query }
+    delete query.doc
+    void router.replace({ query, hash: route.hash })
   }
 }
+
+function isCurrent(generation: number) {
+  return generation === detailGeneration
+}
+
+async function openDoc(id: number | null) {
+  resetDetail()
+  const generation = detailGeneration
+  detailLoading.value = id !== null
+  try {
+    const doc = id ? await docsApi.get(id) : null
+    if (!isCurrent(generation)) return
+    fill(doc)
+    dialogOpen.value = true
+  } catch (e) {
+    if (isCurrent(generation)) showError(e)
+  } finally {
+    if (isCurrent(generation)) detailLoading.value = false
+  }
+}
+
+async function openFromList(id: number | null) {
+  const next = id === null ? undefined : String(id)
+  if (route.query.doc === next) return openDoc(id)
+  const query = { ...route.query }
+  if (next) query.doc = next
+  else delete query.doc
+  await router.replace({ query, hash: route.hash })
+  if (next === undefined && route.query.doc === undefined) return openDoc(null)
+}
+
 async function save() {
+  if (saving.value) return
+  const generation = detailGeneration
+  const id = current.value?.id
+  const payload = { ...form, tags: [...form.tags] }
   saving.value = true
   try {
-    if (current.value) {
-      fill(await docsApi.update(current.value.id, form))
-      ElMessage.success('已保存')
-    } else {
-      fill(await docsApi.create(form))
-      ElMessage.success('已新建，可以上传文件')
-    }
-    errors.clear()
+    const saved = id ? await docsApi.update(id, payload) : await docsApi.create(payload)
     load()
+    if (!isCurrent(generation)) return
+    fill(saved)
+    ElMessage.success(id ? '已保存' : '已新建，可以上传文件')
+    errors.clear()
   } catch (e) {
-    errors.handle(e)
+    if (isCurrent(generation)) errors.handle(e)
   } finally {
-    saving.value = false
+    if (isCurrent(generation)) saving.value = false
   }
 }
 
 async function remove() {
-  const doc = current.value!
+  const doc = current.value
+  const generation = detailGeneration
+  if (!doc) return
   try {
     await ElMessageBox.confirm(`删除“${doc.title}”及它的全部 ${doc.versions.length} 个版本？删除后无法恢复。`, '删除文档', { type: 'warning' })
   } catch {
     return
   }
+  if (!isCurrent(generation)) return
   try {
     await docsApi.remove(doc.id)
-    ElMessage.success('已删除')
-    dialogOpen.value = false
     load()
+    if (!isCurrent(generation)) return
+    ElMessage.success('已删除')
+    closeDetail()
   } catch (e) {
-    showActionError(e)
+    if (isCurrent(generation)) showActionError(e)
   }
 }
 
@@ -99,26 +151,39 @@ async function onPick(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = '' // allow picking the same file again after an error
-  if (!file || !current.value) return
+  const id = current.value?.id
+  const generation = detailGeneration
+  if (!file || !id || progress.value !== null) return
   progress.value = 0
   try {
-    const version = await docsApi.addVersion(current.value.id, file, note.value, (p) => (progress.value = p))
+    const version = await docsApi.addVersion(id, file, note.value, (p) => {
+      if (isCurrent(generation)) progress.value = p
+    })
+    load()
+    if (!isCurrent(generation)) return
     ElMessage.success(`已上传第 ${version.number} 版`)
     note.value = ''
-    fill(await docsApi.get(current.value.id))
-    load()
+    const doc = await docsApi.get(id)
+    if (isCurrent(generation)) fill(doc)
   } catch (err) {
-    showActionError(err)
+    if (isCurrent(generation)) showActionError(err)
   } finally {
-    progress.value = null
+    if (isCurrent(generation)) progress.value = null
   }
 }
 
-if (Number(route.query.doc)) openDoc(Number(route.query.doc)) // after `note` above exists
+watch(() => route.query.doc, (doc, previous) => {
+  if (typeof doc === 'string' && /^\d+$/.test(doc) && Number.isSafeInteger(Number(doc)) && Number(doc) > 0) {
+    void openDoc(Number(doc))
+  } else if (previous != null) {
+    resetDetail()
+  }
+}, { immediate: true })
 </script>
 
 <template>
   <el-card class="card">
+    <p v-if="detailLoading" role="status">正在加载文档…</p>
     <div class="page-toolbar">
       <el-input v-model="keyword" placeholder="搜索标题、标签、说明、设备" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.category" placeholder="全部分类" aria-label="分类" clearable>
@@ -128,11 +193,11 @@ if (Number(route.query.doc)) openDoc(Number(route.query.doc)) // after `note` ab
         <el-option v-for="d in devices" :key="d.id" :label="`${d.code} ${d.name}`" :value="d.id" />
       </el-select>
       <span class="grow" />
-      <el-button type="primary" @click="openDoc(null)">新建文档</el-button>
+      <el-button type="primary" @click="openFromList(null)">新建文档</el-button>
     </div>
     <el-table v-loading="loading" :data="items" empty-text="没有符合条件的文档">
       <el-table-column label="标题" min-width="200">
-        <template #default="{ row }"><el-button link type="primary" @click="openDoc(row.id)">{{ row.title }}</el-button></template>
+        <template #default="{ row }"><el-button link type="primary" @click="openFromList(row.id)">{{ row.title }}</el-button></template>
       </el-table-column>
       <el-table-column label="分类" min-width="90">
         <template #default="{ row }">{{ DOC_CATEGORY_LABELS[row.category] }}</template>
@@ -168,7 +233,7 @@ if (Number(route.query.doc)) openDoc(Number(route.query.doc)) // after `note` ab
     />
   </el-card>
 
-  <el-dialog v-model="dialogOpen" :title="current ? current.title : '新建文档'" width="min(640px, 95vw)">
+  <el-dialog :model-value="dialogOpen" :before-close="closeDetail" :title="current ? current.title : '新建文档'" width="min(640px, 95vw)">
     <div v-if="current" class="meta-line">
       <span>{{ current.author.name }} 创建于 {{ formatTime(current.created_at) }}</span>
       <el-button link @click="historyOpen = true">修改历史</el-button>
@@ -225,7 +290,7 @@ if (Number(route.query.doc)) openDoc(Number(route.query.doc)) // after `note` ab
 
     <template #footer>
       <el-button v-if="current && auth.isManager" type="danger" plain class="left" @click="remove">删除文档</el-button>
-      <el-button @click="dialogOpen = false">{{ writer ? '取消' : '关闭' }}</el-button>
+      <el-button @click="closeDetail">{{ writer ? '取消' : '关闭' }}</el-button>
       <el-button v-if="writer" type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-dialog>

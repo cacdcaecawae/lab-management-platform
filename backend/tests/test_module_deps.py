@@ -28,9 +28,9 @@ def test_frontend_rules():
     assert not deps.frontend_violations(page, "import X from '../components/EquipmentFormDialog.vue'")
     assert deps.frontend_violations("components/StatusTag.vue", "import { x } from '@/modules/equipment/api'")
     assert not deps.frontend_violations("router/index.ts", "import equipment from '@/modules/equipment'")
-    legacy = "views/ExperimentEditView.vue"  # not moved into a module yet
-    assert not deps.frontend_violations(legacy, "import { equipmentApi } from '@/modules/equipment/api'")
-    assert deps.frontend_violations(legacy, "import X from '@/modules/equipment/components/EquipmentFormDialog.vue'")
+    shell = "views/LoginView.vue"
+    assert deps.frontend_violations(shell, "import { equipmentApi } from '@/modules/equipment/api'")
+    assert deps.frontend_violations(shell, "import X from '@/modules/equipment/components/EquipmentFormDialog.vue'")
 
 
 def test_current_code_follows_the_rules(capsys):

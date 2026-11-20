@@ -81,7 +81,7 @@ export const DEFECT_KIND_LABELS: Record<string, string> = {
 }
 export const BOOKING_KIND_LABELS: Record<string, string> = { use: '使用', maintenance: '维护' }
 export const CONDITION_LABELS: Record<string, string> = { normal: '正常', abnormal: '异常' }
-export const TXN_KIND_LABELS: Record<string, string> = { in: '入库', out: '领用', return: '退回', adjust: '盘点调整' }
+export const TXN_KIND_LABELS: Record<string, string> = { in: '入库', out: '领用', return: '退回', adjust: '盘点调整', allocation: '批次期初分配', batch_mode: '批次管理变更' }
 
 // Field names that appear in HistoryEntry.changes.
 export const FIELD_LABELS: Record<string, string> = {

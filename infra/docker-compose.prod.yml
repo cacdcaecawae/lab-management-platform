@@ -40,6 +40,7 @@ services:
       DATA_ROOT: /data/files
       FILE_UPLOAD_TEMP_DIR: /data/tmp
       MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-2147483648}
+      SITE_URL: ${SITE_URL:-}
       # Mail (SMTP) is set by the ops account in the web UI, 系统管理 → 邮件, and stored in the database.
     volumes:
       - labdata:/data           # uploaded research files — back this up
@@ -71,7 +72,11 @@ services:
       RESTIC_PASSWORD: ${BACKUP_PASSWORD:-}
     volumes:
       - labdata:/data
-      - ${BACKUP_REPO:-./backup-repo-not-set}:/repo   # the scripts refuse to run until BACKUP_REPO is set
+      - type: bind
+        source: ${BACKUP_REPO:-./backup-repo-not-set}
+        target: /repo
+        bind:
+          create_host_path: false
 
 volumes:
   pgdata:

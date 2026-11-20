@@ -51,6 +51,8 @@ class AchievementViewSet(viewsets.ModelViewSet):
     def filtered(self, items):
         """Shared by the list and the export, so the export holds exactly what the page shows."""
         params = self.request.query_params
+        if item := params.get("item"):
+            return items.filter(pk=item) if item.isascii() and item.isdigit() and len(item) <= 18 else items.none()
         if kind := params.get("type"):
             items = items.filter(type=kind) if kind in Achievement.Type.values else items.none()
         items = filter_status(items, params.get("status"))

@@ -9,21 +9,21 @@
 | # | 内容 | 方案笔记 | 大小 | 依赖 | 模型检查 |
 |---|---|---|---|---|---|
 | 1 | 设备并发模型检查聚焦 settings.py 的数据库设置（已实现） | [process/…-tla-check-database-settings-only](../.agents/notes/implemented/process/2026-11-18-tla-check-database-settings-only.md) | S | — | 改检查脚本本身 |
-| 2 | 前端其余页面迁入 `src/modules/` | [architecture/…-frontend-modules-rest](../.agents/notes/proposed/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 否 |
+| 2 | 前端其余页面迁入 `src/modules/`（迁移完成，浏览器待验收） | [architecture/…-frontend-modules-rest](../.agents/notes/implemented/architecture/2026-11-18-frontend-modules-rest.md) | M | 没有其他未合并的前端 PR | 是（设备表单 import 变更） |
 | 3 | 补走浏览器验证欠账 | [testing/…-browser-verification-backlog](../.agents/notes/proposed/testing/2026-11-18-browser-verification-backlog.md) | M（可拆开做） | 最好在 2 之后 | 否 |
-| 4 | 工作台提醒：我借的试件、逾期未还、校准到期 | [feature/…-workbench-reminders](../.agents/notes/proposed/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
-| 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/proposed/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |
-| 6 | 站内通知（铃铛） | [feature/…-notification-center](../.agents/notes/proposed/feature/2026-11-18-notification-center.md) | M | — | 设备异常的接入点在 `equipment/views.py`：是 |
-| 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/proposed/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |
-| 8 | 每月自动恢复演练 | [process/…-restore-drill](../.agents/notes/proposed/process/2026-11-18-restore-drill.md) | M | — | 否 |
-| 9 | 设备使用统计与导出 | [feature/…-equipment-usage-stats](../.agents/notes/proposed/feature/2026-11-18-equipment-usage-stats.md) | M | — | 否（视图放在新文件） |
-| 10 | 存储用量统计 | [feature/…-storage-usage](../.agents/notes/proposed/feature/2026-11-18-storage-usage.md) | M | — | 否 |
+| 4 | 工作台提醒：我借的试件、逾期未还、校准到期（代码完成，浏览器待验收） | [feature/…-workbench-reminders](../.agents/notes/implemented/feature/2026-11-18-workbench-reminders.md) | S | — | 是（设备列表筛选） |
+| 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/implemented/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |
+| 6 | 站内通知（铃铛） | [feature/…-notification-center](../.agents/notes/implemented/feature/2026-11-18-notification-center.md) | M | — | 设备异常的接入点在 `equipment/views.py`：是 |
+| 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/implemented/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |
+| 8 | 每月自动恢复演练（脚本已实现；隔离整栈待验收） | [process/…-restore-drill](../.agents/notes/implemented/process/2026-11-18-restore-drill.md) | M | — | 否 |
+| 9 | 设备使用统计与导出（已实现） | [feature/…-equipment-usage-stats](../.agents/notes/implemented/feature/2026-11-18-equipment-usage-stats.md) | M | — | 否（视图放在新文件） |
+| 10 | 存储用量统计（已实现） | [feature/…-storage-usage](../.agents/notes/implemented/feature/2026-11-18-storage-usage.md) | M | — | 否 |
 | 11 | 登录记录（已实现） | [feature/…-login-records](../.agents/notes/implemented/feature/2026-11-18-login-records.md) | S | — | 否 |
 | 12 | 成果统计（已实现） | [feature/…-achievement-stats](../.agents/notes/implemented/feature/2026-11-18-achievement-stats.md) | S | — | 否 |
-| 13 | 全站搜索 | [feature/…-global-search](../.agents/notes/proposed/feature/2026-11-18-global-search.md) | M | 最好在 2 之后 | 否 |
-| 14 | 耗材批次与有效期 | [feature/…-consumable-batches](../.agents/notes/proposed/feature/2026-11-18-consumable-batches.md) | L | 需要用户确认哪些耗材按批次管 | 否 |
+| 13 | 全站搜索（已实现） | [feature/…-global-search](../.agents/notes/implemented/feature/2026-11-18-global-search.md) | M | 最好在 2 之后 | 否 |
+| 14 | 耗材批次与有效期（已实现，默认关闭） | [feature/…-consumable-batches](../.agents/notes/implemented/feature/2026-11-18-consumable-batches.md) | L | 需要用户确认哪些耗材按批次管 | 否 |
 | 15 | 设备与试件二维码标签 | [feature/…-qr-labels](../.agents/notes/implemented/feature/2026-11-18-qr-labels.md) | S | 正式域名定下来之后再大量打印 | 是（页面实现；实体试印待验证） |
-| 16 | 正式域名的 HTTPS | [process/…-https](../.agents/notes/proposed/process/2026-11-18-https.md) | M | 用户提供域名并完成 ICP 备案 | 否 |
+| 16 | 正式域名的 HTTPS | [process/…-https](../.agents/notes/implemented/process/2026-11-18-https.md) | M | 用户提供域名并完成 ICP 备案 | 是（配置实现；正式部署验收待做） |
 
 会议明确暂缓、不要做的：AI 额度与 Magpie 对接、培训授权与毕业交接、分片上传与断点续传、在服务器上运行 MATLAB/Python、SOP 学习考核、图表证据卡、对接学校财务系统（见开发手册第 1 节和 `docs/development-plan.md`）。
 

@@ -75,7 +75,10 @@
     "upcoming_bookings": [Booking],     // 本人进行中和将来的预约，按开始时间
     "unreported_bookings": [Booking],   // 本人最近 14 天内结束、还没登记使用结果的"使用"类预约
     "returned_purchases": [Purchase],   // 本人被退回、还没重新提交的采购申请
-    "action_items": [MyActionItem]      // 本人未完成的组会行动项，截止日期近的在前，没有截止日期的在最后
+    "tasks": [WorkbenchTask],           // 本人当前负责且未完成的项目任务，最多 20 条，截止日期早的在前
+    "action_items": [MyActionItem],     // 本人未完成的组会行动项，截止日期近的在前，没有截止日期的在最后
+    "borrowed_specimens": [BorrowedSpecimenReminder],  // 本人未还，到期日早的在前，无到期日在最后
+    "borrowed_specimens_count": 0      // 真实总数，不限于预览
   },
   "supervisor": {                      // 仅管理员/导师，否则为 null
     "week_start": "2026-11-16",
@@ -85,12 +88,33 @@
   },
   "manager": {                         // 仅管理员（不含导师），否则为 null
     "equipment_to_check": [EquipmentBrief],   // 状态为"待检查"的设备
-    "low_stock": [Consumable]                 // 库存低于安全库存的耗材
+    "low_stock": [Consumable],                // 库存低于安全库存的耗材
+    "overdue_loans": [BorrowedSpecimenReminder + {borrower: UserBrief}],
+    "overdue_loans_count": 0,
+    "calibration_due": [EquipmentBrief + {calibration_due}],
+    "calibration_due_count": 0
   }
 }
 ```
 
-每个列表最多 20 条。
+每个列表最多 20 条；上述三个 `*_count` 字段为相同条件下的真实总数。
+`BorrowedSpecimenReminder = {loan_id, specimen: SpecimenBrief, borrowed_at, due_date: date | null, overdue}`；不含缺陷参数。
+逾期是到期日小于应用所在时区的当日且未归还。校准提醒包含到期日在当日后 30 天以内及已过期的非停用设备。
+
+---
+
+## 站内通知 `/api/notifications/`
+
+只允许登录并已完成首次改密码的组内成员访问。查询只包括本人在当前组收到的、且仍符合必要角色的通知；其他账号的通知一律 404。无组运维账号不能访问。通知中的链接不改变原业务权限。
+
+`SiteNotification = {id, title, body, link, created_at, read_at: datetime | null}`。标题为简要动作，不包含审批意见、设备故障描述、盲测参数等业务内容。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/notifications/?unread=1` | 可分页；默认 20、最多 100；最新在前；省略 unread 返回全部 |
+| GET | `/api/notifications/unread-count/` | `{count}` |
+| POST | `/api/notifications/{id}/read/` | 幂等，返回更新后的通知 |
+| POST | `/api/notifications/read-all/` | 标记当前范围内未读通知，返回 `{updated}` |
 
 ---
 
@@ -129,6 +153,25 @@
 不提供删除（结束用 `status=closed`）。
 
 ---
+
+### 项目任务与里程碑
+
+列表分页；截止日期早的在前，空日期最后，相同日期按编号。对象归属原项目，外组请求均 404。
+
+| 方法 | 路径 | 权限和字段 |
+|---|---|---|
+| GET | `/api/projects/{id}/tasks/?status=&assignee=&milestone=` | 本组全员；可按状态、负责人编号、里程碑编号筛选 |
+| POST | `/api/projects/{id}/tasks/` | 本项目现任成员、项目负责人、管理员或导师；`{title, description?, assignee_id?, status?, milestone_id?, due_date?}` |
+| PATCH | `/api/tasks/{id}/` | 同 POST；只提交需要修改的字段，移动卡片使用 `{status}` |
+| DELETE | `/api/tasks/{id}/` | 创建者、项目负责人、管理员或导师；同时删除任务修改历史 |
+| GET | `/api/projects/{id}/milestones/` | 本组全员；含 `task_total` 和 `task_done` |
+| POST | `/api/projects/{id}/milestones/` | 项目负责人、管理员或导师；`{title, due_date?, done?}` |
+| PATCH / DELETE | `/api/milestones/{id}/` | 同 POST；删除后关联任务保留并解除关联 |
+
+任务状态为 `todo`（待办，默认）、`doing`（进行中）或 `done`（完成）。负责人、里程碑、截止日期可为 `null`。任何操作者只能新分配本项目在籍成员（含项目负责人）；历史负责人离开项目、停用或转组后仍保留原姓名，返回 `assignee: {id, name, current: false}`。可以清除或改派；未提交 `assignee_id` 不影响原指派。不可关联同组另一项目的里程碑。任务返回 `milestone: {id, title} | null`、`created_by`（用户 ID）、最多 20 条近期修改记录 `history: [{actor, changes: {field: {before, after}}, created_at}]`；删除里程碑触发的解除关联也记入历史。里程碑的 `done_at` 是独立的人工完成时间，不会随计数自动改变。
+
+工作台 `my.tasks` 返回 `{id, title, due_date, status, project: {id, name}}`，不含已离开项目、停用或转组后的旧指派。
+
 
 ## 数据集与文件（Agent C）
 
@@ -222,7 +265,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/equipment/?status=&search=` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置 |
+| GET | `/api/equipment/?status=&search=&calibration_within=30` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置；`calibration_within` 为 0 至 3650 的整数，包含已过期、不含停用和无到期日，按到期日再按 ID 排序；无效值 400 |
 | POST | `/api/equipment/` | 管理员 | `{code, name, model, category, location, custodian_id, status, purchase_date, calibration_due, notes, purchase_id}`；`code` 组内唯一（409 `conflict`）；保管人必须是本组在籍成员；`purchase_id` 只能选本组已到货的采购申请 |
 | GET | `/api/equipment/{id}/` | 本组全员 | `Equipment` 加 `recent_usage: [Booking]`：已开始、未取消的"使用"类预约，最近 20 条，含使用登记 |
 | PATCH | `/api/equipment/{id}/` | 管理员 | 同 POST 字段，只提交要改的字段；没提交的字段保留数据库里的最新值（在行锁下重读，不会把并发的"待检查"写回成旧值）。提交 `status` 时必须同时提交 `status_seen`（打开编辑框时看到的状态，缺了 400）；锁下的当前状态既不是 `status_seen` 也不是新状态时 → 409 `stale_status` |
@@ -291,7 +334,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的 |
+| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1&overdue=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的；`overdue=1` 借用已逾期（按应用时区）且未归还；可叠加 |
 | POST | `/api/specimens/` | 管理员 | `{code, name, kind, material, dimensions, location, custodian_id, status, defects_public, notes, defects: [{kind, size_mm, depth_mm, position, note}]}`；编号组内唯一（409） |
 | GET | `/api/specimens/{id}/` | 本组全员 | |
 | PATCH | `/api/specimens/{id}/` | 管理员 | 同 POST 字段；带 `defects` 时整份替换 |
@@ -443,6 +486,9 @@
 
 ## 系统管理 `/api/system/`
 
+- `GET /storage-status/`：仅运维，返回 `{primary: "local" | "nas", nas_ready: boolean | null}`。只读取当前后端所见的专用目录身份；不写文件、不暴露路径或凭据，也不表示备份成功。其他账号 403。NAS 文件操作不能完成时，可返回 503 `storage_unavailable`。
+
+
 只有运维账号（Django 超级用户，通常不属于任何课题组）可用；未改初始密码时 403 `password_change_required`，其他账号 403。
 
 `MailSettings = {mail_enabled, mail_host, mail_port, mail_security, mail_username, mail_from, password_set, last_mail_error, last_mail_error_at}`
@@ -483,13 +529,36 @@
 
 `type`: `created` | `changed` | `deleted`
 
+### 设备使用统计
+
+- `GET /api/equipment/usage-stats/?from=YYYY-MM-DD&to=YYYY-MM-DD&by=equipment|user|project|month`：本组管理员或导师；范围按上海时区左闭右开，最长 366 天。统计未取消使用类预约与区间的交集。
+- 返回 `[{key: {id, label}, booked_hours, reported_hours, bookings, abnormal}]`。已登记预约小时指有使用登记的预约时长，不是实测机时。跨月时按月分摊小时，预约数和异常数仅计入窗口内第一个相交月。设备分组含零预约；成员和项目维度只显示当前本组标识，转组成员或外组项目的预约仍计入，分别合并为未归属成员或未关联项目。
+- `GET /api/equipment/usage-stats/export/`：相同参数、权限和聚合口径，下载 Excel。
+
+### 存储用量
+
+- `GET /api/system/storage/` 仅运维。返回 `{disk, groups, month_keys, projection}`。组内有 `id, name, known_bytes, unknown_files, modules, months`；月份为北京时间的 `YYYY-MM`，总字节统计仅含仍在账、大小已知的文件；按月统计还要求上传时间已知。设备照片更换按当前文件上传时间计，旧照片不以登记日期补造上传时间。
+- `disk.kind` 为 `local` 或 `non_local`；本地且取值成功时 `disk.filesystem` 含总量、已用、可用字节，其他场景为 `null`。文件系统统计不等于平台文件合计。
+- `projection` 可空；最近 3 个完整月份均有已知大小的文件时包含 `basis_months` 和 `annual_retained_known_bytes`，是对当前仍有记录的文件的同口径粗估，不是磁盘净增长或寿命。
+- `GET /api/storage-usage/` 本组管理员与导师。仅原始数据，返回 `{by_member, by_project}`，每行 `id, label, known_bytes, unknown_files`。不能归属本组身份的记录不返回外组标识。
+
+### 登录记录
+
+`GET /api/system/logins/` 仅运维。可选 `username`（现有账号的精确登录名）、`outcome=success|failed|throttled`、`from`（含）和 `to`（不含，ISO 8601），使用标准分页。每行为 `{id, at, outcome, account: {id, username} | null, ip: string | null}`。
+`audit_enabled` 表示新采集是否开启。`top_failed_24h` 不受列表筛选影响，仅列已知账号的认证失败次数前五。限流记录每分钟最多一行，不含账号或地址，也不代表拒绝次数。
+
 ### 成果统计
 
 - `GET /api/achievements/stats/` 本组成员；可选 `year_from`、`year_to`（均含）、`status`（默认 `formal`，亦可指定 `all` 或逗号分隔的状态）。原成果列表与导出也接受 `status=formal`，依类型分别选已录用及已发表论文、已授权专利、获奖及已登记软著。
 - 返回 `{status, by_year, by_member, total}`。分组分别附 `year`、`user:{id,name}`；计数列为 `paper,patent,award,software,total`。只展示有符合条件成果的年；本组成员每项各计一次，组总计按成果去重，不要求存在组内作者。
 - `GET /api/achievements/stats/export/` 参数、权限与聚合口径同上，下载两页 Excel，不附全文；按成员页包含成员 ID 列，用于区分同名成员。
 
-### 登录记录
+### 全站搜索
 
-`GET /api/system/logins/` 仅运维。可选 `username`（现有账号的精确登录名）、`outcome=success|failed|throttled`、`from`（含）和 `to`（不含，ISO 8601），使用标准分页。每行为 `{id, at, outcome, account: {id, username} | null, ip: string | null}`。
-`audit_enabled` 表示新采集是否开启。`top_failed_24h` 不受列表筛选影响，仅列已知账号的认证失败次数前五。限流记录每分钟最多一行，不含账号或地址，也不代表拒绝次数。
+`GET /api/search/?q=关键字`：须为已改密、已分组的登录账号。去掉首尾空白后须为 2 至 100 个字符，否则返回 400。返回非空模块组的数组，每组为 `{module, label, items:[{id,title,subtitle,link}]}`；每组最多 5 条，按 ID 倒序。沿用各模块可见范围；不搜索试件缺陷、报告正文或附件。周报支持按 ISO 日期文本匹配。响应禁止缓存。
+
+### 耗材按批次管理
+
+仅本组管理员可 `POST /api/consumables/{id}/batch-mode/`，提交 `{tracks_batches,stock_version_seen,opening_batch?}`。非零库存启用时提供 `opening_batch:{batch_no,expires_on?}`，平台等额转拨而非增加库存；非零批次禁止关闭，错过版本返回 `409 stale_stock`。普通新增和元数据编辑不通过此接口，不改变模式。所有原有和新建耗材默认关闭。
+
+耗材响应增加 `tracks_batches`、`nearest_expiry` 和按有效期升序（无日期最后）的 `batches:[{id,batch_no,expires_on,stock,can_issue}]`。保留零库存批次以便退回。开启后，入库传 `batch_no` 和可选 `expires_on`；领用、退回、盘点传本耗材的 `batch_id`。有效期当天可领，过期不能领，但允许退回、管理员盘点及普通入库记录。盘点提交**所选批次**的有符号差额及耗材总账版本；历史流水可能含只读的 `allocation`、`batch_mode`，客户端不能提交。列表 `expiring_within` 接受 0–365（含今天，忽略过期或零库存批次）；管理员工作台返回本组最多 20 个 30 天内到期批次。

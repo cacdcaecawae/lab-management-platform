@@ -33,6 +33,8 @@ def test_review_submission_guard_without_database(monkeypatch, verdict, submitte
         }[submitted_seen]
     request = SimpleNamespace(user=SimpleNamespace(id=1, is_supervisor=True, role="manager"), data=body)
     create = Mock()
+    notify_purchase = Mock()
+    monkeypatch.setattr("procurement.views.notify_purchase", notify_purchase)
     monkeypatch.setattr("procurement.views.transaction.atomic", lambda: nullcontext())
     monkeypatch.setattr("procurement.views.transaction.on_commit", Mock())
     monkeypatch.setattr(Approval.objects, "create", create)
@@ -40,8 +42,10 @@ def test_review_submission_guard_without_database(monkeypatch, verdict, submitte
         assert view.review(request) == ("pending_final" if verdict == "approve" else "draft")
         create.assert_called_once()
         purchase.save.assert_called_once()
+        notify_purchase.assert_called_once_with(purchase)
     else:
         with pytest.raises(Conflict if submitted_seen in ("old", "one_microsecond_old") else ValidationError):
             view.review(request)
         create.assert_not_called()
         purchase.save.assert_not_called()
+        notify_purchase.assert_not_called()

@@ -22,9 +22,9 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 | 层 | App | 职责 | 可以引用 |
 |---|---|---|---|
-| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`） | 只用 Django / DRF |
+| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`）、站内通知 | 运行期只用 Django / DRF；通知迁移引用账号及课题组模型 |
 | 账号 | `accounts` | 课题组 `ResearchGroup`、自定义用户 `User`、登录/退出/改密、成员管理接口 | core |
-| 项目 | `projects` | 项目、项目成员、项目进展 | accounts、core |
+| 项目 | `projects` | 项目、项目成员、项目进展、任务、里程碑 | accounts、core |
 | 业务 | `datasets` | 数据集、数据文件、上传/下载、SHA256、不可覆盖、版本 | projects 及以下 |
 | 业务 | `procurement` | 经费来源、采购申请与两级审批、报销与统计、财务提醒 | projects 及以下 |
 | 业务 | `meetings` | 组会、议程、行动项、附件 | projects 及以下 |
@@ -35,7 +35,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 | 业务 | `research` | 实验记录（可关联台账设备和试件）、数据处理记录、提交/退回、修改历史 | datasets、equipment、specimens、projects 及以下 |
 | 业务 | `knowledge` | 知识库文档与版本 | equipment、projects 及以下 |
 | 业务 | `reports` | 周报、反馈、状态流转、未交统计 | research、datasets、projects 及以下 |
-| 汇总 | `workbench` | 工作台汇总接口 `/api/dashboard/`（无模型） | 所有业务模块 |
+| 汇总 | `workbench` | 工作台与存储汇总接口、每日提醒发送去重账本 | 所有业务模块 |
 | 汇总 | `system` | 系统管理 `/api/system/`：邮件配置、课题组、所有组的账号（无模型） | accounts、core |
 
 模块的对外部分：别的模块只能引用 `models`、`serializers`（简要序列化器、"本组对象"选择字段）、`mixins` 和专门给别人用的文件（`versions.py`、`queries.py`）；`views`、`urls`、`admin` 属于模块内部。被几个模块共用的查询放进 `queries.py`，例如"哪些采购单等我审批"（`procurement/queries.py`）由采购列表和工作台共用。测试、迁移、`conftest.py` 不受这些规则限制。
@@ -53,6 +53,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 |---|---|---|---|
 | 个人数据 | 实验记录、数据集/文件、处理记录、周报 | 本人 + 本组 supervisor | 本人；提交后锁定，supervisor 可退回 |
 | 组内公开 | 项目与进展、成员公开信息 | 本组全员 | 项目：supervisor 或项目负责人；成员：管理员 |
+| 组内公开 | 项目任务与里程碑 | 本组全员 | 任务建改：项目成员、项目负责人、supervisor；删：任务创建者、项目负责人、supervisor；里程碑增删改：项目负责人或 supervisor |
 | 组内公开（第二期） | 设备、预约与使用登记、耗材与流水 | 本组全员 | 台账、入库、盘点：管理员（不含导师）；预约、领用、退回：本人；取消：本人（未开始）或管理员 |
 | 组内公开（试样） | 试样与标准件、借用记录；缺陷参数在盲测时（`defects_public=false`）只给管理员和导师 | 本组全员 | 台账：管理员（不含导师）；借用：本人；归还：本人或管理员 |
 | 成员隐私 | 学号（登录名）、电话、邮箱 | 本人 + 本组 supervisor | 管理员 |
@@ -81,7 +82,7 @@ Django Session（HttpOnly Cookie）+ CSRF。SPA 先 `GET /api/auth/csrf/` 取得
 - 上传文件：`DATA_ROOT`（生产环境挂载数据盘）。
 - 配置：环境变量（`.env`，不入库）。
 - 备份：`scripts/backup.sh` 把 `pg_dump` 的导出和上传文件写进同一个 restic 快照（restic 跑在 Compose 的 `restic` 服务里，profile `ops`），每天一份留 30 天、每月一份留 12 个月；`scripts/restore.sh` 恢复。
-- 发版与更新：推送 `vX.Y.Z` 标签后，GitHub Actions 检查通过再把 backend、web 镜像推到 ghcr.io；服务器 `.env` 的 `APP_VERSION` 选用镜像，`scripts/update.sh` 拉取、备份、切换、检查，失败自动退回。"系统管理 → 版本"只提示，不在网页里更新。方案见[发版、更新与备份](../.agents/notes/implemented/process/2026-11-18-release-update-backup.md)。
+- 发版与更新：推送 `vX.Y.Z` 标签后，GitHub Actions 检查通过再把 backend、web 镜像推到 ghcr.io；服务器 `.env` 的 `APP_VERSION` 选用镜像，`scripts/update.sh` 拉取、备份、切换、检查，失败后仅在迁移记录未变时自动退回；有变化或无法核对时停站保留数据。"系统管理 → 版本"只提示，不在网页里更新。方案见[发版、更新与备份](../.agents/notes/implemented/process/2026-11-18-release-update-backup.md)。
 
 ## 前端
 
@@ -90,8 +91,10 @@ Vue 3 + TypeScript + Vite + Element Plus + Pinia + Vue Router。
 - `src/api/types.ts`：与 `api-contract.md` 一一对应的类型。
 - `src/stores/auth.ts`：登录状态；路由守卫负责未登录跳转登录页、未改初始密码跳转改密页。
 - 菜单按开发手册 §5，只显示已上线的模块；`meta.supervisor` 只控制界面显示，权限以后端为准。
-- 模块目录 `src/modules/<模块>/`（`equipment`、`knowledge`，新模块 `specimens`；其余页面仍在 `src/views/`）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/`）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。
+- 模块目录 `src/modules/<模块>/`（所有业务页面）：`api.ts` 对外，`views/`、`components/` 属于模块内部，`index.ts` 导出路由。前端的依赖按页面承担的职责定，不套用后端分层表：任何模块都可以引用别的模块的 `api`（例如设备详情页列出这台设备的知识库文档），但不能引用别的模块的页面和组件；公共部分（`api/client.ts`、`api/types.ts`、`components/`、`composables/`、`utils/`、`stores/`、`layouts/` 和 `views/` 的外壳页）不能引用 `src/modules/`，只有 `router/index.ts` 引用各模块的 `index.ts`。由同一个脚本检查。
 
 ### 登录记录
 
 最小化的登录审计记录由 `accounts` 持有，`system` 只向运维提供 180 天窗口。失败表单里的原样标识、密码和 UA 不入库。应用限流仅保留全站发生分钟，不记录每次请求。按受信任反向代理配置解析来源 IP。
+
+全站搜索由 `workbench/search.py` 汇总，沿用各模块数据范围，匹配和返回字段使用显式白名单。新增模块时按需接入并补权限对照测试，不自动搜索序列化器字段。

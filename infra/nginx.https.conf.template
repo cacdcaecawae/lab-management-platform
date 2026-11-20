@@ -1,0 +1,23 @@
+# The official Nginx entrypoint substitutes only the explicitly allowed HTTPS variables.
+limit_req_zone $binary_remote_addr zone=login:10m rate=60r/m;
+
+server {
+    listen 80;
+    server_name ${HTTPS_DOMAIN};
+    include /etc/nginx/lab/acme.inc;
+    include /etc/nginx/lab/health.inc;
+    # Fixed canonical host: never echo an untrusted request Host into the redirect.
+    location / { return 301 https://${HTTPS_DOMAIN}$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${HTTPS_DOMAIN};
+    ssl_certificate /etc/letsencrypt/live/${HTTPS_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${HTTPS_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=${HTTPS_HSTS_MAX_AGE}" always;
+
+    include /etc/nginx/lab/health.inc;
+    include /etc/nginx/lab/site.inc;
+}

@@ -14,6 +14,8 @@ Status: implemented
 
 ## Decision
 
+跨迁移自动还原的策略由[集成审查](../../implemented/bug-fix/2026-11-19-pr-integration.md)更新。失败版本若已迁移或迁移状态不明，网站保持停止，当前数据库和上传文件留给运维核对。
+
 用户 2026-11-18 说"直接继续迭代"，以下几点按之前列出的建议做：镜像放 ghcr.io；只更新到打了标签的正式版本；网页只提示，不做一键更新；备份按手册保留。
 
 - **CI**（`.github/workflows/ci.yml`）：推送 `main` 和每个 PR，在 GitHub 上起 PostgreSQL 17，运行和本机一样的 `scripts/check.sh`。设备并发模型检查（要 Java 和 TLC）和浏览器验证不在里面。

@@ -6,7 +6,7 @@ import SpecimenFormDialog from './SpecimenFormDialog.vue'
 
 const api = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn() }))
 vi.mock('../api', () => ({ specimensApi: api }))
-vi.mock('@/api/members', () => ({ membersApi: { list: () => Promise.resolve({ results: [] }) } }))
+vi.mock('@/modules/members/api', () => ({ membersApi: { list: () => Promise.resolve({ results: [] }) } }))
 
 const block: Specimen = {
   id: 3, code: 'CSK-IA-01', name: 'CSK-IA 标准试块', status: 'available', kind: 'standard', material: '20 钢',

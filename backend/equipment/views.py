@@ -17,9 +17,11 @@ from accounts.models import User
 from core import mail
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Booking, Equipment, UsageReport
+from .queries import calibration_within
 from .serializers import BookingSerializer, EquipmentSerializer, UsageReportSerializer
 
 logger = logging.getLogger(__name__)
@@ -83,12 +85,20 @@ class EquipmentViewSet(
         equipment = scope_group(
             Equipment.objects.select_related("custodian", "purchase"), self.request.user
         ).annotate(in_use=in_use_now())
-        status_filter = self.request.query_params.get("status")
-        if self.action != "list" or not status_filter:  # list filters must not turn detail URLs into 404s
+        if self.action != "list":  # list filters must not turn detail URLs into 404s
             return equipment
-        if status_filter not in Equipment.Status.values:
-            return equipment.none()
-        return equipment.filter(status=status_filter)
+        params = self.request.query_params
+        if value := params.get("calibration_within"):
+            try:
+                days = int(value)
+                if not 0 <= days <= 3650:
+                    raise ValueError
+            except ValueError:
+                raise ValidationError({"calibration_within": ["请输入 0 到 3650 的整数天数。"]}) from None
+            equipment = calibration_within(equipment, days).order_by("calibration_due", "id")
+        if status_filter := params.get("status"):
+            equipment = equipment.filter(status=status_filter) if status_filter in Equipment.Status.values else equipment.none()
+        return equipment
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)
@@ -196,6 +206,9 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                 if UsageReport.objects.filter(booking=booking).exists():
                     raise Conflict("已经登记过使用结果", code="invalid_state")
                 report = UsageReport(booking=booking, **body.validated_data)
+                if photo := body.validated_data.get("photo"):
+                    report.photo_size = photo.size
+                    report.photo_uploaded_at = timezone.now()
                 report.save()
                 transaction.on_commit(mark_committed)
                 if report.condition == UsageReport.Condition.ABNORMAL:
@@ -204,6 +217,7 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                         equipment.status = Equipment.Status.NEEDS_CHECK
                         equipment._change_reason = f"{request.user.display_name} 登记使用异常：{report.description}"
                         equipment.save()
+                    notify(equipment.group_id, "设备登记使用异常", f"/equipment/{equipment.pk}", role=User.Role.MANAGER)
                     transaction.on_commit(lambda: notify_managers(report))
         except Exception:
             # FileField writes before the database INSERT. Keep the instance even if save() fails.

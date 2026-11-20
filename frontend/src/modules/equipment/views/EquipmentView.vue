@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { equipmentApi } from '../api'
 import type { Equipment } from '@/api/types'
@@ -13,7 +13,15 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 // ?status= comes from the workbench tile (待检查的设备)
-const filters = reactive({ status: String(route.query.status ?? ''), search: '' })
+const routeFilters = () => ({
+  status: String(route.query.status ?? ''),
+  calibration_within: route.query.calibration_within === '30' ? 30 as number | '' : '',
+})
+const filters = reactive({
+  search: '',
+  ...routeFilters(),
+})
+watch(() => route.query, () => Object.assign(filters, routeFilters()))
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(equipmentApi.list, filters)
 const creating = ref(false)
@@ -32,7 +40,9 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
         <el-option v-for="s in EQUIPMENT_STATUSES" :key="s" :label="STATUS[s].label" :value="s" />
       </el-select>
       <span class="grow" />
+      <el-checkbox v-model="filters.calibration_within" :true-value="30" false-value="">校准到期（含已过期）</el-checkbox>
       <el-button @click="router.push({ name: 'bookings' })">预约日历</el-button>
+      <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
       <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
       <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增设备</el-button>
     </div>

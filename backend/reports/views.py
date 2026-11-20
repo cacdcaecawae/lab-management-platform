@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
 from datasets.versions import pin_versions
 
@@ -91,6 +92,8 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
             feedback = serializer.save(report=report, author=request.user)
             report.status = feedback.verdict
             report.save()
+            title = "周报需补充" if report.status == Status.NEEDS_REVISION else "周报已阅"
+            notify(report.owner.group_id, title, f"/reports/{report.pk}", recipient_ids=[report.owner_id])
         return self._detail(report)
 
     @action(detail=True)

@@ -40,3 +40,46 @@ class ProjectLog(models.Model):
     class Meta:
         verbose_name = verbose_name_plural = "项目进展"
         ordering = ["-date", "-id"]
+
+
+class Milestone(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones")
+    title = models.CharField(max_length=200)
+    due_date = models.DateField(null=True, blank=True)
+    done_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["id", "project"], name="milestone_id_project_key")]
+
+
+class Task(models.Model):
+    class Status(models.TextChoices):
+        TODO = "todo", "待办"
+        DOING = "doing", "进行中"
+        DONE = "done", "完成"
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="tasks")
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    assignee_name = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.TODO)
+    milestone = models.ForeignKey(Milestone, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    due_date = models.DateField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "status", "due_date"]), models.Index(fields=["assignee", "status", "due_date"])]
+
+
+class TaskChange(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="history")
+    actor_name = models.CharField(max_length=200)
+    changes = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]

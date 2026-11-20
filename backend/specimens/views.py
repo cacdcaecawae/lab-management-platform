@@ -9,14 +9,12 @@ from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, is_supervisor, scope_group
 
 from .models import Defect, Specimen, SpecimenLoan
+from .queries import open_loans, overdue_loans
 from .serializers import LoanSerializer, ReturnSerializer, SpecimenSerializer
-
-
-def open_loans():
-    return SpecimenLoan.objects.filter(returned_at__isnull=True)
 
 
 class SpecimenViewSet(
@@ -60,10 +58,13 @@ class SpecimenViewSet(
             specimens = specimens.filter(kind=params["kind"])
         if params.get("status"):
             specimens = specimens.filter(status=params["status"])
-        if params.get("on_loan") == "1":
-            specimens = specimens.filter(Exists(open_loans().filter(specimen=OuterRef("pk"))))
+        loans = open_loans().filter(specimen=OuterRef("pk"))
+        if params.get("overdue") == "1":
+            loans = overdue_loans(loans)
         if params.get("mine") == "1":
-            specimens = specimens.filter(Exists(open_loans().filter(specimen=OuterRef("pk"), borrower=self.request.user)))
+            loans = loans.filter(borrower=self.request.user)
+        if any(params.get(key) == "1" for key in ("on_loan", "mine", "overdue")):
+            specimens = specimens.filter(Exists(loans))
         return specimens
 
     def perform_create(self, serializer):
@@ -114,4 +115,6 @@ class SpecimenViewSet(
             loan.returned_by = request.user
             loan.return_note = body.validated_data["note"]
             loan.save()
+            if loan.borrower_id != request.user.id:
+                notify(specimen.group_id, "管理员已登记试件归还", f"/specimens/{specimen.pk}", recipient_ids=[loan.borrower_id])
         return Response(LoanSerializer(loan).data)

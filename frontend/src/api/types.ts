@@ -290,9 +290,20 @@ export interface HistoryEntry {
   changes: { field: string; old: unknown; new: unknown }[]
 }
 
+export interface BorrowedSpecimenReminder {
+  loan_id: number
+  specimen: SpecimenBrief
+  borrowed_at: string
+  due_date: string | null
+  overdue: boolean
+}
+
 export interface Dashboard {
   my: {
+    borrowed_specimens: BorrowedSpecimenReminder[]
+    borrowed_specimens_count: number
     action_items: MyActionItem[]
+    tasks: WorkbenchTask[]
     reports_needing_revision: WeeklyReportBrief[]
     draft_experiments: ExperimentBrief[]
     current_week_report: WeeklyReportBrief | null
@@ -310,8 +321,13 @@ export interface Dashboard {
   } | null
   // managers only (they maintain equipment and consumables)
   manager: {
+    overdue_loans: (BorrowedSpecimenReminder & { borrower: UserBrief })[]
+    overdue_loans_count: number
+    calibration_due: (EquipmentBrief & { calibration_due: string })[]
+    calibration_due_count: number
     equipment_to_check: EquipmentBrief[]
     low_stock: Consumable[]
+    expiring_batches?: { id: number; batch_no: string; expires_on: string; stock: number; consumable__name: string }[]
   } | null
 }
 
@@ -462,6 +478,20 @@ export interface BookingWrite {
 
 // ---- consumables ----
 
+export interface ConsumableBatch {
+  id: number
+  batch_no: string
+  expires_on: string | null
+  stock: number
+  can_issue: boolean
+}
+
+export interface BatchModeWrite {
+  tracks_batches: boolean
+  stock_version_seen: number
+  opening_batch?: { batch_no: string; expires_on?: string }
+}
+
 export interface Consumable {
   id: number
   name: string
@@ -474,6 +504,9 @@ export interface Consumable {
   // Latest append-only ledger entry id; 0 before the first entry.
   stock_version: number
   low: boolean
+  tracks_batches?: boolean
+  batches?: ConsumableBatch[]
+  nearest_expiry?: string | null
   notes: string
   created_at: string
   updated_at: string
@@ -485,7 +518,8 @@ export type TxnKind = 'in' | 'out' | 'return' | 'adjust'
 
 export interface StockTxn {
   id: number
-  kind: TxnKind
+  kind: TxnKind | "allocation" | "batch_mode"
+  batch?: { batch_no: string; expires_on: string | null } | null
   // signed: out is negative
   quantity: number
   handler: UserBrief
@@ -499,6 +533,9 @@ export interface StockTxn {
 export interface StockTxnWrite {
   // Required for adjust: version shown with the stock used to calculate the difference.
   stock_version_seen?: number
+  batch_id?: number
+  batch_no?: string
+  expires_on?: string
   kind: TxnKind
   quantity: number
   project_id: number | null
@@ -842,3 +879,38 @@ export interface AchievementWrite {
   link: string
   notes: string
 }
+
+export type TaskStatus = 'todo' | 'doing' | 'done'
+export interface WorkbenchTask {
+  id: number
+  title: string
+  due_date: string | null
+  status: TaskStatus
+  project: { id: number; name: string }
+}
+
+export interface ProjectTask extends Omit<WorkbenchTask, 'project'> {
+  description: string
+  assignee: (UserBrief & { current: boolean }) | null
+  milestone: { id: number; title: string } | null
+  created_by: number
+  history: { actor: string; changes: Record<string, { before: unknown; after: unknown }>; created_at: string }[]
+}
+
+export interface TaskWrite {
+  title: string
+  description: string
+  assignee_id: number | null
+  milestone_id: number | null
+  due_date: string | null
+  status: TaskStatus
+}
+export interface ProjectMilestone {
+  id: number
+  title: string
+  due_date: string | null
+  done_at: string | null
+  task_total: number
+  task_done: number
+}
+export type MilestoneWrite = Pick<ProjectMilestone, 'title' | 'due_date'> & { done: boolean }

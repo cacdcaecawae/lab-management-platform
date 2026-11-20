@@ -4,6 +4,7 @@ from rest_framework.routers import SimpleRouter
 
 from . import views
 from .login_events import LoginEventsView
+from .storage import StorageView
 
 router = SimpleRouter()
 router.register("groups", views.SystemGroupViewSet, basename="system-group")
@@ -14,6 +15,7 @@ urlpatterns = [
     path("mail/", views.MailSettingsView.as_view()),
     path("mail/history/", views.MailHistoryView.as_view()),
     path("mail/test/", views.MailTestView.as_view()),
+    path("storage-status/", StorageView.as_view()),
     path("version/", views.VersionView.as_view()),
     *router.urls,
 ]
