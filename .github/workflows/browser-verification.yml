@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   browser:
-    if: github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'test/browser-experiments-reports' || github.head_ref == 'integration/review-13-30')
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/browser-experiments-reports'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
