@@ -15,7 +15,7 @@
 | 5 | 每日提醒邮件 | [feature/…-scheduled-reminder-mail](../.agents/notes/implemented/feature/2026-11-18-scheduled-reminder-mail.md) | M | 4（共用 `specimens/queries.py`） | 否 |
 | 6 | 站内通知（铃铛） | [feature/…-notification-center](../.agents/notes/implemented/feature/2026-11-18-notification-center.md) | M | — | 设备异常的接入点在 `equipment/views.py`：是 |
 | 7 | 项目任务看板与里程碑 | [feature/…-project-tasks-milestones](../.agents/notes/implemented/feature/2026-11-18-project-tasks-milestones.md) | L | 最好在 2 之后 | 否 |
-| 8 | 每月自动恢复演练 | [process/…-restore-drill](../.agents/notes/proposed/process/2026-11-18-restore-drill.md) | M | — | 否 |
+| 8 | 每月自动恢复演练（脚本已实现；隔离整栈待验收） | [process/…-restore-drill](../.agents/notes/implemented/process/2026-11-18-restore-drill.md) | M | — | 否 |
 | 9 | 设备使用统计与导出（已实现） | [feature/…-equipment-usage-stats](../.agents/notes/implemented/feature/2026-11-18-equipment-usage-stats.md) | M | — | 否（视图放在新文件） |
 | 10 | 存储用量统计（已实现） | [feature/…-storage-usage](../.agents/notes/implemented/feature/2026-11-18-storage-usage.md) | M | — | 否 |
 | 11 | 登录记录（已实现） | [feature/…-login-records](../.agents/notes/implemented/feature/2026-11-18-login-records.md) | S | — | 否 |
