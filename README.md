@@ -6,6 +6,30 @@
 
 许可证：[MIT](LICENSE)。`.claude/skills/write-notes-like-deepseek/` 改编自 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），见该目录下的 LICENSE。
 
+## 一键安装
+
+在装好 Docker（带 compose 插件）、git 和 curl 的电脑上，一条命令装好 GitHub 上最新发布的正式版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash
+```
+
+- 支持 Linux。Windows 在 WSL 里运行（Docker Desktop 打开 WSL 集成）。暂不支持 Mac：装好以后的更新和每日备份脚本在 Mac 上还不能运行。
+- 要能访问 `api.github.com`（查最新发布的版本）和拉取镜像；在仓库里运行 `bash scripts/install.sh` 时也一样。
+- 脚本依次：下载仓库并切到最新发布的版本 → 生成 `.env`（随机密钥和密码，只有本人能读，按 HTTP 配好）→ 拉取这个版本的镜像 → 在安装目录旁边建备份仓库 → 启动，核对运行的镜像和监听地址 → 新建运维账号 `ops`，打印一次性密码，第一次登录必须改。
+- 端口、版本、数据库用户名等都以生成的 `.env` 和 Compose 文件里的默认值为准，终端里导出的同名变量（例如 `HTTP_PORT`、`APP_VERSION`、`POSTGRES_USER`）不起作用。
+- 默认装在当前目录的 `lab-management-platform/`，只有这台电脑能打开 <http://localhost:8090>。参数加在 `bash -s --` 后面：
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platform/main/scripts/install.sh | bash -s -- --host 192.168.1.20 --port 80 --dir /srv/lab-management-platform
+  ```
+
+  `--host` 让别的电脑用这个 IP 或域名访问，`--port` 改端口，`--dir` 改安装目录。已经 clone 了仓库的，在仓库里运行 `bash scripts/install.sh`，就装在这份仓库里；国内打不开 `raw.githubusercontent.com` 时也这样装。
+- 装好后是 HTTP，只在内网或 VPN 里用；放到公网前，先按下文"正式域名 HTTPS"配好证书。
+- 备份和网站在同一块硬盘上：换到第二块硬盘或 NAS 见下文"备份与恢复"；每天备份的定时任务，按安装结束时的提示加上。
+- 更新：在"系统管理 → 版本"看到新版本后，`cd lab-management-platform && bash scripts/update.sh <新版本号>`，见下文"服务器部署"。国内拉不动 ghcr.io 时，安装前先 `export IMAGE_PREFIX=<镜像仓库地址>`，以后更新也会用它；postgres、restic 来自 Docker Hub，拉不到时给 Docker 配置镜像加速。
+- Docker 上已经有 Compose 项目 `infra` 的数据卷或容器（同名的数据卷带不带标签都算，也可能属于别的应用，脚本不会动它们）、查不出有没有、目录已经装过、备份目录已存在、这台电脑的 Docker 上另一个安装正在进行（不论在哪个目录）时，脚本直接停下，不覆盖任何东西。安装被强行中断后，如果提示有另一个安装正在进行，确认没有在运行，再 `docker network rm lab-platform-install`。
+
 ## 本机试用（和服务器上同一套）
 
 前置：装好 Docker Desktop 并启动。在仓库根目录打开 PowerShell：
@@ -65,7 +89,7 @@ cd frontend && npm test && npm run build
 
 前置：Linux 服务器，装好 Docker（带 compose 插件）和 git。镜像由 GitHub 在每次发版时构建，放在 ghcr.io，服务器上不用编译。
 
-首次安装（版本号见 GitHub 的 Releases 页）：
+首次安装用上面的"一键安装"。要自己逐项配置时，手动安装（版本号见 GitHub 的 Releases 页）：
 
 ```bash
 git clone https://github.com/cacdcaecawae/lab-management-platform.git /srv/lab-management-platform
@@ -220,7 +244,7 @@ backend/    Django 项目（config/ 配置，core/ 公共底座：权限、文�
 frontend/   Vue 3 SPA（src/modules/<模块>/ 按业务分目录，目前试点设备和知识库，其余页面在 src/views/）
 infra/      Nginx、Dockerfile、生产 Compose、服务器 .env 模板，本机试用的 Compose 叠加文件
 docs/       架构、数据库、接口约定、开发计划、邮件配置
-scripts/    开发辅助脚本（check.sh 完整检查），本机试用 trial.ps1，服务器上的 update.sh、backup.sh、restore.sh
+scripts/    开发辅助脚本（check.sh 完整检查），本机试用 trial.ps1，一键安装 install.sh，服务器上的 update.sh、backup.sh、restore.sh
 .github/    GitHub Actions：推送和 PR 时跑完整检查，推送 vX.Y.Z 标签时发版
 .agents/notes/   技术决策笔记（看板生成方式见 AGENTS.md）
 .claude/skills/  决策笔记 Skill 与校验脚本
