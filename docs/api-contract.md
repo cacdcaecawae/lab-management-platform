@@ -538,3 +538,8 @@
 - `disk.kind` 为 `local` 或 `non_local`；本地且取值成功时 `disk.filesystem` 含总量、已用、可用字节，其他场景为 `null`。文件系统统计不等于平台文件合计。
 - `projection` 可空；最近 3 个完整月份均有已知大小的文件时包含 `basis_months` 和 `annual_retained_known_bytes`，是对当前仍有记录的文件的同口径粗估，不是磁盘净增长或寿命。
 - `GET /api/storage-usage/` 本组管理员与导师。仅原始数据，返回 `{by_member, by_project}`，每行 `id, label, known_bytes, unknown_files`。不能归属本组身份的记录不返回外组标识。
+
+### 登录记录
+
+`GET /api/system/logins/` 仅运维。可选 `username`（现有账号的精确登录名）、`outcome=success|failed|throttled`、`from`（含）和 `to`（不含，ISO 8601），使用标准分页。每行为 `{id, at, outcome, account: {id, username} | null, ip: string | null}`。
+`audit_enabled` 表示新采集是否开启。`top_failed_24h` 不受列表筛选影响，仅列已知账号的认证失败次数前五。限流记录每分钟最多一行，不含账号或地址，也不代表拒绝次数。

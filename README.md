@@ -148,3 +148,25 @@ scripts/    开发辅助脚本（check.sh 完整检查），本机试用 trial.p
 .agents/notes/   技术决策笔记（看板生成方式见 AGENTS.md）
 .claude/skills/  决策笔记 Skill 与校验脚本
 ```
+
+### 登录记录保留
+
+运维「系统管理 → 登录记录」仅显示近 180 天的应用记录。认证事件记录已有账号归属（若可识别）和来源 IP，不保存表单的原样登录名、密码或浏览器标识。限流只保留应用 DRF 层的发生分钟，不记录来源或被拦次数；Nginx 等代理独自拒绝的请求不计。后端必须保持在受信任代理后，不应直接暴露，且代理跳数必须与实际部署一致。
+
+新采集默认关闭。先确认正在运行的生产实例实际使用的 **Compose 项目名、配置文件列表及顺序、环境文件**。以下用基本部署作示例，必须替换为实际值。使用 HTTPS 覆盖时，文件列表应包含生产基本文件和 HTTPS 覆盖文件（例如 `infra/docker-compose.prod.yml:infra/docker-compose.https.yml`）；不要用仅含基本文件的命令操作已启用 HTTPS 的实例。
+
+```bash
+cd /srv/lab-management-platform
+export COMPOSE_PROJECT_NAME=实际项目名
+export COMPOSE_FILE=infra/docker-compose.prod.yml
+docker compose --env-file .env ps backend
+docker compose --env-file .env exec -T backend python manage.py purge_login_events --dry-run
+```
+
+启用前，部署负责人必须安装并验证每日清理任务。宿主机 crontab 不继承交互式 shell 的 export，因此在任务中显式填写上面已经验证的同一项目和文件列表，并安排日志及失败告警检查：
+
+```cron
+15 3 * * * cd /srv/lab-management-platform && COMPOSE_PROJECT_NAME=实际项目名 COMPOSE_FILE=infra/docker-compose.prod.yml docker compose --env-file .env exec -T backend python manage.py purge_login_events >> /var/log/lab-login-events-purge.log 2>&1
+```
+
+确认一次计划任务成功且失败告警可见后，在同一个环境文件设 `LOGIN_AUDIT_ENABLED=1`，再用同一套已验证的 Compose 配置执行 `docker compose --env-file .env up -d backend`，使新环境变量生效。清理任务未运行或失败时，接口仍隐藏过期记录，但数据库仍可能保有过期行；关闭采集并不删除旧记录，需继续清理。备份、代理访问日志和数据库日志由部署单独管理。本改动不启用生产采集或任务。
