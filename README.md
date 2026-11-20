@@ -136,6 +136,17 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
   ```
 
 - 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站，以单个 PostgreSQL 事务换上它。任一步换名失败都不提交；仅确认原库仍在且并非内部升级回退时，脚本才尝试启动原站。原来的数据库改名为 `before_restore_<时间和随机后缀>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
+- 服务器坏了、换新机器：要有两样东西，备份盘和一份 `.env`。所以平时就把 `.env` 另存一份到服务器以外（它含备份密码和密钥，像密码一样保管）。新机器上不要运行一键安装，它会生成新的密钥和新的备份仓库，打不开原来的备份。按下面的步骤做（版本号换成备份时运行的版本，"系统管理 → 版本"或更新日志里有）：
+
+  ```bash
+  git clone --branch v0.1.1 https://github.com/cacdcaecawae/lab-management-platform.git
+  cd lab-management-platform
+  cp /保存的/.env .env && chmod 600 .env    # 备份盘挂到 .env 里 BACKUP_REPO 的同一路径，或者改这一项
+  docker compose -f infra/docker-compose.prod.yml --env-file .env up -d --wait
+  bash scripts/restore.sh latest
+  ```
+
+  恢复完用原来的账号和密码登录，核对几条记录和文件，再按上面加回每日备份的定时任务。
 - 开发手册要求每月在测试机上还原一次，抽查几条记录和文件。没有还原验证过的备份不算可靠。
 - 结果在网页上看：运维账号打开"系统管理 → 存储与备份"，显示最近一次成功的备份（时间、快照编号）、最近一次失败、最近一次恢复演练。超过 26 小时没有成功的备份，或超过 35 天没有通过的演练，标为"逾期"，标签名变成"存储与备份 · 需处理"。结果由 `backup.sh` 和 `restore-drill.sh` 结束时用一次性的 backend 容器写进数据库；写不进去只打印一行提示，不改变备份或演练本身的结果，这时页面会显示逾期。刚装好、还没加定时任务时显示"尚无成功备份"。
 - 每天的备份里，数据库导出和文件是先后读取的，网站一直在运行：两步之间被删除的附件，恢复后会缺这一个文件。更新前的那次备份是停了网站做的，没有这个问题。
