@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemStorage from './SystemStorage.vue'
-import { systemApi } from '@/modules/system/api'
+import { systemApi, type StorageInfo } from '@/modules/system/api'
 
 vi.mock('@/modules/system/api', () => ({ systemApi: { storage: vi.fn() } }))
 vi.mock('@/utils/errors', () => ({ showError: vi.fn() }))
@@ -10,24 +10,67 @@ const stubs = {
   ElDescriptions: { template: '<div><slot /></div>' },
   ElDescriptionsItem: { template: '<div><slot /></div>' },
   ElButton: { template: '<button><slot /></button>' },
+  ElTag: { template: '<b><slot /></b>' },
+}
+
+const run = (ok: boolean, detail = '', snapshot = '') => ({ finished_at: '2026-11-20T02:31:00+08:00', ok, snapshot, detail })
+const none: StorageInfo = {
+  primary: 'local',
+  nas_ready: null,
+  backup: { last_ok: null, last_failure: null, overdue: true, failing: false },
+  drill: { last: null, overdue: false },
+  attention: true,
+}
+
+async function show(info: Partial<StorageInfo>) {
+  vi.mocked(systemApi.storage).mockResolvedValue({ ...none, ...info })
+  const wrapper = mount(SystemStorage, { global: { stubs } })
+  await flushPromises()
+  return wrapper
 }
 
 describe('SystemStorage', () => {
   beforeEach(() => vi.mocked(systemApi.storage).mockReset())
 
-  it('reports local mode without claiming backup health', async () => {
-    vi.mocked(systemApi.storage).mockResolvedValue({ primary: 'local', nas_ready: null })
-    const wrapper = mount(SystemStorage, { global: { stubs } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('服务器本地卷')
-    expect(wrapper.text()).toContain('未启用')
-    expect(wrapper.text()).toContain('不代表备份已成功')
+  it('reports local mode and a fresh install with no backup', async () => {
+    const wrapper = await show({})
+    const text = wrapper.text()
+    expect(text).toContain('服务器本地卷')
+    expect(text).toContain('未启用')
+    expect(text).toContain('不代表备份已成功')
+    expect(text).toContain('尚无成功备份')
+    expect(text).toContain('尚无恢复演练')
+    expect(wrapper.findAll('b')).toHaveLength(0) // no 逾期 tag before the first backup
+    expect(wrapper.emitted('update:info')?.at(-1)).toEqual([expect.objectContaining({ attention: true })])
   })
 
-  it('refreshes only identity status and shows loss of access', async () => {
+  it('shows the last good backup, an older failure and a passed drill', async () => {
+    const wrapper = await show({
+      backup: { last_ok: run(true, '标签 daily', 'abcdef12'), last_failure: run(false, '导出数据库失败'), overdue: false, failing: false },
+      drill: { last: run(true, '附件校验 3 项', 'a'.repeat(64)), overdue: false },
+      attention: false,
+    })
+    const text = wrapper.text()
+    expect(text).toContain('快照 abcdef12，标签 daily')
+    expect(text).toContain('导出数据库失败')
+    expect(text).toContain('快照 aaaaaaaa，附件校验 3 项')
+    expect(wrapper.findAll('b').map((b) => b.text())).toEqual(['通过'])
+    expect(wrapper.find('.failing').exists()).toBe(false)
+  })
+
+  it('flags overdue backups and drills and a current failure', async () => {
+    const wrapper = await show({
+      backup: { last_ok: run(true, '', 'abcdef12'), last_failure: run(false, '写入备份仓库失败'), overdue: true, failing: true },
+      drill: { last: run(false, '退出码 1'), overdue: true },
+    })
+    expect(wrapper.findAll('b').map((b) => b.text())).toEqual(['逾期', '失败', '逾期'])
+    expect(wrapper.get('.failing').text()).toContain('写入备份仓库失败')
+  })
+
+  it('refreshes and shows loss of NAS access', async () => {
     vi.mocked(systemApi.storage)
-      .mockResolvedValueOnce({ primary: 'nas', nas_ready: true })
-      .mockResolvedValueOnce({ primary: 'nas', nas_ready: false })
+      .mockResolvedValueOnce({ ...none, primary: 'nas', nas_ready: true })
+      .mockResolvedValueOnce({ ...none, primary: 'nas', nas_ready: false })
     const wrapper = mount(SystemStorage, { global: { stubs } })
     await flushPromises()
     expect(wrapper.text()).toContain('已识别专用目录')

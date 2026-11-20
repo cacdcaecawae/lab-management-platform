@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { systemApi } from '@/modules/system/api'
+import { systemApi, type StorageInfo } from '@/modules/system/api'
 import type { VersionInfo } from '@/api/types'
 import SystemAccounts from '@/modules/system/components/SystemAccounts.vue'
 import SystemGroups from '@/modules/system/components/SystemGroups.vue'
@@ -12,14 +12,12 @@ import SystemStorage from '@/modules/system/components/SystemStorage.vue'
 import { showError } from '@/utils/errors'
 
 const tab = ref('mail')
-// Loaded here, not in the tab, so the tab label can say an update is waiting.
+// Loaded here, not in the tabs, so the tab labels can say an update is waiting or backups need attention.
 const version = ref<VersionInfo | null>(null)
-onMounted(async () => {
-  try {
-    version.value = await systemApi.version()
-  } catch (e) {
-    showError(e)
-  }
+const storage = ref<StorageInfo | null>(null)
+onMounted(() => {
+  systemApi.version().then((v) => (version.value = v), showError)
+  systemApi.storage().then((s) => (storage.value = s), showError)
 })
 </script>
 
@@ -29,7 +27,9 @@ onMounted(async () => {
       <el-tab-pane label="邮件" name="mail"><SystemMail /></el-tab-pane>
       <el-tab-pane label="课题组" name="groups" lazy><SystemGroups /></el-tab-pane>
       <el-tab-pane label="账号" name="accounts" lazy><SystemAccounts /></el-tab-pane>
-      <el-tab-pane label="存储与备份" name="storage-status" lazy><SystemStorage /></el-tab-pane>
+      <el-tab-pane :label="storage?.attention ? '存储与备份 · 需处理' : '存储与备份'" name="storage-status" lazy>
+        <SystemStorage v-model:info="storage" />
+      </el-tab-pane>
       <el-tab-pane :label="version?.update_available ? '版本 · 有更新' : '版本'" name="version">
         <SystemVersion v-if="version" :info="version" />
       </el-tab-pane>
