@@ -482,3 +482,8 @@
 内嵌对象的序列化器放在对象所属模块的 `serializers.py`：`UserBrief` 在 `accounts`，`ProjectBrief` 在 `projects`，`DatasetBrief` 在 `datasets`，`EquipmentBrief` 在 `equipment`，`ExperimentBrief`、`RunBrief` 在 `research`，`WeeklyReportBrief` 在 `reports`。各 app 直接引用，不要各自重复定义；能引用哪些模块见 `docs/architecture.md` 的分层表。
 
 `type`: `created` | `changed` | `deleted`
+
+### 登录记录
+
+`GET /api/system/logins/` 仅运维。可选 `username`（现有账号的精确登录名）、`outcome=success|failed|throttled`、`from`（含）和 `to`（不含，ISO 8601），使用标准分页。每行为 `{id, at, outcome, account: {id, username} | null, ip: string | null}`。
+`audit_enabled` 表示新采集是否开启。`top_failed_24h` 不受列表筛选影响，仅列已知账号的认证失败次数前五。限流记录每分钟最多一行，不含账号或地址，也不代表拒绝次数。

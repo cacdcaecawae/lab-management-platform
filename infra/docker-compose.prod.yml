@@ -24,6 +24,7 @@ services:
       dockerfile: infra/backend.Dockerfile
     environment:
       APP_VERSION: ${APP_VERSION:-local}
+      LOGIN_AUDIT_ENABLED: ${LOGIN_AUDIT_ENABLED:-0}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost}
