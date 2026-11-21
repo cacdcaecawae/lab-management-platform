@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch, watchPostEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch, watchPostEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Close, Menu } from '@element-plus/icons-vue'
 import { useNotificationPolling } from '@/composables/useNotificationPolling'
 import { useAuthStore } from '@/stores/auth'
 import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
+import PhoneTabBar from './PhoneTabBar.vue'
+import { labelTableCells, pageHeaders, phone } from './phone'
 import { closeAllTabs, closeOtherTabs, closeTab, neighborTab, openedTabs, pageColor, trackTab, type OpenedTab } from './nav'
 
 const route = useRoute()
@@ -48,6 +50,29 @@ watchPostEffect(() => {
 // The workbench greets by name instead of repeating its title.
 const title = computed(() => (route.name === 'workbench' ? '' : String(route.meta.title ?? '')))
 
+// Phone (DESIGN.md "手机"): a bottom tab bar instead of the menu button (not for ops, who have one page), no tab strip,
+// and the top bar only on list pages: the page name and the list's buttons (#phone-actions). Detail pages carry their
+// own back + title in the card.
+const tabBar = computed(() => phone.value && !!auth.user?.group)
+const phoneBarHidden = computed(() => phone.value && tabBar.value && (!title.value || pageHeaders.value > 0))
+// Tables become cards on a phone; the cards need each cell's column name. Dialogs live under <body>, so watch it all.
+let observer: MutationObserver | undefined
+let queued = 0
+const relabel = () => {
+  if (!phone.value || queued) return
+  queued = requestAnimationFrame(() => {
+    queued = 0
+    labelTableCells(document.body)
+  })
+}
+onMounted(() => {
+  observer = new MutationObserver(relabel)
+  observer.observe(document.body, { childList: true, subtree: true })
+  relabel()
+})
+onBeforeUnmount(() => observer?.disconnect())
+watch(phone, relabel)
+
 watch(
   () => route.fullPath,
   () => (drawer.value = false),
@@ -55,16 +80,19 @@ watch(
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ 'with-tab-bar': tabBar }">
     <aside class="sidebar"><SideNav /></aside>
     <el-drawer v-model="drawer" direction="ltr" size="260px" :with-header="false" class="nav-drawer">
       <SideNav />
     </el-drawer>
     <div class="body">
-      <header class="topbar" :class="{ bare: !tabs.length && !title, 'with-tabs': tabs.length, joined: onTab }">
-        <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
-        <!-- with tabs, the page name is for screen readers only: its tab (or the card header) shows it -->
-        <h1 v-if="title" :class="tabs.length ? 'sr-only' : 'title'">{{ title }}</h1>
+      <header
+        class="topbar"
+        :class="{ bare: !tabs.length && !title, 'with-tabs': tabs.length, joined: onTab, 'phone-hidden': phoneBarHidden }"
+      >
+        <el-button v-if="!tabBar" class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
+        <!-- with tabs, the page name is for screen readers only: its tab (or the card header) shows it; phones have no tabs -->
+        <h1 v-if="title" :class="tabs.length && !phone ? 'sr-only' : 'title'">{{ title }}</h1>
         <nav v-if="tabs.length" ref="tabsNav" class="tabs" aria-label="打开的页面">
           <span v-for="t in tabs" :key="t.path" class="tab" :class="{ on: t.path === route.path }">
             <span class="dot" :style="{ background: dot(t) }" aria-hidden="true" />
@@ -88,11 +116,14 @@ watch(
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- phone: the list page's buttons, moved here by PageToolbar -->
+        <div id="phone-actions" class="phone-actions" />
       </header>
       <main class="main">
         <RoutePage />
       </main>
     </div>
+    <PhoneTabBar v-if="tabBar" @menu="drawer = true" />
   </div>
 </template>
 
@@ -180,12 +211,17 @@ watch(
   flex: none;
   width: 16px;
 }
-.topbar.joined + .main {
-  padding-top: 0;
-}
-/* tabs, none of them this page (the workbench, a -new form): leave room under the strip */
-.topbar.with-tabs:not(.joined) + .main {
-  padding-top: 20px;
+@media (min-width: 769px) {
+  .topbar.joined + .main {
+    padding-top: 0;
+  }
+  /* tabs, none of them this page (the workbench, a -new form): leave room under the strip */
+  .topbar.with-tabs:not(.joined) + .main {
+    padding-top: 20px;
+  }
+  .phone-actions {
+    display: none;
+  }
 }
 /* A tab: module colour dot, title (cut off past 220px, full text on hover), close button. */
 .tab {
@@ -308,17 +344,38 @@ watch(
   padding: 4px 24px 48px 8px;
 }
 @media (max-width: 768px) {
-  .sidebar {
+  .sidebar,
+  .tabs,
+  .tabs-menu,
+  .topbar.phone-hidden {
     display: none;
   }
   .menu-btn {
     display: inline-flex;
   }
-  .topbar {
-    padding: 0 12px 0 8px; /* right edge in line with the cards */
+  .topbar,
+  .topbar.with-tabs {
+    align-items: center;
+    padding: 0 12px 0 16px; /* right edge in line with the cards */
+  }
+  .topbar .menu-btn {
+    margin-left: -8px;
+  }
+  .phone-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
   .main {
     padding: 4px 12px 32px;
+  }
+  .topbar.phone-hidden + .main {
+    padding-top: 12px;
+  }
+  /* room for the tab bar (56px) and the phone's home indicator */
+  .with-tab-bar .main {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
 }
 </style>

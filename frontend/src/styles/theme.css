@@ -547,17 +547,182 @@ a:focus-visible {
   margin-top: 4px;
 }
 
+/* ---------- Phone (DESIGN.md "手机"): up to 768px, same breakpoint as layouts/phone.ts ---------- */
 @media (max-width: 768px) {
-  .page-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .page-toolbar .el-input,
-  .page-toolbar .el-select {
-    width: 100%;
-  }
   .auth-panel {
     padding: 24px 20px;
+  }
+  .el-card {
+    --el-card-padding: 16px;
+  }
+  .el-card__header {
+    padding: 12px 16px;
+  }
+
+  /* Toolbar: the search box, a 筛选 button for the folded dropdowns; the buttons went to the top bar. */
+  .page-toolbar {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-toolbar .el-input,
+  .page-toolbar .el-select,
+  .page-toolbar .el-date-editor.el-input,
+  .page-toolbar .el-date-editor.el-range-editor {
+    width: 100%;
+  }
+  .page-toolbar:not(.filters-open) .page-toolbar-filters > :is(.el-select, .el-checkbox, .el-date-editor) {
+    display: none;
+  }
+  /* a toolbar that keeps its buttons (a second one on the page, one in a dialog): they go on their own line */
+  .page-toolbar > .page-toolbar-actions {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  #phone-actions .page-toolbar-actions {
+    gap: 4px;
+  }
+  #phone-actions .el-button:not(.icon-only) {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  /* Tables are cards: one record a block, the first column its title, then "表头 值" lines in small grey; the status
+     tag sits top right, the 操作 column at the bottom right. Column names come from layouts/phone.ts (data-label). */
+  .el-table {
+    --el-table-tr-bg-color: transparent;
+    --el-table-row-hover-bg-color: transparent;
+    background: transparent;
+  }
+  .el-table .el-table__header-wrapper,
+  .el-table .el-table__body colgroup,
+  .el-table .el-scrollbar__bar.is-horizontal,
+  .el-table__inner-wrapper::before {
+    display: none;
+  }
+  .el-table .el-table__body,
+  .el-table .el-table__body tbody,
+  .el-table .el-scrollbar__view {
+    display: block;
+    width: 100% !important;
+  }
+  .el-table .el-table__body tr.el-table__row {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--lab-border);
+  }
+  .el-table .el-table__body tr.el-table__row:last-child {
+    border-bottom: 0;
+  }
+  .el-table .el-table__body td.el-table__cell {
+    position: static !important;
+    display: flex;
+    align-items: baseline;
+    width: auto !important;
+    padding: 0;
+    border: 0;
+    background: transparent !important;
+    color: var(--lab-text-2);
+    font-size: 13px;
+  }
+  .el-table .el-table__body td.el-table__cell .cell {
+    padding: 0;
+    overflow: visible;
+    white-space: normal;
+    line-height: 1.5;
+  }
+  .el-table .el-table__body td.el-table__cell::before {
+    content: attr(data-label);
+    flex: none;
+    margin-right: 6px;
+    color: var(--lab-text-3);
+  }
+  .el-table .el-table__body td.el-table__cell[data-empty] {
+    display: none;
+  }
+  .el-table .el-table__body td.el-table-column--selection {
+    flex: none;
+  }
+  /* the title: the first column (after the checkbox), a whole line, no label */
+  .el-table .el-table__body td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {
+    flex: 1 1 calc(100% - 48px);
+    color: var(--lab-text);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .el-table .el-table__body tr:has(.status-tag) td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {
+    padding-right: 88px;
+  }
+  .el-table .el-table__body td:is(:first-child, .el-table-column--selection + td, .el-table-fixed-column--right, :has(.status-tag))::before {
+    content: none;
+  }
+  .el-table .el-table__body td.el-table__cell:has(.status-tag) {
+    position: absolute !important;
+    top: 12px;
+    right: 0;
+  }
+  .el-table .el-table__body td.el-table-fixed-column--right {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+  .el-table .el-table__body td.el-table-fixed-column--right .cell {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 12px;
+  }
+  .el-table .el-table__body td.el-table-fixed-column--right .el-button + .el-button {
+    margin-left: 0;
+  }
+
+  /* Detail facts (el-descriptions): one "label | value" pair a line instead of two or three side by side. */
+  .el-descriptions__table tbody {
+    display: block;
+  }
+  .el-descriptions__table tr {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .el-descriptions__table .el-descriptions__cell {
+    display: block;
+    flex: 1 1 100%;
+    box-sizing: border-box;
+  }
+  /* the cells no longer collapse their borders: one line under each, the outline on the table */
+  .el-descriptions__body .el-descriptions__table.is-bordered .el-descriptions__cell {
+    border-width: 0 0 1px;
+  }
+  .el-descriptions__body .el-descriptions__table.is-bordered .el-descriptions__cell.is-bordered-label {
+    border-right-width: 1px;
+  }
+  .el-descriptions__body .el-descriptions__table.is-bordered {
+    border: var(--el-descriptions-table-border);
+    border-bottom: 0;
+  }
+  .el-descriptions__table.is-bordered .el-descriptions__cell.is-bordered-label {
+    flex: 0 0 36%;
+    width: auto;
+  }
+  .el-descriptions__table.is-bordered .el-descriptions__cell.is-bordered-content {
+    flex: 1 1 64%;
+  }
+
+  /* FormDialog fills the screen: the form scrolls, the title and 取消 / 保存 stay put. */
+  .el-dialog.is-fullscreen {
+    --el-dialog-border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: calc(var(--el-dialog-padding-primary) + env(safe-area-inset-bottom));
+  }
+  .el-dialog.is-fullscreen .el-dialog__body {
+    flex: 1;
+    overflow-y: auto;
   }
 }
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUpdated, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, onUpdated, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { setTabTitle } from '@/layouts/nav'
+import { pageHeaders } from '@/layouts/phone'
 
 // Card header of a detail / edit page (DESIGN.md): back, title and #tags on the left, the page's buttons on the right.
 const props = defineProps<{ back: RouteLocationRaw; title?: string }>()
@@ -13,6 +14,9 @@ const head = useTemplateRef<HTMLElement>('head')
 const publish = () => setTabTitle(route.path, head.value?.querySelector('.el-page-header__content')?.textContent?.trim() ?? '')
 onMounted(publish)
 onUpdated(publish)
+// a page with its own back + title: the phone top bar steps aside (layouts/phone.ts)
+onMounted(() => pageHeaders.value++)
+onBeforeUnmount(() => pageHeaders.value--)
 watch(() => route.path, publish, { flush: 'post' })
 </script>
 
