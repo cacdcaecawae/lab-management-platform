@@ -77,3 +77,21 @@ def test_admin_waits_for_the_initial_password_to_be_changed(ops):
     ops.must_change_password = False
     ops.save()
     assert client.get("/admin/").status_code == 200
+
+
+def test_person_updates_own_contact_details_only(api, student_a, group):
+    client = api(student_a)
+    body = {"email": "a@example.edu", "phone": "13800000000", "research_direction": "导波", "name": "冒名",
+            "username": "taken", "role": "manager"}
+    r = client.patch("/api/auth/me/", body, format="json")
+    assert r.status_code == 200
+    assert (r.data["email"], r.data["phone"], r.data["research_direction"]) == ("a@example.edu", "13800000000", "导波")
+    student_a.refresh_from_db()
+    # name, login name and role stay as the managers set them
+    assert (student_a.name, student_a.username, student_a.role) == ("s_a", "s_a", "student")  # make_user names them after the login
+    r = client.patch("/api/auth/me/", {"email": "not-an-email"}, format="json")
+    assert r.status_code == 400 and "email" in r.data["errors"]
+
+    fresh = make_user("s_new", group, must_change_password=True)
+    r = api(fresh).patch("/api/auth/me/", {"phone": "1"}, format="json")
+    assert r.status_code == 403 and r.data["code"] == "password_change_required"

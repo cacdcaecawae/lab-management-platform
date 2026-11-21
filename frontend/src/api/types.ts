@@ -21,6 +21,9 @@ export interface Me {
   must_change_password: boolean
 }
 
+// 个人信息: what a person changes about themselves; name, login name and role are set by managers / ops.
+export type MeUpdate = Partial<Pick<Me, 'email' | 'phone' | 'research_direction'>>
+
 // Same shape as the (unexported) Query in client.ts.
 export type { Query as ListQuery } from './client'
 
@@ -54,7 +57,8 @@ export interface MemberCreate {
   password: string
 }
 
-export type MemberUpdate = Partial<Pick<MemberDetail, 'name' | 'role' | 'email' | 'phone' | 'research_direction' | 'is_active'>>
+// username: managers can correct a member's login name (e.g. a student number mistyped at signup)
+export type MemberUpdate = Partial<Pick<MemberDetail, 'username' | 'name' | 'role' | 'email' | 'phone' | 'research_direction' | 'is_active'>>
 
 // A student who registered through the group's link and waits for a manager.
 export interface PendingMember {
@@ -763,7 +767,7 @@ export interface Account {
   last_login: string | null
 }
 
-export type AccountUpdate = Partial<Pick<Account, 'name' | 'role' | 'email' | 'phone' | 'research_direction' | 'is_active'>>
+export type AccountUpdate = Partial<Pick<Account, 'username' | 'name' | 'role' | 'email' | 'phone' | 'research_direction' | 'is_active'>>
 
 export interface AccountCreate extends Required<Omit<AccountUpdate, 'is_active'>> {
   username: string

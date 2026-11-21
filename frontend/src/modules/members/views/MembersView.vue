@@ -5,7 +5,8 @@ import { membersApi } from '@/modules/members/api'
 import type { MemberListItem, Role } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { ROLE_LABELS } from '@/utils/format'
+import { ROLE_LABELS, renamedMessage } from '@/utils/format'
+import { authApi } from '@/api/auth'
 import { showError, useFieldErrors } from '@/utils/errors'
 import StorageUsage from '@/components/StorageUsage.vue'
 import MemberSignups from '@/modules/members/components/MemberSignups.vue'
@@ -25,7 +26,7 @@ const dialog = ref(false)
 const editing = ref<MemberListItem | null>(null)
 const blank = { username: '', name: '', role: 'student' as Role, email: '', phone: '', research_direction: '', password: '' }
 const form = reactive({ ...blank })
-const formErrors = useFieldErrors(Object.keys(blank))
+const formErrors = useFieldErrors(Object.keys(blank), 'username')
 const saving = ref(false)
 
 function openForm(m: MemberListItem | null) {
@@ -40,9 +41,11 @@ async function save() {
   saving.value = true
   try {
     const { username, password, ...common } = form
-    if (editing.value) await membersApi.update(editing.value.id, common)
+    const before = editing.value
+    if (before) await membersApi.update(before.id, { ...common, username })
     else await membersApi.create({ ...common, username, password })
-    ElMessage.success('已保存')
+    ElMessage.success(renamedMessage(before?.username, username))
+    if (before?.id === auth.user?.id) auth.user = await authApi.me() // own account: the sidebar shows the new name
     dialog.value = false
     load()
   } catch (e) {
@@ -148,7 +151,7 @@ async function doReset() {
 
   <FormDialog v-model="dialog" :title="editing ? '编辑成员' : '新建成员'" :loading="saving" @submit="save">
     <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
-      <el-input v-model="form.username" :disabled="!!editing" />
+      <el-input v-model="form.username" />
     </el-form-item>
     <el-form-item label="姓名" :error="formErrors.fe('name')" required>
       <el-input v-model="form.name" />

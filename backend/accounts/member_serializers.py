@@ -8,16 +8,37 @@ from core.exceptions import Conflict
 from .models import User
 
 PRIVATE_FIELDS = ["username", "email", "phone", "must_change_password"]
+# Creating, renaming and signing up all say it the way the pages name the field (409 conflict).
+LOGIN_NAME_TAKEN = "这个学号 / 工号已经有账号在用"
 
 
-class MemberSerializer(serializers.ModelSerializer):
+class LoginNameMixin:
+    """Editing an account (the members page, 系统管理): the login name can be corrected, e.g. a student number mistyped
+    at signup. Same format check as creating; taken by another account -> 409. Records point at the account, not the
+    name, so nothing else changes; the person signs in with the new name from then on."""
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exclude(pk=self.instance.pk).exists():
+            raise Conflict(LOGIN_NAME_TAKEN)
+        return value
+
+    def update(self, user, validated_data):
+        try:
+            with transaction.atomic():
+                return super().update(user, validated_data)
+        except IntegrityError:  # a concurrent request took the name after validate_username
+            raise Conflict(LOGIN_NAME_TAKEN)
+
+
+class MemberSerializer(LoginNameMixin, serializers.ModelSerializer):
     """Member for everyone in the group; MemberDetail (private fields too) for supervisors and the member."""
 
     class Meta:
         model = User
         fields = ["id", "name", "role", "research_direction", "is_active", *PRIVATE_FIELDS]
-        read_only_fields = ["username", "must_change_password"]
-        extra_kwargs = {"name": {"allow_blank": False}}
+        read_only_fields = ["must_change_password"]
+        # Keep the format check but drop DRF's UniqueValidator: duplicates are a 409, as when creating.
+        extra_kwargs = {"name": {"allow_blank": False}, "username": {"validators": [User.username_validator]}}
 
     def to_representation(self, member):
         data = super().to_representation(member)
@@ -48,7 +69,7 @@ class NewAccountMixin:
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
-            raise Conflict("用户名已存在")
+            raise Conflict(LOGIN_NAME_TAKEN)
         return value
 
     def validate(self, attrs):
@@ -65,7 +86,7 @@ class NewAccountMixin:
             with transaction.atomic():
                 return User.objects.create_user(**{"must_change_password": True, **validated_data})
         except IntegrityError:  # a concurrent request took the username after validate_username
-            raise Conflict("用户名已存在")
+            raise Conflict(LOGIN_NAME_TAKEN)
 
 
 class MemberCreateSerializer(NewAccountMixin, MemberSerializer):

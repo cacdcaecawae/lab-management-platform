@@ -24,7 +24,9 @@ class MeSerializer(serializers.ModelSerializer):
             "id", "username", "name", "role", "is_supervisor", "is_superuser", "group",
             "email", "phone", "research_direction", "must_change_password",
         ]
-        read_only_fields = ["is_superuser"]
+        # PATCH /api/auth/me/ (个人信息): the person keeps their own email, phone and research direction up to date.
+        # Name, login name and role are set by managers / ops; a renamed account could pass as someone else.
+        read_only_fields = ["username", "name", "role", "is_superuser", "must_change_password"]
 
     def get_group(self, user):
         return {"id": user.group_id, "name": user.group.name} if user.group_id else None

@@ -2,7 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from conftest import make_user
+from conftest import PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -105,14 +105,30 @@ def test_only_manager_can_write(api, request, student_b, writer):
     assert r.status_code == 403
 
 
-def test_manager_updates_member_but_not_username_or_group(api, manager, student_a, other_group):
-    body = {"name": "陈同学", "role": "student", "phone": "123", "is_active": False,
-            "username": "hacked", "group": other_group.id}
+def test_manager_updates_member_but_not_group(api, manager, student_a, other_group):
+    body = {"name": "陈同学", "role": "student", "phone": "123", "is_active": False, "group": other_group.id}
     r = api(manager).patch(f"/api/members/{student_a.id}/", body, format="json")
     assert r.status_code == 200
     student_a.refresh_from_db()
     assert (student_a.name, student_a.role, student_a.phone, student_a.is_active) == ("陈同学", "student", "123", False)
-    assert student_a.username == "s_a" and student_a.group_id != other_group.id
+    assert student_a.group_id != other_group.id
+
+
+def test_manager_corrects_a_login_name(api, manager, student_a, student_b, other_manager):
+    url = f"/api/members/{student_a.id}/"
+    r = api(manager).patch(url, {"username": "2026017"}, format="json")
+    assert r.status_code == 200 and r.data["username"] == "2026017"
+    login = lambda name: APIClient().post("/api/auth/login/", {"username": name, "password": PASSWORD}, format="json").status_code
+    assert (login("2026017"), login("s_a")) == (200, 403)  # the new name signs in, the old one no longer does
+    # unchanged name is fine; taken by anyone (any group) -> 409; Django's username rules -> 400
+    assert api(manager).patch(url, {"username": "2026017", "phone": "1"}, format="json").status_code == 200
+    assert api(manager).patch(url, {"username": "s_b"}, format="json").status_code == 409
+    assert api(manager).patch(url, {"username": "other_mgr"}, format="json").status_code == 409
+    r = api(manager).patch(url, {"username": "2026 017"}, format="json")
+    assert r.status_code == 400 and "username" in r.data["errors"]
+    # still only students and their own account: not someone else's in another group
+    assert api(manager).patch(f"/api/members/{other_manager.id}/", {"username": "x1"}, format="json").status_code == 404
+    assert api(student_b).patch(f"/api/members/{student_b.id}/", {"username": "x2"}, format="json").status_code == 403
 
 
 def test_manager_cannot_deactivate_self(api, manager):

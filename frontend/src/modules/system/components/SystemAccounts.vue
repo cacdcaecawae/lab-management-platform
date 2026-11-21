@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemApi } from '@/modules/system/api'
 import type { Account, Role, SystemGroup } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
-import { ROLE_LABELS, formatTime } from '@/utils/format'
+import { ROLE_LABELS, formatTime, renamedMessage } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
@@ -37,7 +37,7 @@ const blank = {
   password: '',
 }
 const form = reactive({ ...blank })
-const formErrors = useFieldErrors(Object.keys(blank))
+const formErrors = useFieldErrors(Object.keys(blank), 'username')
 const saving = ref(false)
 
 function openForm(a: Account | null) {
@@ -53,9 +53,9 @@ async function save() {
   saving.value = true
   try {
     const { username, password, group_id, ...common } = form
-    if (editing.value) await systemApi.updateAccount(editing.value.id, common)
+    if (editing.value) await systemApi.updateAccount(editing.value.id, { ...common, username })
     else await systemApi.createAccount({ ...common, username, password, group_id: group_id! })
-    ElMessage.success(editing.value ? '已保存' : '已新建，对方首次登录时需修改密码')
+    ElMessage.success(editing.value ? renamedMessage(editing.value.username, username) : '已新建，对方首次登录时需修改密码')
     dialog.value = false
     load()
   } catch (e) {
@@ -161,7 +161,7 @@ async function doReset() {
   <FormDialog v-model="dialog" :title="editing ? '编辑账号' : '新建账号'" :loading="saving" @submit="save">
     <div class="form-grid">
       <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
-        <el-input v-model="form.username" :disabled="!!editing" />
+        <el-input v-model="form.username" />
       </el-form-item>
       <el-form-item label="姓名" :error="formErrors.fe('name')" required><el-input v-model="form.name" /></el-form-item>
       <!-- fixed once created: moving someone changes who can see their records (done in /admin/ if ever needed) -->

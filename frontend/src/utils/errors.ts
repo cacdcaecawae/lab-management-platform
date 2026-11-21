@@ -37,7 +37,8 @@ export function normalizeErrors(errors: Record<string, unknown>, known: string[]
 }
 
 // Field errors for <el-form-item :error="fe('title')">; anything the form has no item for goes to `others`.
-export function useFieldErrors(known: string[]) {
+// conflictField: the field a 409 belongs to (a login name already taken), so it shows under that field too.
+export function useFieldErrors(known: string[], conflictField?: string) {
   const errors = ref<Record<string, string[]>>({})
   const fe = (field: string) => errors.value[field]?.join('；')
   const others = computed(() =>
@@ -46,7 +47,8 @@ export function useFieldErrors(known: string[]) {
       .map(([k, msgs]) => (k === 'non_field_errors' ? msgs.join('；') : `${k}：${msgs.join('；')}`)),
   )
   function handle(e: unknown) {
-    errors.value = e instanceof ApiError && e.body.errors ? normalizeErrors(e.body.errors, known) : {}
+    if (conflictField && e instanceof ApiError && e.status === 409) errors.value = { [conflictField]: [e.message] }
+    else errors.value = e instanceof ApiError && e.body.errors ? normalizeErrors(e.body.errors, known) : {}
     showError(e)
   }
   const clear = () => (errors.value = {})

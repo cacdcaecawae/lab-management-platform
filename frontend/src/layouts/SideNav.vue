@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, Lock, SwitchButton, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { ROLE_LABELS } from '@/utils/format'
 import SiteSearch from '@/components/SiteSearch.vue'
 import AppMenu from './AppMenu.vue'
+import ProfileDialog from './ProfileDialog.vue'
 import { clearTabs } from './nav'
 
 // The sidebar (DESIGN.md): who is signed in, search, then the menu. Used by the desktop sidebar and the phone drawer.
 const auth = useAuthStore()
 const router = useRouter()
 const name = computed(() => auth.user?.name || auth.user?.username || '')
+// The account menu starts with who you are: role · group, then the login name.
+const role = computed(() => (auth.user?.is_superuser ? '运维' : ROLE_LABELS[auth.user?.role ?? '']))
+const roleLine = computed(() => [role.value, auth.user?.group?.name].filter(Boolean).join(' · '))
+const profile = ref(false)
 
 async function logout() {
   await auth.logout()
@@ -33,11 +39,21 @@ async function logout() {
       </button>
       <template #dropdown>
         <el-dropdown-menu>
+          <li class="me-card" role="presentation">
+            <span class="avatar lg" aria-hidden="true">{{ name.slice(0, 1) }}</span>
+            <span class="who">
+              <span class="name">{{ name }}</span>
+              <span class="line">{{ roleLine }}</span>
+              <span class="line">学号 / 工号 <span class="code">{{ auth.user?.username }}</span></span>
+            </span>
+          </li>
+          <el-dropdown-item divided :icon="User" @click="profile = true">个人信息</el-dropdown-item>
           <el-dropdown-item :icon="Lock" @click="router.push({ name: 'password' })">修改密码</el-dropdown-item>
           <el-dropdown-item divided :icon="SwitchButton" @click="logout">退出登录</el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
+    <ProfileDialog v-model="profile" />
     <SiteSearch v-if="auth.user?.group && !auth.user.must_change_password" class="side-search" />
     <AppMenu />
   </div>
@@ -110,5 +126,31 @@ async function logout() {
 }
 .side-search {
   margin: 0 10px 8px;
+}
+/* Top of the account menu: who you are (not clickable), like Feishu's card above its menu items. */
+.me-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  padding: 10px 16px 12px;
+  list-style: none;
+}
+.avatar.lg {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.me-card .name {
+  font-size: 15px;
+}
+.me-card .line {
+  color: var(--lab-text-3);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.me-card .code {
+  color: var(--lab-text-2);
 }
 </style>

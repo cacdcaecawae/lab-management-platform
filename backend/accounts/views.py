@@ -123,6 +123,14 @@ class MeView(APIView):
     def get(self, request):
         return Response(MeSerializer(request.user).data)
 
+    def patch(self, request):
+        if request.user.must_change_password:
+            raise PermissionDenied(detail="请先修改初始密码", code="password_change_required")
+        data = MeSerializer(request.user, data=request.data, partial=True)
+        data.is_valid(raise_exception=True)
+        data.save()
+        return Response(data.data)
+
 
 class PasswordChangeView(APIView):
     permission_classes = [IsAuthenticated]
