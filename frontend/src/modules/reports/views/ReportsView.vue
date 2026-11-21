@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { STATUS, formatTime, mondayOf, notMonday } from '@/utils/format'
 import { showError } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 // Supervisors: 待反馈 / 未交名单 / 全部. Students only see their own reports (the API scopes the list).
@@ -45,10 +46,10 @@ watch(missingWeek, loadMissing)
     </el-tabs>
 
     <template v-if="tab === 'missing'">
-      <div class="page-toolbar">
+      <PageToolbar>
         <span>周一日期</span>
         <el-date-picker v-model="missingWeek" type="date" value-format="YYYY-MM-DD" :disabled-date="notMonday" :clearable="false" />
-      </div>
+      </PageToolbar>
       <div v-loading="missingLoading">
         <el-empty v-if="!missing.length" description="这一周没有未交的同学" />
         <div v-else class="actions">
@@ -58,7 +59,7 @@ watch(missingWeek, loadMissing)
     </template>
 
     <template v-else>
-      <div class="page-toolbar">
+      <PageToolbar>
         <el-date-picker
           v-model="filters.week_start"
           type="date"
@@ -69,9 +70,10 @@ watch(missingWeek, loadMissing)
         <el-select v-if="tab === 'all'" v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <el-option v-for="s in ['draft', 'submitted', 'needs_revision', 'reviewed']" :key="s" :label="STATUS[s].label" :value="s" />
         </el-select>
-        <span class="grow" />
-        <el-button v-if="!auth.isSupervisor" type="primary" @click="$router.push({ name: 'report-new' })">写本周周报</el-button>
-      </div>
+        <template #actions>
+          <el-button v-if="!auth.isSupervisor" type="primary" @click="$router.push({ name: 'report-new' })">写本周周报</el-button>
+        </template>
+      </PageToolbar>
       <el-table v-loading="loading" :data="items">
         <el-table-column v-if="auth.isSupervisor" label="学生" min-width="90">
           <template #default="{ row }">{{ row.owner.name }}</template>

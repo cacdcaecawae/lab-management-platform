@@ -94,41 +94,33 @@ async function sendTest() {
       <el-switch v-model="form.mail_enabled" active-text="启用邮件" aria-label="启用邮件" />
       <div class="hint">关闭时不发任何邮件，设备异常、采购审批等只在工作台提醒。</div>
     </el-form-item>
-    <el-row :gutter="12">
-      <el-col :xs="24" :sm="16">
-        <el-form-item label="SMTP 服务器" :error="errors.fe('mail_host')">
-          <el-input v-model="form.mail_host" placeholder="如 smtp.example.edu.cn" />
-        </el-form-item>
-      </el-col>
-      <el-col :xs="24" :sm="8">
-        <el-form-item label="端口" :error="errors.fe('mail_port')">
-          <el-input-number v-model="form.mail_port" :min="1" :max="65535" :controls="false" />
-        </el-form-item>
-      </el-col>
-    </el-row>
+    <div class="form-grid">
+      <el-form-item class="span-2" label="SMTP 服务器" :error="errors.fe('mail_host')">
+        <el-input v-model="form.mail_host" placeholder="如 smtp.example.edu.cn" />
+      </el-form-item>
+      <el-form-item label="端口" :error="errors.fe('mail_port')">
+        <el-input-number v-model="form.mail_port" :min="1" :max="65535" :controls="false" />
+      </el-form-item>
+    </div>
     <el-form-item label="加密方式" :error="errors.fe('mail_security')">
       <el-radio-group v-model="form.mail_security" @change="(v) => securityChanged(v as MailSecurity)">
         <el-radio-button v-for="(s, k) in SECURITY" :key="k" :value="k">{{ s.label }}</el-radio-button>
       </el-radio-group>
     </el-form-item>
-    <el-row :gutter="12">
-      <el-col :xs="24" :sm="12">
-        <el-form-item label="账号" :error="errors.fe('mail_username')">
-          <el-input v-model="form.mail_username" placeholder="通常是完整的邮箱地址" autocomplete="off" />
-        </el-form-item>
-      </el-col>
-      <el-col :xs="24" :sm="12">
-        <el-form-item label="授权码" :error="errors.fe('mail_password')">
-          <el-input
-            v-model="form.mail_password"
-            type="password"
-            show-password
-            autocomplete="new-password"
-            :placeholder="saved?.password_set ? '已设置，留空不修改' : '邮箱网页版设置里生成的客户端授权码'"
-          />
-        </el-form-item>
-      </el-col>
-    </el-row>
+    <div class="form-grid">
+      <el-form-item class="span-all" label="账号" :error="errors.fe('mail_username')">
+        <el-input v-model="form.mail_username" placeholder="通常是完整的邮箱地址" autocomplete="off" />
+      </el-form-item>
+      <el-form-item class="span-all" label="授权码" :error="errors.fe('mail_password')">
+        <el-input
+          v-model="form.mail_password"
+          type="password"
+          show-password
+          autocomplete="new-password"
+          :placeholder="saved?.password_set ? '已设置，留空不修改' : '邮箱网页版设置里生成的客户端授权码'"
+        />
+      </el-form-item>
+    </div>
     <el-form-item label="发件人地址" :error="errors.fe('mail_from')">
       <el-input v-model="form.mail_from" placeholder="留空时用账号" />
     </el-form-item>
@@ -168,7 +160,7 @@ async function sendTest() {
 }
 .hint {
   width: 100%;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--lab-text-3);
 }
 .section-title {

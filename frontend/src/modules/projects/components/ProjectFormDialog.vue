@@ -6,6 +6,7 @@ import type { Project, ProjectStatus, ProjectWrite, UserBrief } from '@/api/type
 import { useAuthStore } from '@/stores/auth'
 import { mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{ project?: Project | null }>()
@@ -60,38 +61,32 @@ async function save() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="project ? '编辑项目' : '新建项目'" width="min(560px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-form-item label="项目名称" :error="errors.fe('name')" required>
-        <el-input v-model="form.name" />
-      </el-form-item>
-      <el-form-item label="负责人" :error="errors.fe('leader_id')" required>
-        <el-select v-model="form.leader_id" filterable :disabled="!canChangeLeader" placeholder="选择负责人">
-          <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="成员（负责人自动计入）" :error="errors.fe('member_ids')">
-        <el-select v-model="form.member_ids" multiple filterable placeholder="选择成员">
-          <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="当前阶段" :error="errors.fe('stage')">
-        <el-input v-model="form.stage" />
-      </el-form-item>
-      <el-form-item label="状态" :error="errors.fe('status')">
-        <el-radio-group v-model="form.status">
-          <el-radio value="active">进行中</el-radio>
-          <el-radio value="closed">已结束</el-radio>
-        </el-radio-group>
-      </el-form-item>
-      <el-form-item label="说明" :error="errors.fe('description')">
-        <el-input v-model="form.description" type="textarea" :autosize="{ minRows: 3 }" />
-      </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+  <FormDialog v-model="visible" :title="project ? '编辑项目' : '新建项目'" :loading="saving" @submit="save">
+    <el-form-item label="项目名称" :error="errors.fe('name')" required>
+      <el-input v-model="form.name" />
+    </el-form-item>
+    <el-form-item label="负责人" :error="errors.fe('leader_id')" required>
+      <el-select v-model="form.leader_id" filterable :disabled="!canChangeLeader" placeholder="选择负责人">
+        <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
+    </el-form-item>
+    <el-form-item label="成员（负责人自动计入）" :error="errors.fe('member_ids')">
+      <el-select v-model="form.member_ids" multiple filterable placeholder="选择成员">
+        <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
+    </el-form-item>
+    <el-form-item label="当前阶段" :error="errors.fe('stage')">
+      <el-input v-model="form.stage" />
+    </el-form-item>
+    <el-form-item label="状态" :error="errors.fe('status')">
+      <el-radio-group v-model="form.status">
+        <el-radio value="active">进行中</el-radio>
+        <el-radio value="closed">已结束</el-radio>
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item label="说明" :error="errors.fe('description')">
+      <el-input v-model="form.description" type="textarea" :autosize="{ minRows: 3 }" />
+    </el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>

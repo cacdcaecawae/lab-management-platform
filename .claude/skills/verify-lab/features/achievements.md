@@ -12,7 +12,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧 menuitem "成果归档"。列表页：textbox "搜索标题、作者、出处"，combobox "类型"、"年份"、"状态"、"成员"，link "导出 Excel"、"导出（附全文）"，button "登记成果"；每行标题是按钮，"全文"列是 link "PDF"。
+- 左侧 menuitem "成果归档"。列表页：textbox "搜索标题、作者、出处"，combobox "类型"、"年份"、"状态"、"成员"，button "导出"（下拉里是 "导出 Excel"、"导出（附全文）"，button "登记成果"；每行标题是按钮，"全文"列是 link "PDF"。
 - 登记对话框：combobox "*类型"、"*状态"、"*日期"，textbox "*标题"、"*作者（按署名顺序，含外单位）"，combobox "本组成员"，textbox "期刊 / 会议"、"DOI / 链接"、"备注"；保存后出现"全文（PDF）"和 button "上传全文"。
 
 ## Driving it with chrome-devtools MCP
@@ -28,7 +28,7 @@
 - **全文。** 对 "上传全文" 用 `upload_file` 传 `quote.pdf`，`wait_for` "全文已上传"。
 - **对照记录。** 再用同样的表单登记：2026 年已发表的论文（上传一份全文）、2026 年投稿中的论文、2025 年已录用的论文、2026 年已授权的专利。
 - **筛选。** 类型"论文"、年份"2026 年"、状态"已录用（含已发表）"，列表只剩两篇。截图。读两个导出链接的 `href`：都带 `type=paper&year=2026&status=accepted%2Cpublished`。
-- **导出。** `evaluate_script` 请求"导出（附全文）"的地址，把内容转成 base64 存进证据目录，用 Python 解开：两个全文文件加 `成果清单.xlsx`，表里两行，"全文"列与文件名对应，`002-...pdf` 的 SHA256 与 `quote.pdf` 一致。
+- **导出。** `evaluate_script` 请求"导出（附全文）"的地址 `/api/achievements/export/?files=1`，把内容转成 base64 存进证据目录，用 Python 解开：两个全文文件加 `成果清单.xlsx`，表里两行，"全文"列与文件名对应，`002-...pdf` 的 SHA256 与 `quote.pdf` 一致。
 - **外组。** `x_mgr` 请求成果和全文 404，`/api/achievements/` 的 `count` 为 0。导出返回 200；要核对内容，照"导出"一步解开：压缩包里只有 `成果清单.xlsx`，表里只有表头。
 - **第二视角。** query.sh 读 `achievements.models.Achievement`：类型、状态、日期与页面一致，全文存储名为随机名，原文件名在 `fulltext_name`。
 

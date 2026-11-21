@@ -12,6 +12,8 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { TXN_KIND_LABELS, formatTime, toDateStr } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const auth = useAuthStore()
 const route = inject(routeLocationKey, undefined)
@@ -190,14 +192,15 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
       <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期</el-checkbox>
-      <span class="grow" />
-      <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新增耗材</el-button>
-    </div>
+      <template #actions>
+        <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新建耗材</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items">
       <el-table-column prop="name" label="名称" min-width="130" />
       <el-table-column prop="spec" label="规格" min-width="100" />
@@ -241,55 +244,43 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     />
   </el-card>
 
-  <el-dialog v-model="itemOpen" :title="editing ? '编辑耗材' : '新增耗材'" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="saveItem">
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="14">
-          <el-form-item label="名称" :error="itemErrors.fe('name')" required><el-input v-model="itemForm.name" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="10">
-          <el-form-item label="规格" :error="itemErrors.fe('spec')"><el-input v-model="itemForm.spec" placeholder="如 1 m、250 mL" /></el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="8">
-          <el-form-item label="单位" :error="itemErrors.fe('unit')" required><el-input v-model="itemForm.unit" /></el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="8">
-          <el-form-item label="安全库存" :error="itemErrors.fe('safety_stock')">
-            <el-input-number v-model="itemForm.safety_stock" :min="0" controls-position="right" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="存放位置" :error="itemErrors.fe('location')"><el-input v-model="itemForm.location" /></el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="备注" :error="itemErrors.fe('notes')">
-        <el-input v-model="itemForm.notes" type="textarea" :autosize="{ minRows: 2 }" />
+  <FormDialog v-model="itemOpen" :title="editing ? '编辑耗材' : '新建耗材'" :loading="saving" @submit="saveItem">
+    <div class="form-grid">
+      <el-form-item class="span-2" label="名称" :error="itemErrors.fe('name')" required><el-input v-model="itemForm.name" /></el-form-item>
+      <el-form-item label="规格" :error="itemErrors.fe('spec')"><el-input v-model="itemForm.spec" placeholder="如 1 m、250 mL" /></el-form-item>
+      <el-form-item label="单位" :error="itemErrors.fe('unit')" required><el-input v-model="itemForm.unit" /></el-form-item>
+      <el-form-item label="安全库存" :error="itemErrors.fe('safety_stock')">
+        <el-input-number v-model="itemForm.safety_stock" :min="0" controls-position="right" />
       </el-form-item>
-      <el-alert v-for="msg in itemErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="itemOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="saveItem">保存</el-button>
-    </template>
-  </el-dialog>
+      <el-form-item label="存放位置" :error="itemErrors.fe('location')"><el-input v-model="itemForm.location" /></el-form-item>
+    </div>
+    <el-form-item label="备注" :error="itemErrors.fe('notes')">
+      <el-input v-model="itemForm.notes" type="textarea" :autosize="{ minRows: 2 }" />
+    </el-form-item>
+    <el-alert v-for="msg in itemErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 
-  <el-dialog v-model="batchModeOpen" title="批次管理" width="min(460px, 95vw)">
+  <FormDialog v-model="batchModeOpen" title="批次管理" size="sm" confirm-text="确认切换" :loading="saving" @submit="saveBatchMode">
     <p v-if="batchTarget">{{ batchTarget.name }}：{{ enablingBatchMode ? '开启批次管理' : '关闭批次管理' }}</p>
     <p v-if="!enablingBatchMode">只有各批次库存均为 0 才可关闭，历史流水不会删除。</p>
-    <el-form v-else-if="batchTarget && batchTarget.stock > 0" label-position="top" @submit.prevent="saveBatchMode">
+    <template v-else-if="batchTarget && batchTarget.stock > 0">
       <p>现有库存 {{ batchTarget.stock }} {{ batchTarget.unit }} 将全部分配到此批次，总数不变。</p>
       <el-form-item label="期初批号" required><el-input v-model="openingBatch.batch_no" maxlength="50" /></el-form-item>
       <el-form-item label="期初批次有效期"><el-input v-model="openingBatch.expires_on" type="date" /></el-form-item>
-    </el-form>
-    <el-alert v-if="batchModeError" type="error" :title="batchModeError" :closable="false" />
-    <template #footer>
-      <el-button @click="batchModeOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="saveBatchMode">确认切换</el-button>
     </template>
-  </el-dialog>
+    <el-alert v-if="batchModeError" type="error" :title="batchModeError" :closable="false" />
+  </FormDialog>
 
-  <el-dialog v-model="txnOpen" :title="`${TXN_KIND_LABELS[txnForm.kind]}：${txnTarget?.name} ${txnTarget?.spec}`" width="min(460px, 95vw)">
-    <el-form v-if="txnTarget" label-position="top" @submit.prevent="saveTxn">
+  <FormDialog
+    v-model="txnOpen"
+    :title="`${TXN_KIND_LABELS[txnForm.kind]}：${txnTarget?.name} ${txnTarget?.spec}`"
+    size="sm"
+    confirm-text="登记"
+    :loading="saving"
+    :disabled="(txnForm.kind === 'adjust' && diff === 0) || (txnTarget?.tracks_batches && txnForm.kind !== 'in' && !txnForm.batch_id)"
+    @submit="saveTxn"
+  >
+    <template v-if="txnTarget">
       <p class="book">总账 {{ txnTarget.stock }} {{ txnTarget.unit }}<template v-if="txnTarget.tracks_batches && bookStock !== undefined">，该批次 {{ bookStock }} {{ txnTarget.unit }}</template></p>
       <template v-if="txnTarget.tracks_batches">
         <template v-if="txnForm.kind === 'in'">
@@ -324,15 +315,11 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <el-input v-model="txnForm.note" maxlength="200" />
       </el-form-item>
       <el-alert v-for="msg in txnErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="txnOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="(txnForm.kind === 'adjust' && diff === 0) || (txnTarget?.tracks_batches && txnForm.kind !== 'in' && !txnForm.batch_id)" @click="saveTxn">登记</el-button>
     </template>
-  </el-dialog>
+  </FormDialog>
 
   <el-drawer v-model="historyOpen" :title="`出入库流水：${historyOf?.name} ${historyOf?.spec}`" size="min(640px, 100vw)">
-    <el-table :data="txns" empty-text="没有流水">
+    <el-table :data="txns" empty-text="暂无流水">
       <el-table-column label="时间" min-width="130">
         <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
       </el-table-column>

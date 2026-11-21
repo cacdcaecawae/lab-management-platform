@@ -8,6 +8,8 @@ import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const router = useRouter()
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
@@ -43,7 +45,7 @@ async function create() {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索名称" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.project" aria-label="项目" placeholder="全部项目" clearable filterable>
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
@@ -51,9 +53,10 @@ async function create() {
       <el-select v-model="filters.kind" aria-label="类型" placeholder="全部类型" clearable>
         <el-option v-for="(label, value) in KIND_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
-      <span class="grow" />
-      <el-button type="primary" @click="openCreate">新建数据集</el-button>
-    </div>
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新建数据集</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
@@ -88,29 +91,23 @@ async function create() {
     />
   </el-card>
 
-  <el-dialog v-model="dialog" title="新建数据集" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="create">
-      <el-form-item label="项目" :error="errors.fe('project_id')" required>
-        <el-select v-model="form.project_id" filterable placeholder="选择项目">
-          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="名称" :error="errors.fe('name')" required>
-        <el-input v-model="form.name" />
-      </el-form-item>
-      <el-form-item label="类型" :error="errors.fe('kind')" required>
-        <el-radio-group v-model="form.kind">
-          <el-radio v-for="(label, value) in KIND_LABELS" :key="value" :value="value">{{ label }}</el-radio>
-        </el-radio-group>
-      </el-form-item>
-      <el-form-item label="说明" :error="errors.fe('description')">
-        <el-input v-model="form.description" type="textarea" :autosize="{ minRows: 3 }" />
-      </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="dialog = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="create">创建</el-button>
-    </template>
-  </el-dialog>
+  <FormDialog v-model="dialog" title="新建数据集" :loading="saving" @submit="create">
+    <el-form-item label="项目" :error="errors.fe('project_id')" required>
+      <el-select v-model="form.project_id" filterable placeholder="选择项目">
+        <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+      </el-select>
+    </el-form-item>
+    <el-form-item label="名称" :error="errors.fe('name')" required>
+      <el-input v-model="form.name" />
+    </el-form-item>
+    <el-form-item label="类型" :error="errors.fe('kind')" required>
+      <el-radio-group v-model="form.kind">
+        <el-radio v-for="(label, value) in KIND_LABELS" :key="value" :value="value">{{ label }}</el-radio>
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item label="说明" :error="errors.fe('description')">
+      <el-input v-model="form.description" type="textarea" :autosize="{ minRows: 3 }" />
+    </el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>

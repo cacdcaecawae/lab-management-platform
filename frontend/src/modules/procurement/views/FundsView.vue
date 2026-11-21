@@ -7,6 +7,8 @@ import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { mergeById } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const filters = reactive({ search: '', active: '' as 1 | '' })
 const keyword = ref('')
@@ -46,13 +48,14 @@ async function save() {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索经费号、名称" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.active" :true-value="1" false-value="">只看可用</el-checkbox>
-      <span class="grow" />
-      <el-button type="primary" @click="openDialog(null)">新增经费来源</el-button>
-    </div>
-    <el-table v-loading="loading" :data="items" empty-text="还没有经费来源">
+      <template #actions>
+        <el-button type="primary" @click="openDialog(null)">新建经费来源</el-button>
+      </template>
+    </PageToolbar>
+    <el-table v-loading="loading" :data="items" empty-text="暂无经费来源">
       <el-table-column label="经费号" min-width="120">
         <template #default="{ row }"><span class="code">{{ row.code }}</span></template>
       </el-table-column>
@@ -80,39 +83,25 @@ async function save() {
     />
   </el-card>
 
-  <el-dialog v-model="open" :title="editing ? '编辑经费来源' : '新增经费来源'" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="10">
-          <el-form-item label="经费号" :error="errors.fe('code')" required><el-input v-model="form.code" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="14">
-          <el-form-item label="名称" :error="errors.fe('name')" required>
-            <el-input v-model="form.name" placeholder="如 国自然面上项目" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="14">
-          <el-form-item label="负责人" :error="errors.fe('owner_id')">
-            <el-select v-model="form.owner_id" filterable clearable placeholder="可不选">
-              <el-option v-for="m in ownerOptions" :key="m.id" :label="m.name" :value="m.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="10">
-          <el-form-item label="状态" :error="errors.fe('active')">
-            <el-switch v-model="form.active" active-text="可用" inactive-text="停用" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="备注" :error="errors.fe('notes')">
-        <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />
+  <FormDialog v-model="open" :title="editing ? '编辑经费来源' : '新建经费来源'" :loading="saving" @submit="save">
+    <div class="form-grid">
+      <el-form-item label="经费号" :error="errors.fe('code')" required><el-input v-model="form.code" /></el-form-item>
+      <el-form-item class="span-2" label="名称" :error="errors.fe('name')" required>
+        <el-input v-model="form.name" placeholder="如 国自然面上项目" />
       </el-form-item>
-      <el-alert v-if="editing && !form.active" type="info" :closable="false" title="停用后不能再在新的采购和报销里选择，已有记录照常显示。" />
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+      <el-form-item class="span-2" label="负责人" :error="errors.fe('owner_id')">
+        <el-select v-model="form.owner_id" filterable clearable placeholder="可不选">
+          <el-option v-for="m in ownerOptions" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="状态" :error="errors.fe('active')">
+        <el-switch v-model="form.active" active-text="可用" inactive-text="停用" />
+      </el-form-item>
+    </div>
+    <el-form-item label="备注" :error="errors.fe('notes')">
+      <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />
+    </el-form-item>
+    <el-alert v-if="editing && !form.active" type="info" :closable="false" title="停用后不能再在新的采购和报销里选择，已有记录照常显示。" />
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>

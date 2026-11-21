@@ -6,6 +6,8 @@ import type { Account, Role, SystemGroup } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
 import { ROLE_LABELS, formatTime } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const filters = reactive({ search: '', group: '' as number | '', role: '' })
 const keyword = ref('')
@@ -105,7 +107,7 @@ async function doReset() {
 </script>
 
 <template>
-  <div class="page-toolbar">
+  <PageToolbar>
     <el-input v-model="keyword" placeholder="搜索姓名、登录名、邮箱" clearable @change="filters.search = keyword" />
     <el-select v-model="filters.group" placeholder="全部课题组" aria-label="课题组" clearable>
       <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
@@ -113,9 +115,10 @@ async function doReset() {
     <el-select v-model="filters.role" placeholder="全部角色" aria-label="角色" clearable>
       <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
     </el-select>
-    <span class="grow" />
-    <el-button type="primary" @click="openForm(null)">新建账号</el-button>
-  </div>
+    <template #actions>
+      <el-button type="primary" @click="openForm(null)">新建账号</el-button>
+    </template>
+  </PageToolbar>
   <el-table v-loading="loading" :data="items">
     <el-table-column prop="name" label="姓名" min-width="100" />
     <el-table-column prop="username" label="登录名" min-width="110" />
@@ -128,8 +131,8 @@ async function doReset() {
     <el-table-column prop="email" label="邮箱" min-width="170" />
     <el-table-column label="状态" min-width="160">
       <template #default="{ row }">
-        <el-tag v-if="row.pending" type="warning" disable-transitions>待审核</el-tag>
-        <el-tag v-else :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
+        <el-tag v-if="row.pending" class="status-tag" type="warning" disable-transitions>待审核</el-tag>
+        <el-tag v-else class="status-tag" :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
         <el-tag v-if="row.is_active && row.must_change_password" class="next-tag" type="warning" disable-transitions>未改初始密码</el-tag>
       </template>
     </el-table-column>
@@ -155,67 +158,45 @@ async function doReset() {
     hide-on-single-page
   />
 
-  <el-dialog v-model="dialog" :title="editing ? '编辑账号' : '新建账号'" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
-            <el-input v-model="form.username" :disabled="!!editing" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="姓名" :error="formErrors.fe('name')" required><el-input v-model="form.name" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <!-- fixed once created: moving someone changes who can see their records (done in /admin/ if ever needed) -->
-          <el-form-item label="课题组" :error="formErrors.fe('group_id')" required>
-            <span v-if="editing">{{ editing.group?.name ?? '（未分配）' }}</span>
-            <el-select v-else v-model="form.group_id" placeholder="选择课题组">
-              <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="角色" :error="formErrors.fe('role')" required>
-            <el-select v-model="form.role">
-              <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="邮箱" :error="formErrors.fe('email')"><el-input v-model="form.email" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="电话" :error="formErrors.fe('phone')"><el-input v-model="form.phone" /></el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
-        <el-input v-model="form.research_direction" />
+  <FormDialog v-model="dialog" :title="editing ? '编辑账号' : '新建账号'" :loading="saving" @submit="save">
+    <div class="form-grid">
+      <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
+        <el-input v-model="form.username" :disabled="!!editing" />
       </el-form-item>
-      <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
-        <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
+      <el-form-item label="姓名" :error="formErrors.fe('name')" required><el-input v-model="form.name" /></el-form-item>
+      <!-- fixed once created: moving someone changes who can see their records (done in /admin/ if ever needed) -->
+      <el-form-item label="课题组" :error="formErrors.fe('group_id')" required>
+        <span v-if="editing">{{ editing.group?.name ?? '（未分配）' }}</span>
+        <el-select v-else v-model="form.group_id" placeholder="选择课题组">
+          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
       </el-form-item>
-      <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="dialog = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+      <el-form-item label="角色" :error="formErrors.fe('role')" required>
+        <el-select v-model="form.role">
+          <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="邮箱" :error="formErrors.fe('email')"><el-input v-model="form.email" /></el-form-item>
+      <el-form-item label="电话" :error="formErrors.fe('phone')"><el-input v-model="form.phone" /></el-form-item>
+    </div>
+    <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
+      <el-input v-model="form.research_direction" />
+    </el-form-item>
+    <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
+      <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
+    </el-form-item>
+    <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 
-  <el-dialog v-model="resetVisible" title="重置密码" width="min(420px, 95vw)">
-    <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
-    <el-form label-position="top" @submit.prevent="doReset">
-      <el-form-item label="新密码" :error="resetErrors.fe('password')">
-        <el-input v-model="newPassword" type="password" show-password autocomplete="new-password" />
-      </el-form-item>
-      <el-alert v-for="msg in resetErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="resetVisible = false">取消</el-button>
-      <el-button type="primary" @click="doReset">重置</el-button>
+  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" @submit="doReset">
+    <template #before>
+      <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
     </template>
-  </el-dialog>
+    <el-form-item label="新密码" :error="resetErrors.fe('password')">
+      <el-input v-model="newPassword" type="password" show-password autocomplete="new-password" />
+    </el-form-item>
+    <el-alert v-for="msg in resetErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>
 
 <style scoped>

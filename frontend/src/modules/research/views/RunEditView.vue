@@ -15,6 +15,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import ParamsEditor from '@/modules/research/components/ParamsEditor.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -174,35 +175,30 @@ if (route.params.id) load(Number(route.params.id))
   </el-result>
   <el-card v-else v-loading="loading" class="card">
     <template #header>
-      <div class="actions">
-        <el-page-header :content="record ? `${record.code} ${record.title}` : '新建数据处理记录'" @back="router.push({ name: 'runs' })" />
-        <StatusTag v-if="record" :status="record.status" />
-        <span style="flex: 1" />
+      <PageHeader :back="{ name: 'runs' }">
+        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建数据处理记录</template></template>
+        <template v-if="record" #tags><StatusTag :status="record.status" /></template>
         <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
         <el-button v-if="canReturn" type="warning" @click="returnToDraft">退回</el-button>
         <template v-if="editable">
           <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
           <el-button type="primary" :loading="saving" @click="submit">提交</el-button>
         </template>
-      </div>
+      </PageHeader>
     </template>
     <el-alert v-if="readonlyHint" :title="readonlyHint" type="info" :closable="false" class="notice" />
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" class="notice" />
-    <el-form :disabled="!editable" label-position="top">
-      <el-row :gutter="16">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="项目" :error="errors.fe('project_id')" required>
-            <el-select v-model="form.project_id" filterable placeholder="选择项目">
-              <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="任务名称" :error="errors.fe('title')" required>
-            <el-input v-model="form.title" />
-          </el-form-item>
-        </el-col>
-      </el-row>
+    <el-form class="form-page" :disabled="!editable" label-position="top">
+      <div class="form-grid">
+        <el-form-item class="span-2" label="项目" :error="errors.fe('project_id')" required>
+          <el-select v-model="form.project_id" filterable placeholder="选择项目">
+            <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="span-2" label="任务名称" :error="errors.fe('title')" required>
+          <el-input v-model="form.title" />
+        </el-form-item>
+      </div>
       <el-form-item label="输入数据集（只能选择自己的数据集）" :error="errors.fe('input_ids')" required>
         <el-select v-model="form.input_ids" multiple filterable placeholder="选择输入数据">
           <el-option v-for="d in datasetOptions" :key="d.id" :label="`${d.code} ${d.name}（${KIND_LABELS[d.kind]}）`" :value="d.id" />
@@ -223,25 +219,21 @@ if (route.params.id) load(Number(route.params.id))
           >
             <el-option v-for="d in scriptOptions" :key="d.id" :label="`${d.code} ${d.name}`" :value="d.id" />
           </el-select>
-          <el-row v-else :gutter="8">
-            <el-col :xs="24" :sm="10"><el-input v-model="form.script_repo" placeholder="仓库地址" /></el-col>
-            <el-col :xs="24" :sm="6"><el-input v-model="form.script_commit" placeholder="commit" /></el-col>
-            <el-col :xs="24" :sm="8"><el-input v-model="form.script_path" placeholder="入口脚本，如 src/run.py" /></el-col>
-          </el-row>
+          <div v-else class="script-ref">
+            <el-input v-model="form.script_repo" placeholder="仓库地址" />
+            <el-input v-model="form.script_commit" placeholder="commit" />
+            <el-input v-model="form.script_path" placeholder="入口脚本，如 src/run.py" />
+          </div>
         </div>
       </el-form-item>
-      <el-row :gutter="16">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="方法版本" :error="errors.fe('method_version')">
-            <el-input v-model="form.method_version" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="运行环境" :error="errors.fe('environment')" required>
-            <el-input v-model="form.environment" placeholder="如 Python 3.11 + numpy 2.1，MATLAB R2024b" />
-          </el-form-item>
-        </el-col>
-      </el-row>
+      <div class="form-grid">
+        <el-form-item class="span-2" label="方法版本" :error="errors.fe('method_version')">
+          <el-input v-model="form.method_version" />
+        </el-form-item>
+        <el-form-item class="span-2" label="运行环境" :error="errors.fe('environment')" required>
+          <el-input v-model="form.environment" placeholder="如 Python 3.11 + numpy 2.1，MATLAB R2024b" />
+        </el-form-item>
+      </div>
       <el-form-item label="处理参数" :error="errors.fe('params')">
         <ParamsEditor ref="paramsEditor" v-model="form.params" :disabled="!editable" />
       </el-form-item>
@@ -262,6 +254,16 @@ if (route.params.id) load(Number(route.params.id))
 <style scoped>
 .notice {
   margin-bottom: 16px;
+}
+.script-ref {
+  display: grid;
+  grid-template-columns: 5fr 3fr 4fr;
+  gap: 8px;
+}
+@media (max-width: 768px) {
+  .script-ref {
+    grid-template-columns: 1fr;
+  }
 }
 .script {
   display: flex;

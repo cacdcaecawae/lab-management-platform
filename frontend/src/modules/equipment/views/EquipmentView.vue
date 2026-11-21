@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { EQUIPMENT_STATUSES, STATUS } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -34,18 +35,18 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索编号、名称、型号、位置" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
         <el-option v-for="s in EQUIPMENT_STATUSES" :key="s" :label="STATUS[s].label" :value="s" />
       </el-select>
-      <span class="grow" />
       <el-checkbox v-model="filters.calibration_within" :true-value="30" false-value="">校准到期（含已过期）</el-checkbox>
-      <el-button @click="router.push({ name: 'bookings' })">预约日历</el-button>
-      <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
-      <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
-      <el-button v-if="auth.isManager" type="primary" @click="creating = true">新增设备</el-button>
-    </div>
+      <template #actions>
+        <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
+        <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
+        <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建设备</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items" @selection-change="selectLabels">
       <el-table-column v-if="auth.isManager" type="selection" width="44" />
       <el-table-column label="编号" min-width="100">

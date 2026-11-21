@@ -8,6 +8,7 @@ import { purchasesApi } from '@/modules/procurement/api'
 import type { Equipment, EquipmentStatus, EquipmentWrite, PurchaseRef, UserBrief } from '@/api/types'
 import { EQUIPMENT_STATUSES, STATUS, mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{ equipment?: Equipment | null }>()
@@ -89,70 +90,48 @@ async function save() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="equipment ? '编辑设备' : '新增设备'" width="min(620px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-row :gutter="16">
-        <el-col :xs="24" :sm="10">
-          <el-form-item label="设备编号" :error="errors.fe('code')" required>
-            <el-input v-model="form.code" placeholder="如 UT-001" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="14">
-          <el-form-item label="名称" :error="errors.fe('name')" required>
-            <el-input v-model="form.name" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="型号" :error="errors.fe('model')">
-            <el-input v-model="form.model" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="类别" :error="errors.fe('category')">
-            <el-input v-model="form.category" placeholder="如 探伤仪、探头、采集卡" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="存放位置" :error="errors.fe('location')">
-            <el-input v-model="form.location" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="保管人" :error="errors.fe('custodian_id')">
-            <el-select v-model="form.custodian_id" filterable clearable placeholder="选择保管人">
-              <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="购置日期" :error="errors.fe('purchase_date')">
-            <el-date-picker v-model="form.purchase_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="下次校准日期" :error="errors.fe('calibration_due')">
-            <el-date-picker v-model="form.calibration_due" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="采购申请（已到货）" :error="errors.fe('purchase_id')">
+  <FormDialog v-model="visible" :title="equipment ? '编辑设备' : '新建设备'" :loading="saving" @submit="save">
+    <div class="form-grid">
+      <el-form-item label="设备编号" :error="errors.fe('code')" required>
+        <el-input v-model="form.code" placeholder="如 UT-001" />
+      </el-form-item>
+      <el-form-item label="名称" :error="errors.fe('name')" required>
+        <el-input v-model="form.name" />
+      </el-form-item>
+      <el-form-item label="型号" :error="errors.fe('model')">
+        <el-input v-model="form.model" />
+      </el-form-item>
+      <el-form-item label="类别" :error="errors.fe('category')">
+        <el-input v-model="form.category" placeholder="如 探伤仪、探头" />
+      </el-form-item>
+      <el-form-item label="存放位置" :error="errors.fe('location')">
+        <el-input v-model="form.location" />
+      </el-form-item>
+      <el-form-item label="保管人" :error="errors.fe('custodian_id')">
+        <el-select v-model="form.custodian_id" filterable clearable placeholder="选择保管人">
+          <el-option v-for="m in options" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="购置日期" :error="errors.fe('purchase_date')">
+        <el-date-picker v-model="form.purchase_date" type="date" value-format="YYYY-MM-DD" />
+      </el-form-item>
+      <el-form-item label="下次校准日期" :error="errors.fe('calibration_due')">
+        <el-date-picker v-model="form.calibration_due" type="date" value-format="YYYY-MM-DD" />
+      </el-form-item>
+      <el-form-item label="采购申请（已到货）" :error="errors.fe('purchase_id')" class="span-all">
         <el-select v-model="form.purchase_id" filterable clearable placeholder="可不选">
           <el-option v-for="p in purchaseOptions" :key="p.id" :label="p.purpose ? `${p.code} ${p.purpose}` : p.code" :value="p.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="状态" :error="errors.fe('status')">
+      <el-form-item label="状态" :error="errors.fe('status')" class="span-all">
         <el-radio-group v-model="form.status">
           <el-radio v-for="s in EQUIPMENT_STATUSES" :key="s" :value="s as EquipmentStatus">{{ STATUS[s].label }}</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="备注" :error="errors.fe('notes')">
+      <el-form-item label="备注" :error="errors.fe('notes')" class="span-all">
         <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />
       </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+    </div>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>

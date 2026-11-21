@@ -2,6 +2,10 @@
 
 设计文档在 `docs/`。待开发的功能清单、每项的方案笔记和开发规则见 `docs/backlog.md`；第一期的子代理分工见 `docs/agent-tasks.md`。
 
+## 界面
+
+改前端页面之前先读仓库根目录的 `DESIGN.md`：颜色、字号写在 `frontend/src/styles/theme.css`，弹窗、列表工具栏、详情页头和表单分栏用 `frontend/src/components/` 里的共用组件，页面里不写死颜色和字号。
+
 ## 浏览器验证
 
 改了页面、接口行为或权限之后，按 `.claude/skills/verify-lab/SKILL.md` 在隔离实例里驱动浏览器验证，证据放在 `backend/var/verify-evidence/`。功能清单在 `.claude/skills/verify-lab/features/`，页面文字或流程变了，在同一次改动里更新对应文件。

@@ -7,6 +7,7 @@ import type { DataFile, Dataset } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
+import PageHeader from '@/components/PageHeader.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -79,7 +80,9 @@ load()
   <template v-else-if="dataset">
     <el-card class="card">
       <template #header>
-        <el-page-header :content="`${dataset.code} ${dataset.name}`" @back="router.push({ name: 'datasets' })" />
+        <PageHeader :back="{ name: 'datasets' }">
+          <template #title><span class="code">{{ dataset.code }}</span> {{ dataset.name }}</template>
+        </PageHeader>
       </template>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="类型">{{ KIND_LABELS[dataset.kind] }}</el-descriptions-item>

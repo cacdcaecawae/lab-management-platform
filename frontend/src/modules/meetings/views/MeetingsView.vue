@@ -4,6 +4,7 @@ import { meetingsApi } from '@/modules/meetings/api'
 import type { Meeting } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 const { items, count, page, pageSize, loading } = usePagedList(meetingsApi.list, reactive({}))
@@ -14,11 +15,12 @@ const openActions = (m: Meeting) => m.actions.filter((a) => !a.done_at).length
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
-      <span class="grow" />
-      <el-button v-if="auth.isManager" type="primary" @click="$router.push({ name: 'meeting-new' })">新建组会</el-button>
-    </div>
-    <el-table v-loading="loading" :data="items" empty-text="还没有组会记录">
+    <PageToolbar>
+      <template #actions>
+        <el-button v-if="auth.isManager" type="primary" @click="$router.push({ name: 'meeting-new' })">新建组会</el-button>
+      </template>
+    </PageToolbar>
+    <el-table v-loading="loading" :data="items" empty-text="暂无组会记录">
       <el-table-column label="日期" min-width="110">
         <template #default="{ row }">
           <RouterLink :to="{ name: 'meeting-detail', params: { id: row.id } }">{{ row.date }}</RouterLink>

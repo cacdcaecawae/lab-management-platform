@@ -311,13 +311,14 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
   padding: 14px 16px;
   border: 1px solid var(--lab-border);
   border-radius: var(--lab-radius-lg);
+  background: var(--lab-bg-card);
+  box-shadow: var(--lab-shadow-card);
   color: inherit;
   text-decoration: none;
   transition: border-color 0.15s, background-color 0.15s;
 }
 .tile:hover {
-  border-color: #d4d4d4;
-  background: #fcfcfc;
+  border-color: var(--el-border-color);
 }
 .tile-label {
   font-size: 13px;
@@ -367,12 +368,12 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
   border-radius: var(--lab-radius);
 }
 .rows li:hover {
-  background: #fafafa;
+  background: var(--lab-bg);
 }
 .hint {
   flex: none;
   color: var(--el-text-color-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .hint.late {
   color: var(--el-color-danger);

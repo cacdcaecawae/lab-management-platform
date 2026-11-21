@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload } from '@element-plus/icons-vue'
+import { ArrowDown, Upload } from '@element-plus/icons-vue'
 import { achievementsApi } from '@/modules/achievements/api'
 import { membersApi } from '@/modules/members/api'
 import type { Achievement, AchievementStatus, AchievementType, AchievementWrite } from '@/api/types'
@@ -21,8 +21,12 @@ import {
 import { showActionError, showError, useFieldErrors } from '@/utils/errors'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AchievementStatsPanel from './AchievementStatsPanel.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const auth = useAuthStore()
+// the export answers with an attachment, so the page stays where it is
+const download = (url: string) => window.location.assign(url)
 const statsOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
@@ -141,7 +145,7 @@ async function removeFulltext() {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索标题、作者、出处" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.type" placeholder="全部类型" aria-label="类型" clearable>
@@ -156,12 +160,20 @@ async function removeFulltext() {
       <el-select v-model="filters.member" placeholder="全部成员" aria-label="成员" clearable filterable>
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
-      <span class="grow" />
-      <el-button @click="statsOpen = true">成果统计</el-button>
-      <el-button tag="a" :href="achievementsApi.exportUrl(exportQuery)">导出 Excel</el-button>
-      <el-button tag="a" :href="achievementsApi.exportUrl(exportQuery, true)">导出（附全文）</el-button>
-      <el-button type="primary" @click="open(null)">登记成果</el-button>
-    </div>
+      <template #actions>
+        <el-button @click="statsOpen = true">成果统计</el-button>
+        <el-dropdown trigger="click" @command="(kind: string) => download(achievementsApi.exportUrl(exportQuery, kind === 'files'))">
+          <el-button>导出<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="excel">导出 Excel</el-dropdown-item>
+              <el-dropdown-item command="files">导出（附全文）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button type="primary" @click="open(null)">登记成果</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items" empty-text="没有符合条件的成果">
       <el-table-column label="类型" min-width="70">
         <template #default="{ row }">{{ ACHIEVEMENT_TYPE_LABELS[row.type] }}</template>
@@ -191,69 +203,61 @@ async function removeFulltext() {
     />
   </el-card>
 
-  <el-dialog v-model="dialogOpen" :title="current ? '成果' : '登记成果'" width="min(620px, 95vw)">
-    <div v-if="current" class="meta-line">
-      <span>{{ current.created_by.name }} 登记于 {{ formatTime(current.created_at) }}</span>
-      <el-button link @click="historyOpen = true">修改历史</el-button>
-    </div>
-    <el-form label-position="top" :disabled="!writer" @submit.prevent="save">
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="类型" :error="errors.fe('type')" required>
-            <el-select v-model="form.type">
-              <el-option v-for="(label, k) in ACHIEVEMENT_TYPE_LABELS" :key="k" :label="label" :value="k as AchievementType" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="状态" :error="errors.fe('status')" required>
-            <el-select v-model="form.status">
-              <el-option v-for="s in statusOptions" :key="s" :label="ACHIEVEMENT_STATUS_LABELS[s]" :value="s" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="日期" :error="errors.fe('date')" required>
-            <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="标题" :error="errors.fe('title')" required><el-input v-model="form.title" /></el-form-item>
-      <el-form-item label="作者（按署名顺序，含外单位）" :error="errors.fe('authors')" required>
-        <el-input v-model="form.authors" placeholder="如 张三, 李四, 王五" />
-      </el-form-item>
-      <el-form-item label="本组成员" :error="errors.fe('member_ids')">
-        <el-select v-model="form.member_ids" multiple filterable placeholder="署名里的本组成员，用于按人查找">
-          <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="VENUE_LABELS[form.type]" :error="errors.fe('venue')"><el-input v-model="form.venue" /></el-form-item>
-      <el-form-item label="DOI / 链接" :error="errors.fe('link')"><el-input v-model="form.link" /></el-form-item>
-      <el-form-item label="备注" :error="errors.fe('notes')">
-        <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />
-      </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-
-    <template v-if="current">
-      <div class="section-title">全文（PDF）</div>
-      <div class="fulltext">
-        <a v-if="current.fulltext_url" :href="current.fulltext_url" target="_blank" rel="noopener">{{ current.fulltext_name }}</a>
-        <span v-else class="muted">还没有上传</span>
-        <template v-if="writer">
-          <el-button :icon="Upload" :loading="uploading" @click="picker?.click()">{{ current.fulltext_url ? '替换全文' : '上传全文' }}</el-button>
-          <el-button v-if="current.fulltext_url" link type="danger" @click="removeFulltext">删除全文</el-button>
-          <input ref="picker" type="file" accept=".pdf" hidden @change="onPick" />
-        </template>
+  <FormDialog v-model="dialogOpen" :title="current ? '成果' : '登记成果'" :readonly="!writer" :loading="saving" @submit="save">
+    <template #before>
+      <div v-if="current" class="meta-line">
+        <span>{{ current.created_by.name }} 登记于 {{ formatTime(current.created_at) }}</span>
+        <el-button link @click="historyOpen = true">修改历史</el-button>
       </div>
     </template>
-
-    <template #footer>
-      <el-button v-if="current && auth.isManager" type="danger" plain class="left" @click="remove">删除成果</el-button>
-      <el-button @click="dialogOpen = false">{{ writer ? '取消' : '关闭' }}</el-button>
-      <el-button v-if="writer" type="primary" :loading="saving" @click="save">保存</el-button>
+    <div class="form-grid">
+      <el-form-item label="类型" :error="errors.fe('type')" required>
+        <el-select v-model="form.type">
+          <el-option v-for="(label, k) in ACHIEVEMENT_TYPE_LABELS" :key="k" :label="label" :value="k as AchievementType" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="状态" :error="errors.fe('status')" required>
+        <el-select v-model="form.status">
+          <el-option v-for="s in statusOptions" :key="s" :label="ACHIEVEMENT_STATUS_LABELS[s]" :value="s" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="日期" :error="errors.fe('date')" required>
+        <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+      </el-form-item>
+    </div>
+    <el-form-item label="标题" :error="errors.fe('title')" required><el-input v-model="form.title" /></el-form-item>
+    <el-form-item label="作者（按署名顺序，含外单位）" :error="errors.fe('authors')" required>
+      <el-input v-model="form.authors" placeholder="如 张三, 李四, 王五" />
+    </el-form-item>
+    <el-form-item label="本组成员" :error="errors.fe('member_ids')">
+      <el-select v-model="form.member_ids" multiple filterable placeholder="署名里的本组成员，用于按人查找">
+        <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
+    </el-form-item>
+    <el-form-item :label="VENUE_LABELS[form.type]" :error="errors.fe('venue')"><el-input v-model="form.venue" /></el-form-item>
+    <el-form-item label="DOI / 链接" :error="errors.fe('link')"><el-input v-model="form.link" /></el-form-item>
+    <el-form-item label="备注" :error="errors.fe('notes')">
+      <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />
+    </el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    <template #after>
+      <template v-if="current">
+        <div class="section-title">全文（PDF）</div>
+        <div class="fulltext">
+          <a v-if="current.fulltext_url" :href="current.fulltext_url" target="_blank" rel="noopener">{{ current.fulltext_name }}</a>
+          <span v-else class="muted">暂未上传</span>
+          <template v-if="writer">
+            <el-button :icon="Upload" :loading="uploading" @click="picker?.click()">{{ current.fulltext_url ? '替换全文' : '上传全文' }}</el-button>
+            <el-button v-if="current.fulltext_url" link type="danger" @click="removeFulltext">删除全文</el-button>
+            <input ref="picker" type="file" accept=".pdf" hidden @change="onPick" />
+          </template>
+        </div>
+      </template>
     </template>
-  </el-dialog>
+    <template #extra>
+      <el-button v-if="current && auth.isManager" type="danger" plain @click="remove">删除成果</el-button>
+    </template>
+  </FormDialog>
 
   <HistoryDrawer
     v-if="current"
@@ -279,7 +283,7 @@ async function removeFulltext() {
   align-items: center;
   margin-bottom: 8px;
   color: var(--lab-text-3);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .section-title {
   margin: 16px 0 8px;

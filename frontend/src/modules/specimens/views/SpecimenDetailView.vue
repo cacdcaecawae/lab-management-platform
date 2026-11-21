@@ -12,6 +12,8 @@ import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 // The history uses the model's field names; these differ from the shared labels (code there is 设备编号).
 const HISTORY_LABELS = { code: '编号', kind: '类别', material: '材料', dimensions: '尺寸', defects_public: '缺陷参数对学生公开' }
@@ -99,17 +101,14 @@ load()
   <template v-else-if="specimen">
     <el-card class="card">
       <template #header>
-        <div class="actions">
-          <el-page-header @back="router.push({ name: 'specimens' })">
-            <template #content><span class="code">{{ specimen.code }}</span> {{ specimen.name }}</template>
-          </el-page-header>
-          <span class="grow" />
+        <PageHeader :back="{ name: 'specimens' }">
+          <template #title><span class="code">{{ specimen.code }}</span> {{ specimen.name }}</template>
           <el-button @click="historyOpen = true">修改历史</el-button>
           <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'specimen', ids: String(specimen.id) } })">打印标签</el-button>
           <el-button v-if="auth.isManager" @click="editing = true">编辑试件</el-button>
           <el-button v-if="canReturn" type="primary" @click="giveBack">登记归还</el-button>
           <el-button v-else-if="canBorrow" type="primary" @click="openBorrow">借用</el-button>
-        </div>
+        </PageHeader>
       </template>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="状态">
@@ -140,7 +139,7 @@ load()
         </div>
       </template>
       <p v-if="specimen.defects === null" class="muted">缺陷参数未公开（用于盲测），管理员公开后才能看到。</p>
-      <el-table v-else :data="specimen.defects" empty-text="没有登记缺陷">
+      <el-table v-else :data="specimen.defects" empty-text="暂无缺陷">
         <el-table-column label="类型" min-width="80">
           <template #default="{ row }">{{ DEFECT_KIND_LABELS[row.kind] }}</template>
         </el-table-column>
@@ -152,7 +151,7 @@ load()
     </el-card>
 
     <el-card class="card" header="借用记录">
-      <el-table :data="loans" empty-text="还没有借用记录">
+      <el-table :data="loans" empty-text="暂无借用记录">
         <el-table-column label="借用人" min-width="80">
           <template #default="{ row }">{{ row.borrower.name }}</template>
         </el-table-column>
@@ -177,23 +176,17 @@ load()
       </el-table>
     </el-card>
 
-    <el-dialog v-model="borrowing" :title="`借用 ${specimen.code}`" width="min(460px, 95vw)">
-      <el-form label-position="top" @submit.prevent="borrow">
-        <el-form-item label="项目" :error="borrowErrors.fe('project_id')">
-          <el-select v-model="borrowForm.project_id" aria-label="项目" placeholder="可不选" clearable filterable>
-            <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="用途" :error="borrowErrors.fe('purpose')"><el-input v-model="borrowForm.purpose" /></el-form-item>
-        <el-form-item label="预计归还日期" :error="borrowErrors.fe('due_date')">
-          <el-date-picker v-model="borrowForm.due_date" type="date" value-format="YYYY-MM-DD" aria-label="预计归还日期" placeholder="可不填" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="borrowing = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="borrow">借用</el-button>
-      </template>
-    </el-dialog>
+    <FormDialog v-model="borrowing" :title="`借用 ${specimen.code}`" size="sm" confirm-text="借用" :loading="saving" @submit="borrow">
+      <el-form-item label="项目" :error="borrowErrors.fe('project_id')">
+        <el-select v-model="borrowForm.project_id" aria-label="项目" placeholder="可不选" clearable filterable>
+          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="用途" :error="borrowErrors.fe('purpose')"><el-input v-model="borrowForm.purpose" /></el-form-item>
+      <el-form-item label="预计归还日期" :error="borrowErrors.fe('due_date')">
+        <el-date-picker v-model="borrowForm.due_date" type="date" value-format="YYYY-MM-DD" aria-label="预计归还日期" placeholder="可不填" />
+      </el-form-item>
+    </FormDialog>
     <SpecimenFormDialog v-model="editing" :specimen="specimen" @saved="load" />
     <HistoryDrawer v-model="historyOpen" :load="() => specimensApi.history(id)" :labels="HISTORY_LABELS" :values="HISTORY_VALUES" />
   </template>

@@ -6,6 +6,7 @@ import { membersApi } from '@/modules/members/api'
 import type { Defect, Specimen, SpecimenWrite, UserBrief } from '@/api/types'
 import { DEFECT_KIND_LABELS, SPECIMEN_KIND_LABELS, SPECIMEN_STATUSES, STATUS, mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{ specimen?: Specimen | null }>()
@@ -74,74 +75,52 @@ async function save() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="specimen ? '编辑试件' : '新增试件'" width="min(760px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-row :gutter="16">
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="编号" required :error="errors.fe('code')"><el-input v-model="form.code" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="10">
-          <el-form-item label="名称" required :error="errors.fe('name')"><el-input v-model="form.name" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="6">
-          <el-form-item label="类别" :error="errors.fe('kind')">
-            <el-select v-model="form.kind" aria-label="类别">
-              <el-option v-for="(label, k) in SPECIMEN_KIND_LABELS" :key="k" :label="label" :value="k" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="材料" :error="errors.fe('material')"><el-input v-model="form.material" placeholder="如 20 钢、6061 铝" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="尺寸" :error="errors.fe('dimensions')"><el-input v-model="form.dimensions" placeholder="如 300×100×25 mm" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="存放位置" :error="errors.fe('location')"><el-input v-model="form.location" /></el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="8">
-          <el-form-item label="保管人" :error="errors.fe('custodian_id')">
-            <el-select v-model="form.custodian_id" aria-label="保管人" placeholder="选择保管人" clearable filterable>
-              <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="16">
-          <el-form-item label="状态" :error="errors.fe('status')">
-            <el-radio-group v-model="form.status">
-              <el-radio v-for="st in SPECIMEN_STATUSES" :key="st" :value="st">{{ STATUS[st].label }}</el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-form-item :error="errors.fe('defects')">
-        <template #label>
-          <span>缺陷参数</span>
-          <el-switch v-model="form.defects_public" aria-label="缺陷参数对学生公开" class="public-switch" inline-prompt active-text="对学生公开" inactive-text="学生看不到" />
-        </template>
-        <div class="defects">
-          <div v-for="(d, i) in form.defects" :key="i" class="defect-row">
-            <el-select v-model="d.kind" :aria-label="`第 ${i + 1} 个缺陷的类型`" class="kind">
-              <el-option v-for="(label, k) in DEFECT_KIND_LABELS" :key="k" :label="label" :value="k" />
-            </el-select>
-            <el-input-number v-model="d.size_mm" :aria-label="`第 ${i + 1} 个缺陷的尺寸`" placeholder="尺寸 mm" :min="0" :precision="2" :controls="false" />
-            <el-input-number v-model="d.depth_mm" :aria-label="`第 ${i + 1} 个缺陷的埋深`" placeholder="埋深 mm" :min="0" :precision="2" :controls="false" />
-            <el-input v-model="d.position" :aria-label="`第 ${i + 1} 个缺陷的位置`" placeholder="位置，如 距左端 50 mm" />
-            <el-input v-model="d.note" :aria-label="`第 ${i + 1} 个缺陷的备注`" placeholder="备注" />
-            <el-button :icon="Delete" text :aria-label="`删除第 ${i + 1} 个缺陷`" @click="form.defects.splice(i, 1)" />
-          </div>
-          <el-button :icon="Plus" @click="addDefect">添加缺陷</el-button>
-        </div>
+  <FormDialog v-model="visible" :title="specimen ? '编辑试件' : '新建试件'" size="lg" :loading="saving" @submit="save">
+    <div class="form-grid">
+      <el-form-item label="编号" required :error="errors.fe('code')"><el-input v-model="form.code" /></el-form-item>
+      <el-form-item label="名称" required :error="errors.fe('name')"><el-input v-model="form.name" /></el-form-item>
+      <el-form-item label="类别" :error="errors.fe('kind')">
+        <el-select v-model="form.kind" aria-label="类别">
+          <el-option v-for="(label, k) in SPECIMEN_KIND_LABELS" :key="k" :label="label" :value="k" />
+        </el-select>
       </el-form-item>
+      <el-form-item label="材料" :error="errors.fe('material')"><el-input v-model="form.material" placeholder="如 20 钢、6061 铝" /></el-form-item>
+      <el-form-item label="尺寸" :error="errors.fe('dimensions')"><el-input v-model="form.dimensions" placeholder="如 300×100×25 mm" /></el-form-item>
+      <el-form-item label="存放位置" :error="errors.fe('location')"><el-input v-model="form.location" /></el-form-item>
+      <el-form-item label="保管人" :error="errors.fe('custodian_id')">
+        <el-select v-model="form.custodian_id" aria-label="保管人" placeholder="选择保管人" clearable filterable>
+          <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item class="span-2" label="状态" :error="errors.fe('status')">
+        <el-radio-group v-model="form.status">
+          <el-radio v-for="st in SPECIMEN_STATUSES" :key="st" :value="st">{{ STATUS[st].label }}</el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </div>
 
-      <el-form-item label="备注" :error="errors.fe('notes')"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+    <el-form-item :error="errors.fe('defects')">
+      <template #label>
+        <span>缺陷参数</span>
+        <el-switch v-model="form.defects_public" aria-label="缺陷参数对学生公开" class="public-switch" inline-prompt active-text="对学生公开" inactive-text="学生看不到" />
+      </template>
+      <div class="defects">
+        <div v-for="(d, i) in form.defects" :key="i" class="defect-row">
+          <el-select v-model="d.kind" :aria-label="`第 ${i + 1} 个缺陷的类型`" class="kind">
+            <el-option v-for="(label, k) in DEFECT_KIND_LABELS" :key="k" :label="label" :value="k" />
+          </el-select>
+          <el-input-number v-model="d.size_mm" :aria-label="`第 ${i + 1} 个缺陷的尺寸`" placeholder="尺寸 mm" :min="0" :precision="2" :controls="false" />
+          <el-input-number v-model="d.depth_mm" :aria-label="`第 ${i + 1} 个缺陷的埋深`" placeholder="埋深 mm" :min="0" :precision="2" :controls="false" />
+          <el-input v-model="d.position" :aria-label="`第 ${i + 1} 个缺陷的位置`" placeholder="位置，如 距左端 50 mm" />
+          <el-input v-model="d.note" :aria-label="`第 ${i + 1} 个缺陷的备注`" placeholder="备注" />
+          <el-button :icon="Delete" text :aria-label="`删除第 ${i + 1} 个缺陷`" @click="form.defects.splice(i, 1)" />
+        </div>
+        <el-button :icon="Plus" @click="addDefect">添加缺陷</el-button>
+      </div>
+    </el-form-item>
+
+    <el-form-item label="备注" :error="errors.fe('notes')"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
+  </FormDialog>
 </template>
 
 <style scoped>

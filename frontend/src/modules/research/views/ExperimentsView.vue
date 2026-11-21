@@ -6,6 +6,7 @@ import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { formatTime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 const filters = reactive({ project: '' as number | '', status: '', search: '' })
@@ -15,7 +16,7 @@ const { items, count, page, pageSize, loading } = usePagedList(experimentsApi.li
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索名称" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.project" aria-label="项目" placeholder="全部项目" clearable filterable>
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
@@ -24,9 +25,10 @@ const { items, count, page, pageSize, loading } = usePagedList(experimentsApi.li
         <el-option label="草稿" value="draft" />
         <el-option label="已提交" value="submitted" />
       </el-select>
-      <span class="grow" />
-      <el-button type="primary" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
-    </div>
+      <template #actions>
+        <el-button type="primary" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">

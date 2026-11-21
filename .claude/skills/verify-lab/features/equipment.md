@@ -4,7 +4,7 @@
 
 ## Sub-features
 
-- `equipment-create`：管理员新增设备后进入详情页，状态"可用"。学生和导师没有"新增设备""编辑设备"按钮。
+- `equipment-create`：管理员新建设备后进入详情页，状态"可用"。学生和导师没有"新建设备""编辑设备"按钮。
 - `booking-select`：在日历空白时段拖选，弹出"新建预约"，设备、开始、结束已经填好；提交后出现"预约成功"，日历上多一块"UT-001 学生甲"。
 - `booking-max`：在"新建预约"里把"结束"填成一年以后，点 "预约"，"结束"下面出现"一次预约不能超过 7 天，更长的实验请分段预约"，对话框不关，日历上没有新预约。
 - `booking-overlap`：另一个人约重叠时段，提示"该时段已被预约，请换一个时间"，对话框不关。
@@ -20,7 +20,7 @@
 - `experiment-equipment`：实验记录表单有"台账设备"下拉框和"设备说明"文本框，保存后两者都在。
 - `history-names`：修改历史里保管人、台账设备、项目的变化显示名字（成员显示姓名），不是数字。
 - `maintenance-booking`：管理员把设备设为"维修"后，预约页和新建对话框提示暂不能预约使用；类型选"维护（校准、维修占用）"后提示消失，提交成功，日历上是一块橙色斜纹的"UT-001 维护"。
-- `advisor-readonly`：导师的设备详情页没有"编辑设备"，设备台账没有"新增设备"，工作台没有"待检查的设备"。
+- `advisor-readonly`：导师的设备详情页没有"编辑设备"，设备台账没有"新建设备"，工作台没有"待检查的设备"。
 - `isolation`：外组管理员打开设备地址看到"记录不存在或无权查看"；设备、预约、照片接口都是 404，列表为空。
 - `mobile`：390px 宽度下日历默认是日视图。
 - `purchase-link`（第三期）：新增 / 编辑设备的表单有 combobox "采购申请（已到货）"，只列已到货的采购申请；详情页"采购申请"一行显示单号，管理员、导师是链接。步骤见 [procurement.md](./procurement.md) 的"到货关联"。
@@ -29,8 +29,8 @@
 ## How to get to it (user POV)
 
 - 左侧菜单"设备耗材"分组：menuitem "设备台账"、"设备预约"。
-- 设备台账 → button "新增设备"（仅管理员）；列表里点编号进入详情；详情页右上角 button "修改历史"、"编辑设备"（仅管理员）、"预约"。
-- 设备预约：顶部设备下拉框、checkbox "只看我的"、button "新建预约"；日历按钮 "上一周"、"下一周"、"今天"、"周"、"日"。点日历上的预约块打开 dialog "预约详情"。
+- 设备台账 → button "新建设备"（仅管理员）；列表里点编号进入详情；详情页右上角 button "修改历史"、"编辑设备"（仅管理员）、"预约"。
+- 设备预约：工具栏 button "上一周"、"下一周"（随视图变成"上一月 / 下一月""上一天 / 下一天"）、"今天"，当前日期范围，radio "月" / "周" / "日"，button "新建预约"。右侧栏是小月历（点哪天跳到那天）、checkbox "只看我的"、"全部设备"和每台设备一个 checkbox（前面的色块就是日历上这台设备的颜色，只勾一台时地址带 `?equipment=`）。日历一小时一格，一天 24 小时都在页面上；月视图点日期进入那天。点日历上的预约块打开 dialog "预约详情"。
 - 工作台：tile "我的预约"、"待检查的设备"；卡片"我的预约"、"待登记使用结果"（只列最近 14 天内结束的）、"待检查的设备"。
 
 ## Driving it with chrome-devtools MCP
@@ -43,8 +43,8 @@
 
 步骤：
 
-- **新增设备。** 用 `mgr` 登录（`isolatedContext` 为 `mgr`），进入"设备台账"，点 button "新增设备"。textbox "*设备编号" 填 `UT-001`，"*名称" 填 `超声探伤仪`，"型号" 填 `CTS-9009`，"存放位置" 填 `A305 实验台`；combobox "保管人" 按 `ArrowDown`、`Enter` 选"学生甲"；点 button "保存"。页面跳到 `/equipment/1`，状态"可用"，"最近使用记录"为"还没有使用记录"。
-- **拖选预约。** 用 `s_a` 登录，打开 `/bookings?equipment=1`。时段格子不在无障碍树里，用 `evaluate_script` 在明天那一列 10:00 的格子按下鼠标、移到 11:30 的格子松开：列用 `.fc-timegrid-col[data-date="<明天>"]`，行用 `.fc-timegrid-slot-lane[data-time="10:00:00"]`，依次派发 `mousedown`（目标取 `elementFromPoint`）、若干 `mousemove`、`mouseup`（后两个派发到 `document`，`buttons: 1`）。出现 dialog "新建预约"，combobox "*开始" 为明天 10:00，"*结束" 为 12:00。combobox "项目" 选"导波螺栓松动"，textbox "用途" 填一句话，点 button "预约"，`wait_for` "预约成功"。
+- **新建设备。** 用 `mgr` 登录（`isolatedContext` 为 `mgr`），进入"设备台账"，点 button "新建设备"。textbox "*设备编号" 填 `UT-001`，"*名称" 填 `超声探伤仪`，"型号" 填 `CTS-9009`，"存放位置" 填 `A305 实验台`；combobox "保管人" 按 `ArrowDown`、`Enter` 选"学生甲"；点 button "保存"。页面跳到 `/equipment/1`，状态"可用"，"最近使用记录"为"还没有使用记录"。
+- **拖选预约。** 用 `s_a` 登录，打开 `/bookings?equipment=1`。时段格子不在无障碍树里，用 `evaluate_script` 在明天那一列 10:00 的格子按下鼠标、移到 11:30 的格子松开：列用 `.fc-timegrid-col[data-date="<明天>"]`，行用 `.fc-timegrid-slot-lane[data-time="10:00:00"]` 和 `"11:00:00"`（一小时一格，拖选按半小时对齐，松开点取 11:00 那格的下半部分），依次派发 `mousedown`（目标取 `elementFromPoint`）、若干 `mousemove`、`mouseup`（后两个派发到 `document`，`buttons: 1`）。出现 dialog "新建预约"，combobox "*开始" 为明天 10:00，"*结束" 为 12:00。combobox "项目" 选"导波螺栓松动"，textbox "用途" 填一句话，点 button "预约"，`wait_for` "预约成功"。
 - **重叠被拒。** 用 `s_b` 登录，打开同一地址，日历上能看到"UT-001 学生甲"。点 button "新建预约"，在 combobox "*开始" 用 `fill` 填明天 11:00 后按 `Enter`，"*结束" 填明天 13:00 后按 `Enter`，点 button "预约"。`wait_for` "该时段已被预约"，对话框仍打开。截图。
 - **同时提交。** 在 `s_b` 的对话框里把时间改成后天 14:00–16:00；`s_a` 也点 button "新建预约" 填同样的时间。在 `s_a` 页面用 `evaluate_script` 取 `T = 现在 + 8 秒`（取整到秒），用 `setTimeout` 在 T 时刻点击可见对话框里的主按钮"预约"，返回 T；在 `s_b` 页面用同一个 T 做同样的事。之后一边出现"预约成功"，另一边的网络记录（`list_network_requests`）里 `POST /api/bookings/` 为 409，对话框不关。用 query.sh 读 `Booking`，后天 14:00 只有一条。
 - **登记异常。** 取浏览器本地"现在"。`s_a` 点 button "新建预约"，开始填现在，结束填稍后的整点，提交。点日历上这块预约，dialog "预约详情" 里有 radio "正常"、"异常"，没有"取消预约"按钮。点 radio "异常"，textbox "说明" 填 `探头线接触不良，A 扫描无回波`，对 button "Choose File" 用 `upload_file` 传 `<上传目录>\photo.png`，点 button "登记"。`wait_for` "已登记异常"；对话框出现"使用后状况 异常"和 link "照片"。截图。
@@ -60,7 +60,7 @@
 - **维护预约。** `mgr` 点 "编辑设备"，radio "维修"，保存。打开 `/bookings?equipment=1`，出现 alert "UT-001 当前为“维修”，暂不能预约使用"。点 "新建预约"，点 radio "维护（校准、维修占用）"，对话框里的提示消失；开始、结束填明天 09:00–12:00，"用途"填 `送检校准`，点 "预约"，`wait_for` "预约成功"，日历上出现"UT-001 维护"。
 - **导师只读。** 用 `adv` 登录，工作台没有"待检查的设备"和"库存不足的耗材"；打开 `/equipment/1`，只有 button "修改历史"、"预约"，没有 "编辑设备"。
 - **外组。** 用 `x_mgr` 登录，打开 `/equipment/1`，`wait_for` "记录不存在或无权查看"，有 button "返回设备台账"。用 `evaluate_script` 请求 `/api/equipment/1/`、`/api/bookings/<id>/`、照片地址，都是 404；`/api/equipment/` 的 `count` 为 0。
-- **手机。** 对 `s_b` 页面 `emulate` 视口 `390x844x2,mobile,touch`，重新打开预约页，日历标题是单日日期，表头只有一天，没有"周 / 日"切换按钮。
+- **手机。** 对 `s_b` 页面 `emulate` 视口 `390x844x2,mobile,touch`，重新打开预约页，是日视图：标题是单日日期，表头只有一天；小月历和设备列表排在日历下面。
 
 ## Gotchas
 

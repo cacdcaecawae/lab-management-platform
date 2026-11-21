@@ -3,10 +3,12 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import FullCalendar from '@fullcalendar/vue3'
+import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
-import type { CalendarOptions, EventInput, EventSourceFuncArg } from '@fullcalendar/core'
+import type { CalendarOptions, DatesSetArg, EventInput, EventSourceFuncArg } from '@fullcalendar/core'
+import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { bookingsApi, equipmentApi } from '../api'
 import { projectsApi } from '@/modules/projects/api'
 import type { Booking, Condition } from '@/api/types'
@@ -15,6 +17,8 @@ import { useAuthStore } from '@/stores/auth'
 import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import BookingFormDialog from '../components/BookingFormDialog.vue'
+import FormDialog from '@/components/FormDialog.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -23,14 +27,28 @@ const calendar = ref<InstanceType<typeof FullCalendar>>()
 const equipment = useOptions(() => equipmentApi.list({ page_size: 100 }))
 const projects = useOptions(() => projectsApi.list({ status: 'active', page_size: 100 }))
 
-const filters = reactive({
-  equipment: route.query.equipment ? Number(route.query.equipment) : ('' as number | ''),
-  mine: '' as 1 | '',
+// Each device keeps one colour (by its place in the list). Its bookings use it: solid for one's own, tinted for others.
+const PALETTE = ['#0071e3', '#1f7a35', '#a34a00', '#7a3fbf', '#00796b', '#b0336b', '#3f51b5', '#795548']
+const colorOf = (id: number) => PALETTE[Math.max(0, equipment.value.findIndex((e) => e.id === id)) % PALETTE.length]
+const tint = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16)
+  const mix = (c: number) => Math.round(c * 0.14 + 255 * 0.86)
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`
+}
+
+// Devices ticked in the side list: all of them, or only the one the equipment page linked to (?equipment=).
+const linked = route.query.equipment ? Number(route.query.equipment) : null
+const shown = ref<number[]>([])
+watch(equipment, (list) => (shown.value = list.some((e) => e.id === linked) ? [linked as number] : list.map((e) => e.id)), {
+  once: true,
 })
-const picked = computed(() => equipment.value.find((e) => e.id === filters.equipment))
-watch(filters, () => {
-  router.replace({ query: filters.equipment ? { equipment: filters.equipment } : {} }) // also drops ?booking
-  calendar.value?.getApi().refetchEvents()
+const allShown = computed(() => equipment.value.length > 0 && shown.value.length === equipment.value.length)
+const toggleAll = (on: boolean | string | number) => (shown.value = on ? equipment.value.map((e) => e.id) : [])
+const mineOnly = ref<1 | ''>('')
+const only = computed(() => (shown.value.length === 1 ? equipment.value.find((e) => e.id === shown.value[0]) : undefined))
+watch([shown, mineOnly], () => {
+  router.replace({ query: only.value ? { equipment: only.value.id } : {} }) // also drops ?booking
+  api()?.refetchEvents()
 })
 
 // The API accepts a start up to 5 minutes in the past (form-filling time); the calendar only offers future slots.
@@ -39,55 +57,92 @@ const narrow = window.matchMedia('(max-width: 768px)').matches
 
 async function fetchEvents(info: EventSourceFuncArg): Promise<EventInput[]> {
   try {
-    const list = await bookingsApi.list({ from: info.start.toISOString(), to: info.end.toISOString(), ...filters })
-    return list.map((b) => ({
-      id: String(b.id),
-      title: `${b.equipment.code} ${b.kind === 'maintenance' ? '维护' : b.user.name}`,
-      start: b.start_at,
-      end: b.end_at,
-      classNames: [b.kind === 'maintenance' ? 'ev-maint' : b.user.id === auth.user?.id ? 'ev-mine' : 'ev-other'],
-      extendedProps: { booking: b },
-    }))
+    const query = { from: info.start.toISOString(), to: info.end.toISOString(), equipment: only.value?.id ?? ('' as const), mine: mineOnly.value }
+    const list = await bookingsApi.list(query)
+    const hidden = new Set(equipment.value.map((e) => e.id).filter((id) => !shown.value.includes(id)))
+    return list
+      .filter((b) => !hidden.has(b.equipment.id))
+      .map((b) => {
+        const color = colorOf(b.equipment.id)
+        const own = b.user.id === auth.user?.id
+        const maint = b.kind === 'maintenance'
+        return {
+          id: String(b.id),
+          title: `${b.equipment.code} ${maint ? '维护' : b.user.name}`,
+          start: b.start_at,
+          end: b.end_at,
+          classNames: [maint ? 'ev-maint' : own ? 'ev-mine' : 'ev-other'],
+          backgroundColor: maint ? undefined : own ? color : tint(color),
+          borderColor: color,
+          textColor: maint ? undefined : own ? '#fff' : '#1d1d1f',
+          extendedProps: { booking: b },
+        }
+      })
   } catch (e) {
     showError(e)
     return []
   }
 }
 
+// The calendar's own header is off: the page toolbar drives it, and the side panel's month jumps to a date.
+const VIEWS = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '日' } as const
+const UNIT: Record<string, string> = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '天' }
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const view = ref<string>(narrow ? 'timeGridDay' : 'timeGridWeek')
+const title = ref('')
+const day = ref(new Date())
+const api = () => calendar.value?.getApi()
+function onDatesSet(info: DatesSetArg) {
+  title.value = info.view.title
+  view.value = info.view.type
+  day.value = info.view.calendar.getDate()
+}
+const jump = (d: unknown) => d instanceof Date && api()?.gotoDate(d)
+
 const options: CalendarOptions = {
-  plugins: [timeGridPlugin, interactionPlugin],
+  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
   locale: zhCnLocale,
-  initialView: narrow ? 'timeGridDay' : 'timeGridWeek',
-  headerToolbar: { left: 'prev,next today', center: 'title', right: narrow ? '' : 'timeGridWeek,timeGridDay' },
-  // zh-cn names the arrows 上月 / 下月 even in week and day views; $0 is the current view's unit (周 / 日).
-  buttonHints: { prev: '上一$0', next: '下一$0' },
+  initialView: view.value,
+  headerToolbar: false,
   firstDay: 1,
+  height: 'auto', // the whole day on the page, no scroll box inside the card
   allDaySlot: false,
-  slotDuration: '00:30:00',
-  scrollTime: '08:00:00',
-  contentHeight: 620,
+  slotDuration: '01:00:00',
+  snapDuration: '00:30:00',
   nowIndicator: true,
+  navLinks: true, // a day number or column header opens that day
+  navLinkDayClick: 'timeGridDay',
   selectable: true,
   selectMirror: true,
   selectAllow: (span) => span.start.getTime() >= Date.now() - GRACE_MS,
   select: (info) => openCreate(info.start, info.end),
   eventClick: (info) => (detail.value = info.event.extendedProps.booking as Booking),
   events: fetchEvents,
+  datesSet: onDatesSet,
   slotLabelFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
   eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+  eventDisplay: 'block', // coloured bars in the month view too, not dots
+  views: {
+    dayGridMonth: { selectable: false, dayMaxEvents: 3, dayHeaderFormat: { weekday: 'short' } },
+    timeGrid: {
+      dayHeaderContent: (arg) => ({
+        html: `<span class="dow">${WEEKDAYS[arg.date.getDay()]}</span><span class="dom">${arg.date.getMonth() + 1}/${arg.date.getDate()}</span>`,
+      }),
+    },
+  },
 }
 
 // ---- new booking ----
 const creating = ref(false)
 const initial = ref({ equipmentId: null as number | null, start: null as Date | null, end: null as Date | null })
 function openCreate(start: Date | null = null, end: Date | null = null) {
-  initial.value = { equipmentId: filters.equipment || null, start, end }
+  initial.value = { equipmentId: only.value?.id ?? null, start, end }
   creating.value = true
 }
 function onSaved() {
   ElMessage.success('预约成功')
-  calendar.value?.getApi().unselect()
-  calendar.value?.getApi().refetchEvents()
+  api()?.unselect()
+  api()?.refetchEvents()
 }
 
 // ---- booking detail: cancel / usage report ----
@@ -109,7 +164,7 @@ watch(detail, () => {
 if (route.query.booking) {
   bookingsApi.get(Number(route.query.booking)).then((b) => {
     detail.value = b
-    calendar.value?.getApi().gotoDate(b.start_at)
+    api()?.gotoDate(b.start_at)
   }, showError)
 }
 
@@ -132,7 +187,7 @@ async function cancel() {
     await bookingsApi.cancel(b.id)
     ElMessage.success('预约已取消')
     detail.value = null
-    calendar.value?.getApi().refetchEvents()
+    api()?.refetchEvents()
   } catch (e) {
     showError(e)
   } finally {
@@ -147,7 +202,7 @@ async function submitReport() {
   try {
     detail.value = await bookingsApi.report(b.id, reportForm)
     ElMessage.success(reportForm.condition === 'abnormal' ? '已登记异常，设备转为待检查，管理员会收到提醒' : '已登记')
-    calendar.value?.getApi().refetchEvents()
+    api()?.refetchEvents()
   } catch (e) {
     reportErrors.handle(e)
   } finally {
@@ -157,30 +212,63 @@ async function submitReport() {
 </script>
 
 <template>
-  <el-card class="card">
-    <div class="page-toolbar">
-      <el-select v-model="filters.equipment" aria-label="设备" filterable clearable placeholder="全部设备">
-        <el-option v-for="e in equipment" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
-      </el-select>
-      <el-checkbox v-model="filters.mine" :true-value="1" false-value="">只看我的</el-checkbox>
-      <span class="grow" />
-      <el-button type="primary" @click="openCreate()">新建预约</el-button>
-    </div>
-    <el-alert
-      v-if="picked && picked.status !== 'available'"
-      :title="`${picked.code} 当前为“${STATUS[picked.status].label}”，暂不能预约使用`"
-      type="warning"
-      :closable="false"
-      class="status-alert"
-    />
-    <FullCalendar ref="calendar" class="calendar" :options="options" />
-  </el-card>
+  <div class="booking-page">
+    <el-card class="card main">
+      <PageToolbar>
+        <el-button-group>
+          <el-button :icon="ArrowLeft" :aria-label="`上一${UNIT[view]}`" @click="api()?.prev()" />
+          <el-button :icon="ArrowRight" :aria-label="`下一${UNIT[view]}`" @click="api()?.next()" />
+        </el-button-group>
+        <el-button @click="api()?.today()">今天</el-button>
+        <span class="cal-title">{{ title }}</span>
+        <template #actions>
+          <el-radio-group :model-value="view" aria-label="视图" @change="(v) => api()?.changeView(String(v))">
+            <el-radio-button v-for="(label, key) in VIEWS" :key="key" :value="key">{{ label }}</el-radio-button>
+          </el-radio-group>
+          <el-button type="primary" @click="openCreate()">新建预约</el-button>
+        </template>
+      </PageToolbar>
+      <el-alert
+        v-if="only && only.status !== 'available'"
+        :title="`${only.code} 当前为“${STATUS[only.status].label}”，暂不能预约使用`"
+        type="warning"
+        :closable="false"
+        class="status-alert"
+      />
+      <FullCalendar ref="calendar" class="calendar" :options="options" />
+    </el-card>
+
+    <el-card class="card side">
+      <el-date-picker-panel class="mini" :model-value="day" :border="false" @update:model-value="jump" />
+      <div class="side-head">
+        <span>设备</span>
+        <el-checkbox v-model="mineOnly" :true-value="1" false-value="">只看我的</el-checkbox>
+      </div>
+      <el-checkbox :model-value="allShown" :indeterminate="shown.length > 0 && !allShown" @change="toggleAll">全部设备</el-checkbox>
+      <el-checkbox-group v-model="shown" class="devices" aria-label="显示哪些设备">
+        <el-checkbox v-for="e in equipment" :key="e.id" :value="e.id">
+          <span class="swatch" :style="{ background: colorOf(e.id) }" />
+          <span class="code">{{ e.code }}</span> {{ e.name }}
+          <span v-if="e.status !== 'available'" class="muted">· {{ STATUS[e.status].label }}</span>
+        </el-checkbox>
+      </el-checkbox-group>
+      <p v-if="!equipment.length" class="muted">暂无设备</p>
+    </el-card>
+  </div>
 
   <BookingFormDialog v-model="creating" :equipment="equipment" :projects="projects" :initial="initial" @saved="onSaved" />
 
-  <el-dialog v-model="detailOpen" title="预约详情" width="min(520px, 95vw)">
-    <template v-if="detail">
-      <el-descriptions :column="1" border>
+  <FormDialog
+    v-model="detailOpen"
+    title="预约详情"
+    confirm-text="登记"
+    cancel-text="关闭"
+    :readonly="!canReport"
+    :loading="busy"
+    @submit="submitReport"
+  >
+    <template #before>
+      <el-descriptions v-if="detail" :column="1" border>
         <el-descriptions-item label="设备">
           <RouterLink :to="{ name: 'equipment-detail', params: { id: detail.equipment.id } }">
             <span class="code">{{ detail.equipment.code }}</span> {{ detail.equipment.name }}
@@ -201,32 +289,97 @@ async function submitReport() {
           </div>
         </el-descriptions-item>
       </el-descriptions>
-
-      <el-form v-if="canReport" label-position="top" class="report-form" @submit.prevent="submitReport">
-        <el-form-item label="登记使用结果" :error="reportErrors.fe('condition')">
-          <el-radio-group v-model="reportForm.condition">
-            <el-radio value="normal">正常</el-radio>
-            <el-radio value="abnormal">异常</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="说明" :error="reportErrors.fe('description')" :required="reportForm.condition === 'abnormal'">
-          <el-input v-model="reportForm.description" type="textarea" :autosize="{ minRows: 2 }" placeholder="异常时写明现象，例如 探头线接触不良" />
-        </el-form-item>
-        <el-form-item label="照片（可选，JPG / PNG / WebP，10 MB 以内）" :error="reportErrors.fe('photo')">
-          <input type="file" accept="image/jpeg,image/png,image/webp" @change="pickPhoto" />
-        </el-form-item>
-        <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-      </el-form>
     </template>
-    <template #footer>
+    <div v-if="canReport" class="report-form">
+      <el-form-item label="登记使用结果" :error="reportErrors.fe('condition')">
+        <el-radio-group v-model="reportForm.condition">
+          <el-radio value="normal">正常</el-radio>
+          <el-radio value="abnormal">异常</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="说明" :error="reportErrors.fe('description')" :required="reportForm.condition === 'abnormal'">
+        <el-input v-model="reportForm.description" type="textarea" :autosize="{ minRows: 2 }" placeholder="异常时写明现象，例如 探头线接触不良" />
+      </el-form-item>
+      <el-form-item label="照片（可选，JPG / PNG / WebP，10 MB 以内）" :error="reportErrors.fe('photo')">
+        <input type="file" accept="image/jpeg,image/png,image/webp" @change="pickPhoto" />
+      </el-form-item>
+      <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    </div>
+    <template #extra>
       <el-button v-if="canCancel" type="danger" plain :loading="busy" @click="cancel">取消预约</el-button>
-      <el-button v-if="canReport" type="primary" :loading="busy" @click="submitReport">登记</el-button>
-      <el-button @click="detailOpen = false">关闭</el-button>
     </template>
-  </el-dialog>
+  </FormDialog>
 </template>
 
 <style scoped>
+.booking-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+.booking-page > .card {
+  margin-top: 0;
+}
+/* el-card and its body clip / scroll overflow, which would keep the calendar's day headers from sticking under the top bar */
+.main,
+.main :deep(.el-card__body) {
+  overflow: visible;
+}
+.side {
+  position: sticky;
+  top: 68px;
+}
+.side :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+/* Element Plus gives the month panel a fixed 322px; let it fit the side column */
+.mini,
+.mini :deep(.el-picker-panel__body-wrapper),
+.mini :deep(.el-picker-panel__body),
+.mini :deep(.el-picker-panel__content),
+.mini :deep(.el-date-table) {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.mini :deep(.el-date-table td) {
+  width: auto;
+}
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--lab-border);
+  font-weight: 600;
+}
+.devices {
+  display: flex;
+  flex-direction: column;
+}
+.devices .el-checkbox {
+  height: auto;
+  min-height: 30px;
+  margin-right: 0;
+  white-space: normal;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+.cal-title {
+  margin-left: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
 .status-alert {
   margin-bottom: 12px;
 }
@@ -235,52 +388,71 @@ async function submitReport() {
 }
 .calendar {
   --fc-border-color: var(--lab-border);
-  --fc-today-bg-color: #fafafa;
+  --fc-today-bg-color: var(--el-color-primary-light-9);
   --fc-now-indicator-color: var(--el-color-danger);
-  --fc-button-bg-color: #fff;
-  --fc-button-text-color: var(--lab-text);
-  --fc-button-border-color: #dcdcdc;
-  --fc-button-hover-bg-color: var(--lab-bg-hover);
-  --fc-button-hover-border-color: #dcdcdc;
-  --fc-button-active-bg-color: var(--lab-bg-active);
-  --fc-button-active-border-color: #cfcfcf;
-  --fc-highlight-color: rgba(13, 13, 13, 0.06);
+  --fc-highlight-color: rgba(0, 113, 227, 0.08);
+  --fc-neutral-bg-color: var(--lab-bg-subtle);
+  --fc-page-bg-color: var(--lab-bg-card);
   font-size: 13px;
 }
 .calendar :deep(a) {
   color: inherit;
   text-decoration: none;
 }
-.calendar :deep(.fc-toolbar-title) {
-  font-size: 16px;
-  font-weight: 600;
+.calendar :deep(.fc-col-header-cell) {
+  padding: 6px 0;
+  font-weight: 500;
+  color: var(--lab-text-2);
 }
-.calendar :deep(.fc-button) {
-  font-size: 13px;
-  box-shadow: none !important;
+.calendar :deep(.dow),
+.calendar :deep(.dom) {
+  display: block;
+  line-height: 1.3;
+}
+.calendar :deep(.dom) {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lab-text);
+}
+.calendar :deep(.fc-day-today .dom) {
+  color: var(--el-color-primary);
+}
+/* Headers stay visible under the top bar while the page scrolls. */
+.calendar :deep(.fc-scrollgrid-section-header.fc-scrollgrid-section-sticky > *) {
+  top: 52px;
+}
+.calendar :deep(.fc-timegrid-slot) {
+  height: 32px;
+}
+.calendar :deep(.fc-timegrid-slot-label) {
+  color: var(--lab-text-3);
+  vertical-align: top;
+}
+.calendar :deep(.fc-daygrid-day-number) {
+  padding: 6px 8px;
+  color: var(--lab-text-2);
 }
 .calendar :deep(.fc-event) {
   cursor: pointer;
   border-radius: 6px;
-  padding: 1px 3px;
+  border-width: 0 0 0 3px;
+  padding: 1px 4px;
 }
 .calendar :deep(.ev-mine) {
-  background: var(--lab-text);
-  border-color: var(--lab-text);
-  color: #fff;
-}
-.calendar :deep(.ev-other) {
-  background: #e9e9e9;
-  border-color: #d6d6d6;
-}
-.calendar :deep(.ev-other .fc-event-main) {
-  color: var(--lab-text);
+  border-width: 0;
 }
 .calendar :deep(.ev-maint) {
   background: repeating-linear-gradient(135deg, #fff4e5, #fff4e5 6px, #ffe9cc 6px, #ffe9cc 12px);
-  border-color: #f0c78a;
 }
 .calendar :deep(.ev-maint .fc-event-main) {
   color: #7a4a06;
+}
+@media (max-width: 1100px) {
+  .booking-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .side {
+    position: static;
+  }
 }
 </style>

@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -21,16 +22,17 @@ const onCreated = (p: Project) => router.push({ name: 'project-detail', params: 
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索项目名称" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
         <el-option label="进行中" value="active" />
         <el-option label="已结束" value="closed" />
       </el-select>
       <el-checkbox v-model="filters.mine" :true-value="1" false-value="">只看我的</el-checkbox>
-      <span class="grow" />
-      <el-button v-if="auth.isSupervisor" type="primary" @click="creating = true">新建项目</el-button>
-    </div>
+      <template #actions>
+        <el-button v-if="auth.isSupervisor" type="primary" @click="creating = true">新建项目</el-button>
+      </template>
+    </PageToolbar>
     <el-table v-loading="loading" :data="items">
       <el-table-column label="项目名称" min-width="160">
         <template #default="{ row }">

@@ -75,7 +75,7 @@ async function logout() {
   flex: 0 0 232px;
   height: 100vh;
   overflow-y: auto;
-  background: var(--lab-bg-subtle);
+  background: var(--lab-bg-side);
   border-right: 1px solid var(--lab-border);
 }
 .brand {
@@ -92,7 +92,7 @@ async function logout() {
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  background: var(--lab-text);
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 13px;
 }
@@ -114,9 +114,16 @@ async function logout() {
   gap: 8px;
   height: 52px;
   padding: 0 24px;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: saturate(180%) blur(8px);
+  /* The only frosted surface (DESIGN.md): content scrolls under it; solid where blur is off or unwanted. */
+  background: rgba(245, 245, 247, 0.8);
+  backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--lab-border);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .topbar { background: var(--lab-bg); }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .topbar { background: var(--lab-bg); backdrop-filter: none; }
 }
 .left {
   display: flex;
@@ -153,17 +160,14 @@ async function logout() {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--lab-bg-active);
-  color: var(--lab-text);
-  font-size: 12px;
+  background: var(--lab-selected-bg);
+  color: var(--lab-selected-fg);
+  font-size: 13px;
   font-weight: 600;
 }
 .main {
-  width: 100%;
-  max-width: 1200px;
   box-sizing: border-box;
-  margin: 0 auto;
-  padding: 24px 32px 48px;
+  padding: 24px 24px 48px;
 }
 @media (max-width: 768px) {
   .sidebar {
@@ -190,6 +194,6 @@ async function logout() {
 <style>
 .nav-drawer {
   --el-drawer-padding-primary: 0;
-  background: var(--lab-bg-subtle);
+  background: var(--lab-bg-side);
 }
 </style>

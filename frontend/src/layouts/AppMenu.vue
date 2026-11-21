@@ -110,8 +110,8 @@ const active = computed(() => String(route.meta.menu ?? route.name))
 <style scoped>
 .app-menu {
   --el-menu-bg-color: transparent;
-  --el-menu-text-color: #3d3d3d;
-  --el-menu-active-color: var(--lab-text);
+  --el-menu-text-color: var(--lab-text);
+  --el-menu-active-color: var(--lab-selected-fg);
   --el-menu-hover-bg-color: var(--lab-bg-hover);
   --el-menu-item-height: 34px;
   --el-menu-item-font-size: 14px;
@@ -125,21 +125,21 @@ const active = computed(() => String(route.meta.menu ?? route.name))
   line-height: 34px;
 }
 .app-menu .el-menu-item.is-active {
-  background: var(--lab-bg-active);
-  font-weight: 500;
+  background: var(--lab-selected-bg);
+  font-weight: 600;
 }
 .app-menu .el-menu-item .el-icon {
   width: 16px;
   margin-right: 10px;
   font-size: 16px;
-  color: var(--lab-text-3);
+  color: var(--lab-text-2);
 }
 .app-menu .el-menu-item.is-active .el-icon {
-  color: var(--lab-text);
+  color: var(--lab-selected-fg);
 }
 .group-title {
   padding: 16px 10px 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--lab-text-3);
 }
 </style>
