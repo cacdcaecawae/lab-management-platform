@@ -78,6 +78,11 @@ def button(session, text, within=""):
     return WebDriverWait(session, 12).until(ec.element_to_be_clickable((By.XPATH, selector)))
 
 
+def account(session, name):
+    """The sidebar's account button: the name, with the group on the line under it."""
+    return visible(session, By.XPATH, f"//aside//button[contains(@class,'me')][contains(normalize-space(.),'{name}')][contains(normalize-space(.),'验证课题组')]")
+
+
 def field_control(session, label, selector):
     # Element Plus puts the label and control inside the same form-item.
     return visible(session, By.XPATH, f"//div[contains(@class,'el-form-item')][./*[contains(@class,'el-form-item__label') and normalize-space(.)='{label}']]//{selector}")
@@ -136,7 +141,7 @@ def experiments(stack):
     button(student, "新建数据集").click()
     option(student, "项目", "导波螺栓松动")
     label_input(student, "名称").send_keys("验证-导波波形")
-    button(student, "创建").click()
+    button(student, "保存", "//div[@role='dialog']").click()  # FormDialog's main button (DESIGN.md: 保存, not 创建)
     dataset_path = record_path(student, "datasets")
     dataset = Dataset.objects.get(pk=int(dataset_path.rsplit("/", 1)[1]), owner__username="s_a")
     assert dataset.name == "验证-导波波形" and not dataset.files.exists()
@@ -230,7 +235,7 @@ def reports(stack):
     visit(student, "/reports")
     button(student, "写本周周报").click()
     fill_report(student)
-    button(student, "保存").click()
+    button(student, "保存草稿").click()
     body_has(student, "已保存")
     detail = record_path(student, "reports")
     report = WeeklyReport.objects.get(owner__username="s_a")
@@ -277,7 +282,7 @@ def reports(stack):
 
     visit(student, "/reports/new?week_start=" + str(report.week_start))
     fill_report(student)
-    button(student, "保存").click()
+    button(student, "保存草稿").click()
     body_has(student, "这一周的周报已经存在")
     screenshot(student, "reports-duplicate-week")
     assert WeeklyReport.objects.filter(owner__username="s_a").count() == 1
@@ -299,7 +304,7 @@ def login_logout(stack):
     student = browser(stack)
     login(student, "s_a")
     wait_path(student, "/")
-    body_has(student, "学生甲（验证课题组）")
+    account(student, "学生甲")
     cookie = student.get_cookie(settings.SESSION_COOKIE_NAME)
     assert cookie and Session.objects.filter(session_key=cookie["value"]).exists()
     screenshot(student, "login-ok")
@@ -323,13 +328,13 @@ def login_logout(stack):
         label_input(first, label).send_keys(value)
     button(first, "确认修改").click()
     wait_path(first, "/datasets")
-    body_has(first, "新同学（验证课题组）")
+    account(first, "新同学")
     user = User.objects.get(username="s_new")
     assert not user.must_change_password and user.check_password(new_password)
     assert not user.check_password(SEED_PASSWORD)
     screenshot(first, "login-first-change")
 
-    visible(student, By.CSS_SELECTOR, ".topbar .user").click()
+    account(student, "学生甲").click()
     visible(student, By.XPATH, "//*[@role='menuitem'][normalize-space(.)='退出登录']").click()
     wait_path(student, "/login")
     assert student.get_cookie(settings.SESSION_COOKIE_NAME) is None

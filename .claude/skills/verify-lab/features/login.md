@@ -25,11 +25,11 @@
 
 步骤：
 
-- **正常登录。** `new_page` 打开 `http://127.0.0.1:5273/login`，`isolatedContext` 为 `s_a`。textbox "学号 / 工号" 填 `s_a`，textbox "密码" 填 `Verify-2026!`，点 button "登录"。URL 变为 `http://127.0.0.1:5273/`，快照里有 button "学生甲（验证课题组）"。
+- **正常登录。** `new_page` 打开 `http://127.0.0.1:5273/login`，`isolatedContext` 为 `s_a`。textbox "学号 / 工号" 填 `s_a`，textbox "密码" 填 `Verify-2026!`，点 button "登录"。URL 变为 `http://127.0.0.1:5273/`，快照里有 左侧栏的账号按钮（写着"学生甲"，下一行"验证课题组"）。
 - **密码错误。** `new_page` 打开登录页，`isolatedContext` 为 `wrong`。填 `s_b` 和 `wrong-password`，点 "登录"。URL 仍为 `/login`，表单里出现错误 alert。截图存证。只试一次，避免触发登录限速。
 - **首次改密。** `new_page` 打开登录页，`isolatedContext` 为 `s_new`。用 `s_new` / `Verify-2026!` 登录。页面跳到 `/password`，heading "修改密码"，有文字"首次登录，请先修改初始密码。"。此时 `navigate_page` 到 `/datasets`，仍被带回 `/password`。在 textbox "原密码" 填 `Verify-2026!`，"新密码"和"确认新密码"都填 `Verify-2026-new!`，点 button "确认修改"。页面进入工作台。
 - **改密的第二视角。** 运行 `bash .claude/skills/verify-lab/scripts/query.sh 'from accounts.models import User; u = User.objects.get(username="s_new"); print(u.must_change_password, u.check_password("Verify-2026-new!"))'`，输出 `False True`。
-- **退出登录。** 在 `s_a` 的页面点 button "学生甲（验证课题组）"，再点 menuitem "退出登录"。回到 `/login`；`navigate_page` 到 `/datasets` 后仍在登录页（URL 带 `next=/datasets`）。
+- **退出登录。** 在 `s_a` 的页面点 左侧栏的账号按钮（写着"学生甲"，下一行"验证课题组"），再点 menuitem "退出登录"。回到 `/login`；`navigate_page` 到 `/datasets` 后仍在登录页（URL 带 `next=/datasets`）。
 
 ## Gotchas
 

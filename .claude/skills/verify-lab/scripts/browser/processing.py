@@ -39,7 +39,7 @@ def create_dataset(session, name, kind, kind_label, filename, data):
     option(session, "项目", "导波螺栓松动")
     label_input(session, "名称").send_keys(name)
     visible(session, By.XPATH, f"//div[@role='dialog']//label[contains(@class,'el-radio')][normalize-space(.)='{kind_label}']").click()
-    button(session, "创建").click()
+    button(session, "保存", "//div[@role='dialog']").click()  # FormDialog's main button
     path = record_path(session, "datasets")
     dataset = Dataset.objects.get(pk=int(path.rsplit("/", 1)[1]), owner__username="s_a")
     assert dataset.kind == kind and dataset.name == name
