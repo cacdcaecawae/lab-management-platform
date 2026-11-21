@@ -29,7 +29,7 @@ const { items, count, page, pageSize, loading } = usePagedList(runsApi.list, fil
         <el-button type="primary" @click="$router.push({ name: 'run-new' })">新建处理记录</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无数据处理记录" v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'run-edit', params: { id: row.id } }">{{ row.code }}</RouterLink>

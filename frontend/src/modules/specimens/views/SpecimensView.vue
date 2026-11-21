@@ -54,7 +54,7 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
         <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建试件</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items" @selection-change="selectLabels">
+    <el-table empty-text="暂无试件" v-loading="loading" :data="items" @selection-change="selectLabels">
       <el-table-column v-if="auth.isManager" type="selection" width="44" />
       <el-table-column label="编号" min-width="110">
         <template #default="{ row }">

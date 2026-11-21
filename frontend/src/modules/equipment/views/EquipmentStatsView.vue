@@ -61,7 +61,7 @@ onMounted(refresh)
     </el-form>
     <p v-if="applied">{{ applied.from }} 至 {{ applied.to }}（不含），按{{ groups[applied.by] }}统计</p>
     <p>按北京时间统计。预约小时不是实际使用时长；已登记预约小时仅统计提交过使用登记的预约。按月时，时长跨月分摊，次数只计入窗口内第一个相交月。</p>
-    <el-table v-loading="loading" :data="rows">
+    <el-table empty-text="暂无使用记录" v-loading="loading" :data="rows">
       <el-table-column prop="key.label" label="分组" min-width="140" />
       <el-table-column label="预约小时" min-width="100">
         <template #default="{ row }">{{ row.booked_hours.toFixed(2) }}</template>

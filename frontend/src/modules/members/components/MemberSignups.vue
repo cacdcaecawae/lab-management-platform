@@ -94,7 +94,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
     </PageToolbar>
     <template v-if="pending.length">
       <h3>待审核（{{ pending.length }}）</h3>
-      <el-table :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
+      <el-table empty-text="暂无待审核的申请" :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="name" label="姓名" min-width="100" />
         <el-table-column prop="username" label="学号" min-width="120" />

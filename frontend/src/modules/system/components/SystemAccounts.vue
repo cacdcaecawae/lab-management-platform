@@ -119,7 +119,7 @@ async function doReset() {
       <el-button type="primary" @click="openForm(null)">新建账号</el-button>
     </template>
   </PageToolbar>
-  <el-table v-loading="loading" :data="items">
+  <el-table empty-text="暂无账号" v-loading="loading" :data="items">
     <el-table-column prop="name" label="姓名" min-width="100" />
     <el-table-column prop="username" label="登录名" min-width="110" />
     <el-table-column label="课题组" min-width="140">

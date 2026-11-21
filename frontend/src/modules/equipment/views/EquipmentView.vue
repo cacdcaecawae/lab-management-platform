@@ -47,7 +47,7 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
         <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建设备</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items" @selection-change="selectLabels">
+    <el-table empty-text="暂无设备" v-loading="loading" :data="items" @selection-change="selectLabels">
       <el-table-column v-if="auth.isManager" type="selection" width="44" />
       <el-table-column label="编号" min-width="100">
         <template #default="{ row }">

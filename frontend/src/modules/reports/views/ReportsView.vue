@@ -74,7 +74,7 @@ watch(missingWeek, loadMissing)
           <el-button v-if="!auth.isSupervisor" type="primary" @click="$router.push({ name: 'report-new' })">写本周周报</el-button>
         </template>
       </PageToolbar>
-      <el-table v-loading="loading" :data="items">
+      <el-table empty-text="暂无周报" v-loading="loading" :data="items">
         <el-table-column v-if="auth.isSupervisor" label="学生" min-width="90">
           <template #default="{ row }">{{ row.owner.name }}</template>
         </el-table-column>

@@ -56,13 +56,13 @@ onMounted(refresh)
     <template v-if="stats">
       <p>全组去重总计：{{ stats.total.total }} 项。多位本组作者各计 1 项，成员小计不能相加作为组总计。</p>
       <h3>按年份</h3>
-      <el-table v-loading="loading" :data="stats.by_year">
+      <el-table empty-text="暂无成果" v-loading="loading" :data="stats.by_year">
         <el-table-column prop="year" label="年份" />
         <el-table-column v-for="(label, key) in ACHIEVEMENT_TYPE_LABELS" :key="key" :prop="key" :label="label" />
         <el-table-column prop="total" label="合计" />
       </el-table>
       <h3>按成员</h3>
-      <el-table v-loading="loading" :data="stats.by_member">
+      <el-table empty-text="暂无成果" v-loading="loading" :data="stats.by_member">
         <el-table-column prop="user.name" label="成员" />
         <el-table-column prop="user.id" label="成员 ID" />
         <el-table-column v-for="(label, key) in ACHIEVEMENT_TYPE_LABELS" :key="key" :prop="key" :label="label" />

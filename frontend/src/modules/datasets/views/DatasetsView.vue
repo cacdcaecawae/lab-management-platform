@@ -57,7 +57,7 @@ async function create() {
         <el-button type="primary" @click="openCreate">新建数据集</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无数据集" v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'dataset-detail', params: { id: row.id } }">{{ row.code }}</RouterLink>

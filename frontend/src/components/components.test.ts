@@ -58,4 +58,11 @@ describe('pages use the shared skeleton (DESIGN.md)', () => {
   it('new things are 新建, not 新增', () => {
     expect(offenders(/[>'"`]新增/)).toEqual([])
   })
+
+  it('every table says what is missing when empty (暂无 X), not the default 暂无数据', () => {
+    const bare = Object.keys(pages).filter((path) =>
+      (pages[path].match(/<el-table(?=[\s>])[^>]*>/g) ?? []).some((tag) => !/empty-text=/.test(tag)),
+    )
+    expect(bare).toEqual([])
+  })
 })

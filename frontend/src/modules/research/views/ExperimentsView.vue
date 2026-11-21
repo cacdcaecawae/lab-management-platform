@@ -29,7 +29,7 @@ const { items, count, page, pageSize, loading } = usePagedList(experimentsApi.li
         <el-button type="primary" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无实验记录" v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'experiment-edit', params: { id: row.id } }">{{ row.code }}</RouterLink>

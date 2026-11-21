@@ -2,6 +2,7 @@
 import { computed, inject, reactive, ref, watch } from 'vue'
 import { routeLocationKey, routerKey } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ApiError } from '@/api/client'
 import { consumablesApi } from '@/modules/inventory/api'
 import { purchasesApi } from '@/modules/procurement/api'
@@ -181,6 +182,14 @@ async function loadTxns(c: Consumable, reset: boolean) {
   }
 }
 
+// The row's "更多" menu: everything except 领用 / 退回, which everyone uses most.
+function more(c: Consumable, command: string) {
+  if (command === 'edit') openItem(c)
+  else if (command === 'batches') openBatchMode(c)
+  else if (command === 'history') openHistory(c)
+  else openTxn(c, command as TxnKind)
+}
+
 function openHistory(c: Consumable) {
   historyOf.value = c
   txns.value = []
@@ -201,7 +210,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新建耗材</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无耗材" v-loading="loading" :data="items">
       <el-table-column prop="name" label="名称" min-width="130" />
       <el-table-column prop="spec" label="规格" min-width="100" />
       <el-table-column label="库存" min-width="130">
@@ -220,17 +229,24 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <template #default="{ row }">{{ row.safety_stock }}</template>
       </el-table-column>
       <el-table-column prop="location" label="存放位置" min-width="110" />
-      <el-table-column label="操作" min-width="260">
+      <el-table-column label="操作" min-width="170">
         <template #default="{ row }">
           <el-button link type="primary" @click="openTxn(row as Consumable, 'out')">领用</el-button>
           <el-button link type="primary" @click="openTxn(row as Consumable, 'return')">退回</el-button>
-          <template v-if="auth.isManager">
-            <el-button link type="primary" @click="openTxn(row as Consumable, 'in')">入库</el-button>
-            <el-button link type="primary" @click="openTxn(row as Consumable, 'adjust')">盘点</el-button>
-            <el-button link type="primary" @click="openItem(row as Consumable)">编辑</el-button>
-            <el-button link type="primary" @click="openBatchMode(row as Consumable)">批次管理</el-button>
-          </template>
-          <el-button link type="primary" @click="openHistory(row as Consumable)">流水</el-button>
+          <el-dropdown trigger="click" class="row-more" @command="(c: string) => more(row as Consumable, c)">
+            <el-button link type="primary">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <template v-if="auth.isManager">
+                  <el-dropdown-item command="in">入库</el-dropdown-item>
+                  <el-dropdown-item command="adjust">盘点</el-dropdown-item>
+                  <el-dropdown-item command="batches">批次管理</el-dropdown-item>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                </template>
+                <el-dropdown-item command="history" :divided="auth.isManager">流水</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -348,6 +364,10 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
 </template>
 
 <style scoped>
+.row-more {
+  margin-left: 12px;
+  vertical-align: middle;
+}
 .stock {
   font-variant-numeric: tabular-nums;
   font-weight: 500;

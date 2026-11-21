@@ -106,7 +106,7 @@ async function doReset() {
         <el-button v-if="isManager" type="primary" @click="openForm(null)">新建成员</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无成员" v-loading="loading" :data="items">
       <el-table-column prop="name" label="姓名" min-width="100" />
       <el-table-column v-if="auth.isSupervisor" prop="username" label="学号 / 工号" min-width="120" />
       <el-table-column label="角色" min-width="80">

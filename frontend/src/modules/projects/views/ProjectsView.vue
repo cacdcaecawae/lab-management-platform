@@ -33,7 +33,7 @@ const onCreated = (p: Project) => router.push({ name: 'project-detail', params: 
         <el-button v-if="auth.isSupervisor" type="primary" @click="creating = true">新建项目</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items">
+    <el-table empty-text="暂无项目" v-loading="loading" :data="items">
       <el-table-column label="项目名称" min-width="160">
         <template #default="{ row }">
           <RouterLink :to="{ name: 'project-detail', params: { id: row.id } }">{{ row.name }}</RouterLink>

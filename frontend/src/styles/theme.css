@@ -155,6 +155,41 @@ a:focus-visible {
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14) !important;
 }
+/* Tabs inside a card are the same segmented switch, not an underlined row (!important beats Element Plus's
+   first / last tab padding). */
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header {
+  margin-bottom: 16px;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__nav-wrap::after,
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__active-bar {
+  display: none;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__nav {
+  float: none;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--lab-bg-hover);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item {
+  height: 32px;
+  padding: 0 16px !important;
+  border-radius: 999px;
+  color: var(--lab-text-2);
+  line-height: 32px;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item:hover {
+  color: var(--lab-text);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item.is-active {
+  background: var(--lab-bg-card);
+  color: var(--lab-text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
+}
 .el-button--primary {
   --el-button-hover-bg-color: #0077ed;
   --el-button-hover-border-color: #0077ed;
@@ -205,6 +240,7 @@ a:focus-visible {
 
 .el-tag {
   --el-tag-font-size: 13px; /* Chinese text no smaller than 13px */
+  border-color: transparent; /* a tinted bubble, no outline */
   border-radius: 999px;
   font-weight: 500;
 }
@@ -299,6 +335,9 @@ a:focus-visible {
   gap: 12px;
   margin-bottom: 16px;
 }
+.page-toolbar:last-child {
+  margin-bottom: 0; /* nothing under it in the card */
+}
 .page-toolbar-filters {
   flex: 1;
   min-width: 0;
@@ -306,6 +345,40 @@ a:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* A yes / no filter ("只看我的") is a chip: an outlined pill, tinted with a check when on. The box is hidden but the
+   real checkbox stays, so keyboard and screen readers work as before. */
+.page-toolbar-filters .el-checkbox {
+  margin-right: 0;
+  padding: 0 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 999px;
+  background: var(--lab-bg-card);
+}
+.page-toolbar-filters .el-checkbox:hover {
+  border-color: var(--lab-text-3);
+}
+.page-toolbar-filters .el-checkbox__inner {
+  display: none;
+}
+.page-toolbar-filters .el-checkbox__label {
+  padding-left: 0;
+  color: var(--lab-text-2);
+}
+.page-toolbar-filters .el-checkbox.is-checked {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--lab-selected-bg);
+}
+.page-toolbar-filters .el-checkbox.is-checked .el-checkbox__label {
+  color: var(--lab-selected-fg);
+}
+.page-toolbar-filters .el-checkbox.is-checked .el-checkbox__label::before {
+  content: '✓';
+  margin-right: 6px;
+}
+.page-toolbar-filters .el-checkbox:has(:focus-visible) {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 .page-toolbar-actions {
   flex: none;

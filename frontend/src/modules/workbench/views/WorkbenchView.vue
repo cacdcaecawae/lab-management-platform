@@ -188,6 +188,35 @@ const others = computed(() => {
   }
   return groups
 })
+
+// One line under the greeting; a kind listing names (未交周报) counts once.
+const summary = computed(() => {
+  const todo = kinds.value.reduce((n, k) => n + (k.names ? 1 : k.count), 0)
+  const booked = data.value?.my.upcoming_bookings.length ?? 0
+  return [todo ? `${todo} 件事等你处理` : '没有要你处理的事', booked ? `接下来 ${booked} 个预约` : ''].filter(Boolean).join(' · ')
+})
+
+// Width of the right column: drag the gap between the cards, or focus it and use ←/→; double-click resets.
+// Kept per browser. Above half the row it is capped by CSS (min(…, 50%)), so a wide setting cannot squeeze the list.
+const SIDE_KEY = 'lab.workbench.side'
+const SIDE_DEFAULT = 400
+const clampSide = (w: number) => Math.round(Math.min(720, Math.max(300, w)))
+const side = ref(clampSide(Number(localStorage.getItem(SIDE_KEY)) || SIDE_DEFAULT))
+const setSide = (w: number) => localStorage.setItem(SIDE_KEY, String((side.value = clampSide(w))))
+function drag(e: PointerEvent) {
+  const bar = e.currentTarget as HTMLElement
+  const row = bar.parentElement!.getBoundingClientRect()
+  bar.setPointerCapture(e.pointerId)
+  // follow the pointer only as far as the CSS cap (half the row) lets the column grow
+  const move = (m: PointerEvent) => (side.value = clampSide(Math.min(row.right - m.clientX - 8, row.width / 2)))
+  const up = () => {
+    bar.removeEventListener('pointermove', move)
+    bar.removeEventListener('pointerup', up)
+    setSide(side.value)
+  }
+  bar.addEventListener('pointermove', move)
+  bar.addEventListener('pointerup', up)
+}
 </script>
 
 <template>
@@ -195,13 +224,13 @@ const others = computed(() => {
     <header class="wb-head">
       <div>
         <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}</h1>
-        <p class="sub">{{ today }}</p>
+        <p class="sub">{{ today }}<template v-if="data"> · {{ summary }}</template></p>
       </div>
       <el-button v-if="!auth.isSupervisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
     </header>
 
     <!-- Left: things only you can move forward. Right: what is already booked or borrowed, to keep in mind. -->
-    <div v-if="data" class="wb-cols">
+    <div v-if="data" class="wb-cols" :style="{ '--side': `${side}px` }">
       <el-card class="card" header="需要你处理">
         <ul v-if="lines.length" class="rows">
           <li v-for="r in lines" :key="r.key">
@@ -218,6 +247,21 @@ const others = computed(() => {
         </ul>
         <p v-else class="quiet">都处理完了。</p>
       </el-card>
+
+      <div
+        class="splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖动调整两栏宽度"
+        :aria-valuenow="side"
+        aria-valuemin="300"
+        aria-valuemax="720"
+        tabindex="0"
+        @pointerdown="drag"
+        @dblclick="setSide(SIDE_DEFAULT)"
+        @keydown.left.prevent="setSide(side + 24)"
+        @keydown.right.prevent="setSide(side - 24)"
+      />
 
       <el-card class="card" header="接下来">
         <div v-for="d in days" :key="d.key" class="day">
@@ -281,9 +325,32 @@ const others = computed(() => {
 }
 .wb-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 16px min(var(--side), 50%);
+  row-gap: 16px;
   align-items: start;
+}
+/* The gap between the cards is the handle: a short bar shows on hover, focus or while dragging. */
+.splitter {
+  align-self: stretch;
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.splitter::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: 6px;
+  width: 4px;
+  height: 48px;
+  border-radius: 999px;
+  background: transparent;
+}
+.splitter:hover::after,
+.splitter:focus-visible::after,
+.splitter:active::after {
+  background: var(--el-color-primary-light-5);
 }
 .wb-cols > .card {
   margin-top: 0;
@@ -398,6 +465,9 @@ const others = computed(() => {
 @media (max-width: 1000px) {
   .wb-cols {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .splitter {
+    display: none;
   }
 }
 @media (max-width: 768px) {
