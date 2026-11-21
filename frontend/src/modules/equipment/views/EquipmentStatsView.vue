@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { usageStatsApi, type UsageStatsQuery, type UsageStatsRow } from '../api'
 import { Download } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' })
   .formatToParts(new Date())
@@ -19,23 +20,27 @@ const rows = ref<UsageStatsRow[]>([])
 const applied = ref<UsageStatsQuery>()
 const loading = ref(false)
 const exportUrl = computed(() => applied.value ? usageStatsApi.exportUrl(applied.value) : '')
-const groups = { equipment: '设备', user: '人员', project: '项目', month: '月份' }
+const groups = { equipment: '按设备', user: '按人员', project: '按项目', month: '按月份' }
+let latest = 0
 
+// Every filter applies on change (DESIGN.md list toolbar); a slower earlier answer never replaces a newer one.
 async function refresh() {
-  if (loading.value) return
   if (!filters.from || !filters.to || filters.from >= filters.to) {
     ElMessage.warning('请选择有效日期范围，结束日期须晚于开始日期')
     return
   }
   const query = { ...filters }
+  const id = ++latest
   loading.value = true
   try {
-    rows.value = await usageStatsApi.list(query)
+    const result = await usageStatsApi.list(query)
+    if (id !== latest) return
+    rows.value = result
     applied.value = query
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '无法加载设备使用统计')
+    if (id === latest) ElMessage.error(error instanceof Error ? error.message : '无法加载设备使用统计')
   } finally {
-    loading.value = false
+    if (id === latest) loading.value = false
   }
 }
 
@@ -43,26 +48,18 @@ onMounted(refresh)
 </script>
 
 <template>
-  <el-card>
-    <el-form inline @submit.prevent="refresh">
-      <el-form-item label="开始日期">
-        <el-date-picker v-model="filters.from" type="date" value-format="YYYY-MM-DD" aria-label="开始日期" />
-      </el-form-item>
-      <el-form-item label="结束日期（不含）">
-        <el-date-picker v-model="filters.to" type="date" value-format="YYYY-MM-DD" aria-label="结束日期（不含）" />
-      </el-form-item>
-      <el-form-item label="分组">
-        <el-select v-model="filters.by" aria-label="分组" style="width: 120px">
-          <el-option v-for="(label, value) in groups" :key="value" :label="label" :value="value" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button native-type="submit" type="primary" :loading="loading">查询</el-button>
+  <el-card class="card">
+    <PageToolbar>
+      <el-date-picker v-model="filters.from" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" aria-label="开始日期" :clearable="false" @change="refresh" />
+      <el-date-picker v-model="filters.to" type="date" value-format="YYYY-MM-DD" placeholder="结束日期（不含）" aria-label="结束日期（不含）" :clearable="false" @change="refresh" />
+      <el-select v-model="filters.by" aria-label="分组" @change="refresh">
+        <el-option v-for="(label, value) in groups" :key="value" :label="label" :value="value" />
+      </el-select>
+      <template #actions>
         <IconButton v-if="exportUrl" :icon="Download" label="导出当前结果 Excel" tag="a" :href="exportUrl" />
-      </el-form-item>
-    </el-form>
-    <p v-if="applied">{{ applied.from }} 至 {{ applied.to }}（不含），按{{ groups[applied.by] }}统计</p>
-    <p>按北京时间统计。预约小时不是实际使用时长；已登记预约小时仅统计提交过使用登记的预约。按月时，时长跨月分摊，次数只计入窗口内第一个相交月。</p>
+      </template>
+    </PageToolbar>
+    <p v-if="applied" class="range">{{ applied.from }} 至 {{ applied.to }}（不含），{{ groups[applied.by] }}统计</p>
     <el-table empty-text="暂无使用记录" v-loading="loading" :data="rows">
       <el-table-column prop="key.label" label="分组" min-width="140" />
       <el-table-column label="预约小时" min-width="100">
@@ -76,3 +73,11 @@ onMounted(refresh)
     </el-table>
   </el-card>
 </template>
+
+<style scoped>
+.range {
+  margin: 0 0 8px;
+  color: var(--lab-text-3);
+  font-size: 13px;
+}
+</style>

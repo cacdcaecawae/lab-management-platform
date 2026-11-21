@@ -20,10 +20,12 @@ it('shows structured outcomes and applies a trimmed known-account filter', async
   const page = mount(SystemLoginEvents, { global: { plugins: [ElementPlus] } })
   await flushPromises()
   expect(page.text()).toContain('未归属')
-  expect(page.text()).toContain('限流发生分钟')
+  expect(page.text()).toContain('限流发生分钟') // the throttled row's outcome
+  expect(page.text()).not.toContain('不是精确请求数') // no explanations on screen (DESIGN.md)
   expect(page.text()).toContain('synthetic：2 次')
-  await page.get('input[aria-label="登录名"]').setValue(' synthetic ')
-  await page.get('form').trigger('submit')
+  const name = page.get('input[aria-label="学号 / 工号"]')
+  await name.setValue(' synthetic ')
+  await name.trigger('change') // applies on change, no 查询 button
   await flushPromises()
   expect(audit.list).toHaveBeenLastCalledWith({ username: 'synthetic', outcome: '', from: '', to: '', page: 1 })
   page.unmount()

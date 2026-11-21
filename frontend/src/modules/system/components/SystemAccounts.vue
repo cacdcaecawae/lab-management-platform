@@ -109,7 +109,7 @@ async function doReset() {
 
 <template>
   <PageToolbar>
-    <el-input v-model="keyword" placeholder="搜索姓名、登录名、邮箱" clearable @change="filters.search = keyword" />
+    <el-input v-model="keyword" placeholder="搜索姓名、学号、邮箱" clearable @change="filters.search = keyword" />
     <el-select v-model="filters.group" placeholder="全部课题组" aria-label="课题组" clearable>
       <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
     </el-select>
@@ -122,7 +122,7 @@ async function doReset() {
   </PageToolbar>
   <el-table empty-text="暂无账号" v-loading="loading" :data="items">
     <el-table-column prop="name" label="姓名" min-width="100" />
-    <el-table-column prop="username" label="登录名" min-width="110" />
+    <el-table-column prop="username" label="学号 / 工号" min-width="110" />
     <el-table-column label="课题组" min-width="140">
       <template #default="{ row }">{{ row.group?.name ?? '（未分配）' }}</template>
     </el-table-column>
@@ -134,7 +134,7 @@ async function doReset() {
       <template #default="{ row }">
         <el-tag v-if="row.pending" class="status-tag" type="warning" disable-transitions>待审核</el-tag>
         <el-tag v-else class="status-tag" :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
-        <el-tag v-if="row.is_active && row.must_change_password" class="next-tag" type="warning" disable-transitions>未改初始密码</el-tag>
+        <el-tag v-if="row.is_active && row.must_change_password" class="status-tag next-tag" type="warning" disable-transitions>未改初始密码</el-tag>
       </template>
     </el-table-column>
     <el-table-column label="最近登录" min-width="150">

@@ -135,7 +135,7 @@ load()
       <template #header>
         <div class="actions">
           <span>缺陷参数</span>
-          <el-tag v-if="auth.isSupervisor" size="small" :type="specimen.defects_public ? 'success' : 'info'" disable-transitions>
+          <el-tag v-if="auth.isSupervisor" class="status-tag" :type="specimen.defects_public ? 'success' : 'info'" disable-transitions>
             {{ specimen.defects_public ? '学生可见' : '学生看不到' }}
           </el-tag>
         </div>

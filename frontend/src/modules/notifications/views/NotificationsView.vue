@@ -58,7 +58,7 @@ async function readAll() {
     <ul v-else class="notifications">
       <li v-for="item in items" :key="item.id">
         <el-button link type="primary" :disabled="busy" @click="open(item)">{{ item.title }}</el-button>
-        <el-tag v-if="!item.read_at" size="small">未读</el-tag>
+        <el-tag v-if="!item.read_at" class="status-tag" type="primary" disable-transitions>未读</el-tag>
         <span>{{ formatTime(item.created_at) }}</span>
         <p v-if="item.body">{{ item.body }}</p>
       </li>

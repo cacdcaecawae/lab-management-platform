@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { storageApi, type OpsStorage, type GroupStorage } from '@/api/storageUsage'
 import { showError } from '@/utils/errors'
+import { formatSize } from '@/utils/format'
 
 const props = defineProps<{ ops?: boolean }>()
 const opsResult = ref<OpsStorage>()
@@ -16,7 +17,7 @@ const moduleRows = computed(() => opsResult.value?.groups.flatMap(g =>
 const monthRows = computed(() => opsResult.value?.groups.flatMap(g =>
   opsResult.value!.month_keys.map(month => ({ group: g.name, month, bytes: g.months[month] ?? 0 })),
 ) ?? [])
-const bytes = (value: number) => `${value.toLocaleString('zh-CN')} 字节`
+const bytes = formatSize
 
 async function load() {
   loading.value = true
@@ -35,15 +36,14 @@ onMounted(load)
 
 <template>
   <section v-loading="loading" aria-label="存储用量">
-    <p>账面用量按数据库当前引用的文件汇总。不读取文件或远端存储；大小未登记的文件不计作零字节。</p>
     <template v-if="opsResult">
-      <h3>默认上传存储所在文件系统（不是平台用量）</h3>
+      <h3>磁盘</h3>
       <p v-if="opsResult.disk.filesystem">
-        总量 {{ bytes(opsResult.disk.filesystem.total_bytes) }}；已用 {{ bytes(opsResult.disk.filesystem.used_bytes) }}；
+        总量 {{ bytes(opsResult.disk.filesystem.total_bytes) }} · 已用 {{ bytes(opsResult.disk.filesystem.used_bytes) }} ·
         剩余 {{ bytes(opsResult.disk.filesystem.free_bytes) }}
       </p>
-      <p v-else-if="opsResult.disk.kind === 'non_local'">默认存储不是本地文件系统存储；不报告本机磁盘作为其容量。</p>
-      <p v-else>当前上传存储的容量暂不可用。</p>
+      <p v-else-if="opsResult.disk.kind === 'non_local'">文件不在本机磁盘上，没有容量数据</p>
+      <p v-else>暂时读不到容量</p>
       <h3>按课题组</h3>
       <el-table empty-text="暂无课题组" :data="opsResult.groups">
         <el-table-column prop="name" label="课题组" />
@@ -57,18 +57,17 @@ onMounted(load)
         <el-table-column label="已知大小"><template #default="{ row }">{{ bytes(row.known_bytes) }}</template></el-table-column>
         <el-table-column prop="unknown_files" label="大小未知的文件数" />
       </el-table>
-      <h3>近 12 个月上传且仍在账的已知大小（北京时间）</h3>
-      <p>不含已删除、大小未知或上传时间未知的文件，不代表当时上传总量、净增长或磁盘变化。</p>
+      <h3>近 12 个月上传、现在还在的文件</h3>
       <el-table empty-text="暂无文件" :data="monthRows">
         <el-table-column prop="group" label="课题组" />
         <el-table-column prop="month" label="月份" />
         <el-table-column label="账面大小"><template #default="{ row }">{{ bytes(row.bytes) }}</template></el-table-column>
       </el-table>
       <p v-if="opsResult.projection">
-        用 {{ opsResult.projection.basis_months.join('、') }} 仍在账且大小已知的文件粗估，同口径一年约
-        {{ bytes(opsResult.projection.annual_retained_known_bytes) }}。不能据此判断磁盘可用多久。
+        按 {{ opsResult.projection.basis_months.join('、') }} 估算，一年约
+        {{ bytes(opsResult.projection.annual_retained_known_bytes) }}
       </p>
-      <p v-else>最近三个完整月份未全部具备已知记录，暂不推算。</p>
+      <p v-else>不满三个完整月份，暂不估算</p>
     </template>
     <template v-if="groupResult">
       <h3>本组原始数据（按上传成员）</h3>

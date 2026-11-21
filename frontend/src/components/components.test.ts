@@ -76,6 +76,10 @@ describe('pages use the shared skeleton (DESIGN.md)', () => {
     expect(offenders(/[>'"`]新增/)).toEqual([])
   })
 
+  it('filters live in PageToolbar and apply on change: no inline filter forms, no 查询 button', () => {
+    expect(offenders(/<el-form\b[^>]*\sinline\b|>\s*查询\s*<\/el-button>/)).toEqual([])
+  })
+
   it('tool actions are IconButtons, not worded pills', () => {
     // the page's main button keeps its words (打印标签 on the labels page)
     const tool = /<el-button(?![^>]*type="primary")[^>]*>\s*(修改历史|打印标签|复制链接|换一个链接|导出[^<]*|[^<>]*统计|重新检查|全部标为已读)\s*<\/el-button>/

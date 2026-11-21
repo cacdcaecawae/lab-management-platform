@@ -30,10 +30,10 @@ onMounted(() => {
       <el-tab-pane :label="storage?.attention ? '存储与备份 · 需处理' : '存储与备份'" name="storage-status" lazy>
         <SystemStorage v-model:info="storage" />
       </el-tab-pane>
+      <el-tab-pane label="存储用量" name="storage" lazy><StorageUsage ops /></el-tab-pane>
       <el-tab-pane :label="version?.update_available ? '版本 · 有更新' : '版本'" name="version">
         <SystemVersion v-if="version" :info="version" />
       </el-tab-pane>
-      <el-tab-pane label="存储" name="storage" lazy><StorageUsage ops /></el-tab-pane>
       <el-tab-pane label="登录记录" name="logins" lazy><SystemLoginEvents /></el-tab-pane>
     </el-tabs>
   </el-card>

@@ -11,8 +11,8 @@ it('shows unavailable capacity for non-local storage without substituting a disk
   api.ops.mockResolvedValue({ disk: { kind: 'non_local', filesystem: null }, groups: [], month_keys: [], projection: null })
   const page = mount(StorageUsage, { props: { ops: true }, global: { plugins: [ElementPlus] } })
   await flushPromises()
-  expect(page.text()).toContain('不报告本机磁盘作为其容量')
-  expect(page.text()).toContain('暂不推算')
+  expect(page.text()).toContain('文件不在本机磁盘上，没有容量数据')
+  expect(page.text()).toContain('暂不估算')
   expect(api.group).not.toHaveBeenCalled()
   page.unmount()
 })
@@ -28,6 +28,6 @@ it('uses only the group summary and labels the member and project breakdown', as
   expect(api.ops.mock.calls.length).toBe(calls)
   expect(page.text()).toContain('合成成员')
   expect(page.text()).toContain('合成项目')
-  expect(page.text()).not.toContain('文件系统（不是平台用量）')
+  expect(page.text()).not.toContain('磁盘') // the disk is ops-only
   page.unmount()
 })

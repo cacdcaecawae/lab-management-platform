@@ -134,7 +134,7 @@ load()
         <el-table-column label="文件名" min-width="180">
           <template #default="{ row }">
             {{ row.name }}
-            <el-tag v-if="versionFileIds && !versionFileIds.has(row.id)" size="small" type="warning" disable-transitions>提交后新增</el-tag>
+            <el-tag v-if="versionFileIds && !versionFileIds.has(row.id)" class="status-tag" type="warning" disable-transitions>提交后新增</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="大小" min-width="90">

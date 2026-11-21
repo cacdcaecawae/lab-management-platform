@@ -17,7 +17,7 @@ it.each([
   // A failed update rolls back only when the migrations did not change; otherwise the site stays stopped.
   [{}, ['有新版本 v0.3.0', 'bash scripts/update.sh v0.3.0', '没改数据库结构的，自动退回 v0.2.0', '网站保持停止']],
   [{ latest: 'v0.2.0', update_available: false }, ['已是最新版本']],
-  [{ current: 'local', update_available: false }, ['从源码构建（local）', '不提示更新']],
+  [{ current: 'local', update_available: false }, ['从源码构建（local）']],
   [{ latest: null, update_available: false, error: '连不上 GitHub：timed out' }, ['连不上 GitHub：timed out']],
   [{ latest: null, update_available: false }, ['还没有发布过正式版本']],
 ])('shows %o', (change, texts) => {

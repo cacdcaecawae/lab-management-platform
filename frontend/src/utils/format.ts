@@ -7,8 +7,6 @@ export function renamedMessage(before: string | undefined, after: string): strin
   return before !== undefined && before !== after ? `已保存。学号 / 工号改成了 ${after}，下次登录要用新的` : '已保存'
 }
 export const KIND_LABELS: Record<string, string> = { raw: '原始数据', script: '脚本', result: '处理结果', other: '其他' }
-export const VERDICT_LABELS: Record<string, string> = { reviewed: '已阅', needs_revision: '需补充' }
-
 export type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 export const STATUS: Record<string, { label: string; type: TagType }> = {
   draft: { label: '草稿', type: 'info' },

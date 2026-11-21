@@ -22,8 +22,7 @@ defineProps<{ info: VersionInfo }>()
     <pre class="cmd">bash scripts/update.sh {{ info.latest }}</pre>
     <p>更新时网站会停止，先备份再切换。新版本起不来时：没改数据库结构的，自动退回 {{ info.current }}；改过或无法确认的，网站保持停止、保留当前数据，需要运维按 README"服务器部署"一节处理。</p>
   </el-alert>
-  <p v-else-if="info.current === 'local'" class="note">从源码构建的版本不提示更新。</p>
-  <p v-else-if="info.latest" class="note">已是最新版本。</p>
+  <p v-else-if="info.latest && info.current !== 'local'" class="note">已是最新版本。</p>
 </template>
 
 <style scoped>

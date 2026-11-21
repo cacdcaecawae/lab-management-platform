@@ -10,7 +10,7 @@ import { reportsApi } from '@/modules/reports/api'
 import type { DatasetBrief, ExperimentBrief, ReportWrite, RunBrief, Verdict, WeeklyReport } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
-import { VERDICT_LABELS, formatTime, mergeById, mondayOf, notMonday } from '@/utils/format'
+import { formatTime, mergeById, mondayOf, notMonday } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
@@ -274,9 +274,7 @@ if (route.params.id) load(Number(route.params.id))
         <el-timeline-item v-for="f in feedback" :key="f.id" :timestamp="formatTime(f.created_at)" placement="top">
           <div class="actions">
             <strong>{{ f.author.name }}</strong>
-            <el-tag :type="f.verdict === 'needs_revision' ? 'danger' : 'success'" size="small" disable-transitions>
-              {{ VERDICT_LABELS[f.verdict] }}
-            </el-tag>
+            <StatusTag :status="f.verdict" />
           </div>
           <pre v-if="f.content" class="pre content">{{ f.content }}</pre>
         </el-timeline-item>

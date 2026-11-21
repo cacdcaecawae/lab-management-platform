@@ -94,7 +94,6 @@ async function sendTest() {
   <el-form class="mail-form" label-position="top" @submit.prevent="save">
     <el-form-item :error="errors.fe('mail_enabled')">
       <el-switch v-model="form.mail_enabled" active-text="启用邮件" aria-label="启用邮件" />
-      <div class="hint">关闭时不发任何邮件，设备异常、采购审批等只在工作台提醒。</div>
     </el-form-item>
     <div class="form-grid">
       <el-form-item class="span-2" label="SMTP 服务器" :error="errors.fe('mail_host')">
@@ -135,11 +134,10 @@ async function sendTest() {
 
   <el-divider />
 
-  <div class="section-title">发送测试邮件</div>
   <el-form class="mail-form" label-position="top" @submit.prevent="sendTest">
     <el-form-item label="收件地址" :error="testErrors.fe('to')">
       <div class="test-row">
-        <el-input v-model="testTo" placeholder="收件地址" />
+        <el-input v-model="testTo" />
         <el-button native-type="submit" :loading="testing">发送测试邮件</el-button>
       </div>
     </el-form-item>
@@ -159,15 +157,6 @@ async function sendTest() {
 <style scoped>
 .mail-form {
   max-width: 640px;
-}
-.hint {
-  width: 100%;
-  font-size: 13px;
-  color: var(--lab-text-3);
-}
-.section-title {
-  margin-bottom: 8px;
-  font-weight: 500;
 }
 .test-row {
   display: flex;

@@ -7,7 +7,7 @@ vi.mock('@/modules/system/api', () => ({ systemApi: { storage: vi.fn() } }))
 vi.mock('@/utils/errors', () => ({ showError: vi.fn() }))
 
 const stubs = {
-  ElDescriptions: { template: '<div><slot /></div>' },
+  ElDescriptions: { template: '<div><slot name="extra" /><slot /></div>' },
   ElDescriptionsItem: { template: '<div><slot /></div>' },
   ElButton: { template: '<button><slot /></button>' },
   ElTag: { template: '<b><slot /></b>' },
@@ -40,7 +40,7 @@ describe('SystemStorage', () => {
     const text = wrapper.text()
     expect(text).toContain('服务器本地卷')
     expect(text).toContain('未启用')
-    expect(text).toContain('不代表备份已成功')
+    expect(text).not.toContain('不代表备份已成功') // states and values only (DESIGN.md)
     expect(text).toContain('尚无成功备份')
     expect(text).toContain('尚无恢复演练')
     expect(wrapper.findAll('b')).toHaveLength(0) // no 逾期 tag before the first backup

@@ -429,6 +429,16 @@ a:focus-visible {
 .page-toolbar .el-select {
   width: 180px;
 }
+.page-toolbar .el-input-number {
+  width: 120px;
+}
+.page-toolbar .el-input-number .el-input {
+  width: 100%;
+}
+/* a filter box like the others: placeholder and value on the left, not centred like a button */
+.page-toolbar .el-input-number .el-input__inner {
+  text-align: left;
+}
 .grow {
   flex: 1;
 }
