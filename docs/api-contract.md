@@ -33,7 +33,8 @@
 | 409 | `conflict` / `file_exists` / `invalid_state` / `stale_status` / `stale` / `not_configured` | 唯一性冲突、文件已存在、当前状态不允许该操作、设备状态在编辑期间被他人改过、采购申请在审批人打开后变了、财务邮箱或发信邮箱没配置 |
 | 502 | `mail_failed` | 手动发送财务提醒或测试邮件时 SMTP 出错，`message` 带上服务器给的原因 |
 | 413 | `file_too_large` | 超过 `MAX_UPLOAD_SIZE` |
-| 429 | `throttled` | 登录限速：同一账号从同一来源地址每分钟最多 5 次，不锁定账号；另有 Nginx 按 IP 每分钟 60 次的粗限制（非 JSON 响应） |
+| 507 | `insufficient_storage` | 上传后服务器剩余空间会低于 10 GB（`MIN_FREE_DISK`），在接收文件之前就拒绝，所有上传接口都一样 |
+| 429 | `throttled` | 登录限速：同一账号从同一来源地址每分钟最多 5 次，不锁定账号（计数不是原子的，同一瞬间的大量并发请求能多过几次）；硬上限是 Nginx 按 IP 每分钟 60 次（非 JSON 响应） |
 
 后端抛 `core.exceptions.Conflict(detail, code=...)` 得到 409。
 
@@ -494,10 +495,10 @@
 
 ## 系统管理 `/api/system/`
 
-- `GET /storage-status/`：仅运维，返回 `{primary: "local" | "nas", nas_ready: boolean | null, backup, drill, attention}`。`primary`、`nas_ready` 只读取当前后端所见的专用目录身份；不写文件、不暴露路径或凭据，也不表示备份成功。其他账号 403。NAS 文件操作不能完成时，可返回 503 `storage_unavailable`。
+- `GET /storage-status/`：仅运维，返回 `{primary: "local" | "nas", nas_ready: boolean | null, disk_free, disk_low, backup, drill, attention}`。`disk_free`：上传暂存目录和附件目录所在磁盘中较小的剩余字节数（读不到为 `null`）；`disk_low`：低于 10 GB，此时上传被拒绝。`primary`、`nas_ready` 只读取当前后端所见的专用目录身份；不写文件、不暴露路径或凭据，也不表示备份成功。其他账号 403。NAS 文件操作不能完成时，可返回 503 `storage_unavailable`。
   - `backup: {last_ok, last_failure, overdue, failing}`：最近一次成功和失败的备份，每条是 `{finished_at, ok, snapshot, detail}` 或 `null`。`overdue`：从没成功过，或最近成功超过 26 小时；`failing`：最近一次失败比最近一次成功新。
   - `drill: {last, overdue}`：最近一次恢复演练；`overdue`：最近一次通过的演练（没有时取第一次成功备份）超过 35 天。
-  - `attention`：备份逾期或失败、演练逾期或最近一次失败、NAS 不可用，任一成立；页面标签显示"需处理"。
+  - `attention`：备份逾期或失败、演练逾期或最近一次失败、NAS 不可用、剩余空间不足，任一成立；页面标签显示"需处理"。
   - 记录由服务器上的 `scripts/backup.sh`、`scripts/restore-drill.sh` 调用 `manage.py record_ops_run` 写入，每类保留最近 200 条。
 
 

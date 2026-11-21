@@ -12,4 +12,5 @@ RUN apk add --no-cache curl
 COPY infra/nginx.conf /etc/nginx/conf.d/default.conf
 COPY infra/nginx.health.inc /etc/nginx/lab/health.inc
 COPY infra/nginx.site.inc /etc/nginx/lab/site.inc
+COPY infra/nginx.admin.inc /etc/nginx/lab/admin.inc
 COPY --from=build /src/dist /usr/share/nginx/html

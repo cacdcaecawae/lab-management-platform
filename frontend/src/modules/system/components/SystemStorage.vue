@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { systemApi, type OpsRun, type StorageInfo } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
-import { formatTime } from '@/utils/format'
+import { formatSize, formatTime } from '@/utils/format'
 
 // Shared with SystemView, whose tab label says when something here needs attention.
 const info = defineModel<StorageInfo | null>('info', { default: null })
@@ -35,8 +35,12 @@ onMounted(check)
     <el-descriptions-item label="NAS 连接检查">
       {{ !info ? '未取得状态' : info.nas_ready === null ? '未启用' : info.nas_ready ? '已识别专用目录' : '不可用，文件操作已暂停' }}
     </el-descriptions-item>
+    <el-descriptions-item label="剩余空间">
+      {{ info?.disk_free == null ? '未取得状态' : formatSize(info.disk_free) }}
+      <el-tag v-if="info?.disk_low" type="danger" size="small">不足，已暂停上传</el-tag>
+    </el-descriptions-item>
   </el-descriptions>
-  <p>NAS 挂载和凭据由服务器运维配置。此处只检查读取，不写入文件，也不代表备份已成功。</p>
+  <p>NAS 挂载和凭据由服务器运维配置。此处只检查读取，不写入文件，也不代表备份已成功。剩余空间不到 10 GB 时，所有上传都会被拒绝。</p>
   <el-button :loading="checking" @click="check">重新检查</el-button>
   <el-descriptions v-if="info" title="备份" :column="1" border class="backup">
     <el-descriptions-item label="最近成功的备份">

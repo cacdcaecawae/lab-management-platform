@@ -8,7 +8,8 @@
 
 ```
 浏览器 ──HTTPS──> Nginx ──┬── /            Vue 打包后的静态文件
-                          ├── /api/  /admin/ ──> Gunicorn ──> Django ──> PostgreSQL
+                          ├── /api/  ──> Gunicorn ──> Django ──> PostgreSQL
+                          │   （/admin/ 只在服务器本机的 127.0.0.1:8091，见 infra/nginx.admin.inc）
                           └── （文件下载也走 /api/，由 Django 校验权限）      └──> 文件存储（DATA_ROOT 或以后的对象存储）
 ```
 
@@ -47,7 +48,7 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 ## 权限与数据隔离
 
-角色（`User.role`）：`student` 学生、`manager` 管理员、`advisor` 导师。管理员和导师合称 supervisor。运维使用 Django 超级用户（通常不属于任何课题组），登录网页后只有"系统管理"（邮件、课题组、账号，接口 `/api/system/`），在业务接口中不获得特殊权限；`/admin/` 留作少见操作的后备。
+角色（`User.role`）：`student` 学生、`manager` 管理员、`advisor` 导师。管理员和导师合称 supervisor。运维使用 Django 超级用户（通常不属于任何课题组），登录网页后只有"系统管理"（邮件、课题组、账号，接口 `/api/system/`），在业务接口中不获得特殊权限；`/admin/` 留作少见操作的后备，只在服务器本机的端口上开放（SSH 隧道访问），且要先改掉初始密码。
 
 | 数据类别 | 内容 | 读 | 写 |
 |---|---|---|---|

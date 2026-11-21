@@ -22,25 +22,9 @@
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location = /admin/login/ {
-        limit_req zone=login burst=20 nodelay;
-        limit_req_status 429;
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
+    # 系统后台 is not on the public port: see nginx.admin.inc.
     location /admin/ {
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Django admin static files (collectstatic output, shared volume).
-    location /static/ {
-        alias /srv/static/;
+        return 404;
     }
 
     # Vue SPA with history-mode fallback.

@@ -25,7 +25,8 @@ if not SECRET_KEY:
     if not DEBUG:
         raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off")
     SECRET_KEY = "insecure-dev-only-key"
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+# Plus the loopback admin port (infra/nginx.admin.inc), opened on the server or through an SSH tunnel.
+ALLOWED_HOSTS = [*env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1"), "localhost", "127.0.0.1"]
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [
@@ -133,6 +134,13 @@ MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", 2 * 1024**3))
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024**2  # larger uploads spool to a temp file
 # Put the spool directory on the data disk in production; the system temp may be too small for 2GB files.
 FILE_UPLOAD_TEMP_DIR = os.environ.get("FILE_UPLOAD_TEMP_DIR") or None
+# Uploads that would leave less free space than this are refused (core.disk); 系统管理 shows it as needing attention.
+MIN_FREE_DISK = 10 * 1024**3
+FILE_UPLOAD_HANDLERS = [
+    "core.disk.DiskSpaceGuard",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

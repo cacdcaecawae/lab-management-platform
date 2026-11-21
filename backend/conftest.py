@@ -22,6 +22,7 @@ PASSWORD = "Passw0rd!x"
 @pytest.fixture(autouse=True)
 def _isolated_settings(settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path / "data"
+    settings.MIN_FREE_DISK = 0  # whatever the test machine's disk; datasets/tests/test_disk_guard.py sets it
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 

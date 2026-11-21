@@ -10,6 +10,12 @@ class Conflict(exceptions.APIException):
     default_code = "conflict"
 
 
+class InsufficientStorage(exceptions.APIException):
+    status_code = 507
+    default_detail = "服务器磁盘剩余空间不足，暂时不能上传，请联系运维"
+    default_code = "insufficient_storage"
+
+
 class MailFailed(exceptions.APIException):
     status_code = 502
     default_detail = "邮件发送失败，请稍后再试"

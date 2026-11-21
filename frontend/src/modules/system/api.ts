@@ -16,6 +16,8 @@ export type OpsRun = { finished_at: string; ok: boolean; snapshot: string; detai
 export type StorageInfo = {
   primary: 'nas' | 'local'
   nas_ready: boolean | null
+  disk_free: number | null
+  disk_low: boolean
   backup: { last_ok: OpsRun | null; last_failure: OpsRun | null; overdue: boolean; failing: boolean }
   drill: { last: OpsRun | null; overdue: boolean }
   attention: boolean

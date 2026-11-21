@@ -55,5 +55,7 @@ snap=$(sed -n 's/^snapshot \([0-9a-f]*\) saved$/\1/p' "$log")
 [[ "$snap" =~ ^[0-9a-f]+$ ]] || { snap=; die "备份没有返回唯一快照编号"; }
 
 step=清理旧备份
-echo "== 清理旧备份（每天一份留 30 天，每月一份留 12 个月）"
-restic forget --host lab --keep-daily 30 --keep-monthly 12 --prune
+# keep-within: --keep-daily alone keeps only the last snapshot of a day, so the evening run would delete that
+# day's update.sh snapshot (before-<version>), the one a failed update tells ops to restore.
+echo "== 清理旧备份（最近 14 天全留；更早的每天一份留 30 天，每月一份留 12 个月）"
+restic forget --host lab --keep-within 14d --keep-daily 30 --keep-monthly 12 --prune
