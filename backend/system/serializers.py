@@ -73,7 +73,7 @@ class AccountSerializer(LoginNameMixin, serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "name", "role", "group", "email", "phone", "research_direction", "is_active",
+            "id", "username", "name", "role", "group", "email", "phone", "wechat", "research_direction", "is_active",
             "must_change_password", "pending", "last_login",
         ]
         read_only_fields = ["must_change_password", "pending", "last_login"]

@@ -33,6 +33,7 @@ const blank = {
   group_id: null as number | null,
   email: '',
   phone: '',
+  wechat: '',
   research_direction: '',
   password: '',
 }
@@ -42,8 +43,8 @@ const saving = ref(false)
 
 function openForm(a: Account | null) {
   editing.value = a
-  const { username, name, role, email, phone, research_direction } = a ?? blank
-  Object.assign(form, blank, { username, name, role, email, phone, research_direction, group_id: a?.group?.id ?? null })
+  const { username, name, role, email, phone, wechat, research_direction } = a ?? blank
+  Object.assign(form, blank, { username, name, role, email, phone, wechat, research_direction, group_id: a?.group?.id ?? null })
   formErrors.clear()
   dialog.value = true
   loadGroups() // a group may have been created on the other tab meanwhile
@@ -178,10 +179,11 @@ async function doReset() {
       </el-form-item>
       <el-form-item label="邮箱" :error="formErrors.fe('email')"><el-input v-model="form.email" /></el-form-item>
       <el-form-item label="电话" :error="formErrors.fe('phone')"><el-input v-model="form.phone" /></el-form-item>
+      <el-form-item label="微信号" :error="formErrors.fe('wechat')"><el-input v-model="form.wechat" /></el-form-item>
+      <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
+        <el-input v-model="form.research_direction" />
+      </el-form-item>
     </div>
-    <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
-      <el-input v-model="form.research_direction" />
-    </el-form-item>
     <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
       <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
     </el-form-item>

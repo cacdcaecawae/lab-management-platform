@@ -15,6 +15,6 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ["group", "role", "is_active"]
     search_fields = ["username", "name", "email"]
     fieldsets = BaseUserAdmin.fieldsets + (
-        ("课题组信息", {"fields": ["group", "role", "name", "phone", "research_direction", "must_change_password"]}),
+        ("课题组信息", {"fields": ["group", "role", "name", "phone", "wechat", "research_direction", "must_change_password"]}),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (("课题组信息", {"fields": ["group", "role", "name"]}),)

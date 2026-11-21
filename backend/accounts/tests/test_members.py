@@ -7,7 +7,7 @@ from conftest import PASSWORD, make_user
 pytestmark = pytest.mark.django_db
 
 NEW_PASSWORD = "Ultra-Sonic-2026"
-PRIVATE = {"username", "email", "phone", "must_change_password"}
+PRIVATE = {"username", "email", "phone", "wechat", "must_change_password"}
 
 
 def new_member(**extra):
@@ -106,11 +106,12 @@ def test_only_manager_can_write(api, request, student_b, writer):
 
 
 def test_manager_updates_member_but_not_group(api, manager, student_a, other_group):
-    body = {"name": "陈同学", "role": "student", "phone": "123", "is_active": False, "group": other_group.id}
+    body = {"name": "陈同学", "role": "student", "phone": "123", "wechat": "chen_ut", "is_active": False, "group": other_group.id}
     r = api(manager).patch(f"/api/members/{student_a.id}/", body, format="json")
     assert r.status_code == 200
     student_a.refresh_from_db()
-    assert (student_a.name, student_a.role, student_a.phone, student_a.is_active) == ("陈同学", "student", "123", False)
+    assert (student_a.name, student_a.role, student_a.phone, student_a.wechat, student_a.is_active) == (
+        "陈同学", "student", "123", "chen_ut", False)
     assert student_a.group_id != other_group.id
 
 

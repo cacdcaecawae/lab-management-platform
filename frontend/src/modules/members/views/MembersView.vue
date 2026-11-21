@@ -24,15 +24,15 @@ const { items, count, page, pageSize, loading, load } = usePagedList(membersApi.
 // ---- create / edit ----
 const dialog = ref(false)
 const editing = ref<MemberListItem | null>(null)
-const blank = { username: '', name: '', role: 'student' as Role, email: '', phone: '', research_direction: '', password: '' }
+const blank = { username: '', name: '', role: 'student' as Role, email: '', phone: '', wechat: '', research_direction: '', password: '' }
 const form = reactive({ ...blank })
 const formErrors = useFieldErrors(Object.keys(blank), 'username')
 const saving = ref(false)
 
 function openForm(m: MemberListItem | null) {
   editing.value = m
-  const { name, role, research_direction, username = '', email = '', phone = '' } = m ?? blank
-  Object.assign(form, blank, { name, role, research_direction, username, email, phone })
+  const { name, role, research_direction, username = '', email = '', phone = '', wechat = '' } = m ?? blank
+  Object.assign(form, blank, { name, role, research_direction, username, email, phone, wechat })
   formErrors.clear()
   dialog.value = true
 }
@@ -115,10 +115,11 @@ async function doReset() {
       <el-table-column label="角色" min-width="80">
         <template #default="{ row }">{{ ROLE_LABELS[row.role] }}</template>
       </el-table-column>
-      <el-table-column prop="research_direction" label="研究方向" min-width="160" />
+      <el-table-column prop="research_direction" label="研究方向" min-width="140" />
       <template v-if="auth.isSupervisor">
         <el-table-column prop="email" label="邮箱" min-width="160" />
-        <el-table-column prop="phone" label="电话" min-width="120" />
+        <el-table-column prop="phone" label="电话" min-width="140" />
+        <el-table-column prop="wechat" label="微信号" min-width="120" />
       </template>
       <el-table-column label="状态" min-width="80">
         <template #default="{ row }">
@@ -167,6 +168,9 @@ async function doReset() {
     </el-form-item>
     <el-form-item label="电话" :error="formErrors.fe('phone')">
       <el-input v-model="form.phone" />
+    </el-form-item>
+    <el-form-item label="微信号" :error="formErrors.fe('wechat')">
+      <el-input v-model="form.wechat" />
     </el-form-item>
     <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
       <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />

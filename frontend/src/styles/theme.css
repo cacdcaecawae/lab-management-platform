@@ -251,6 +251,11 @@ a:focus-visible {
   border-radius: 999px;
   font-weight: 500;
 }
+/* Avatars: the person's picture, or the first character of the name on the main blue. */
+.el-avatar {
+  --el-avatar-bg-color: var(--el-color-primary);
+  font-weight: 600;
+}
 /* Status chips: a dot in the tag's own color, so the state reads without relying on color alone. */
 .el-tag.status-tag::before {
   content: '';

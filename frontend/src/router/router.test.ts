@@ -11,7 +11,7 @@ vi.mock('@/api/auth', () => ({ authApi: { me } }))
 
 const ops: Me = {
   id: 1, username: 'ops', name: '', role: 'student', is_supervisor: false, is_superuser: true, group: null,
-  email: '', phone: '', research_direction: '', must_change_password: true,
+  email: '', phone: '', wechat: '', research_direction: '', must_change_password: true, avatar_url: null,
 }
 
 // A detail URL typed or pasted must open its page: navigating by name does not check the :id pattern, a full load does.

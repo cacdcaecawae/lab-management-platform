@@ -1,6 +1,12 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from core.files import stored_name
+
+
+def avatar_upload_to(instance, filename):
+    return stored_name("avatars", filename)
+
 
 class ResearchGroup(models.Model):
     """课题组。每个成员属于一个课题组；管理员和导师只能看到本组数据。"""
@@ -32,6 +38,8 @@ class User(AbstractUser):
     name = models.CharField("姓名", max_length=50, blank=True)
     phone = models.CharField("联系电话", max_length=30, blank=True)
     research_direction = models.CharField("研究方向", max_length=100, blank=True)
+    wechat = models.CharField("微信号", max_length=50, blank=True)
+    avatar = models.FileField("头像", upload_to=avatar_upload_to, max_length=300, blank=True)
     must_change_password = models.BooleanField("需修改初始密码", default=True)
     # A student who registered through the group's link; inactive until a manager approves (or deletes) it.
     pending = models.BooleanField("待审核", default=False)

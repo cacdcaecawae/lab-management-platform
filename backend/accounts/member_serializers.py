@@ -7,7 +7,7 @@ from core.exceptions import Conflict
 
 from .models import User
 
-PRIVATE_FIELDS = ["username", "email", "phone", "must_change_password"]
+PRIVATE_FIELDS = ["username", "email", "phone", "wechat", "must_change_password"]
 # Creating, renaming and signing up all say it the way the pages name the field (409 conflict).
 LOGIN_NAME_TAKEN = "这个学号 / 工号已经有账号在用"
 
