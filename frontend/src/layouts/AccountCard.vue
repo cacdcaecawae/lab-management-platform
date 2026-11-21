@@ -130,7 +130,7 @@ async function upload() {
   min-width: 0;
 }
 .name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;

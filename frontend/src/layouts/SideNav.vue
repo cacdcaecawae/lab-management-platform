@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Lock, SwitchButton, User } from '@element-plus/icons-vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import SiteSearch from '@/components/SiteSearch.vue'
 import AccountCard from './AccountCard.vue'
@@ -24,8 +24,8 @@ async function logout() {
 
 <template>
   <div class="side-nav">
-    <!-- opens beside the sidebar, so it never covers the search box and menu under the button -->
-    <el-dropdown trigger="click" placement="right-start" class="me-menu">
+    <!-- drops down under the button like Feishu's, over the search box and menu; a click outside closes it -->
+    <el-dropdown trigger="click" placement="bottom-start" :show-arrow="false" :offset="4" popper-class="me-popper" class="me-menu">
       <button type="button" class="me">
         <el-avatar :size="32" :src="auth.user?.avatar_url ?? undefined" aria-hidden="true">{{ name.slice(0, 1) }}</el-avatar>
         <span class="who">
@@ -36,10 +36,10 @@ async function logout() {
       </button>
       <template #dropdown>
         <el-dropdown-menu>
-          <li class="me-card" role="presentation"><AccountCard :size="48" /></li>
-          <el-dropdown-item divided :icon="User" @click="profile = true">个人信息</el-dropdown-item>
-          <el-dropdown-item :icon="Lock" @click="router.push({ name: 'password' })">修改密码</el-dropdown-item>
-          <el-dropdown-item divided :icon="SwitchButton" @click="logout">退出登录</el-dropdown-item>
+          <li class="me-card" role="presentation"><AccountCard :size="56" /></li>
+          <el-dropdown-item divided @click="profile = true">个人信息</el-dropdown-item>
+          <el-dropdown-item @click="router.push({ name: 'password' })">修改密码</el-dropdown-item>
+          <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
@@ -110,8 +110,37 @@ async function logout() {
 }
 /* Top of the account menu: who you are (not clickable), like Feishu's card above its menu items. */
 .me-card {
-  min-width: 240px;
-  padding: 12px 16px;
+  padding: 12px 12px 14px;
   list-style: none;
+}
+</style>
+
+<style>
+/* The account menu (teleported, so not scoped): wider and airier than other menus, rows that highlight grey. */
+.me-popper.el-popper {
+  border: 0;
+  border-radius: var(--lab-radius-lg);
+  box-shadow: var(--el-box-shadow);
+}
+.me-popper .el-dropdown-menu {
+  width: 296px;
+  padding: 8px;
+  border-radius: var(--lab-radius-lg);
+}
+.me-popper .el-dropdown-menu__item {
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: var(--lab-radius);
+  color: var(--lab-text);
+  font-size: 14px;
+}
+.me-popper .el-dropdown-menu__item:not(.is-disabled):hover,
+.me-popper .el-dropdown-menu__item:not(.is-disabled):focus {
+  background: var(--lab-bg);
+  color: var(--lab-text);
+}
+.me-popper .el-dropdown-menu__item--divided {
+  margin: 6px 12px;
 }
 </style>
