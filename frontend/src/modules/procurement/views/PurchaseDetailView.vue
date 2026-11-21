@@ -15,6 +15,8 @@ import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { closeTab } from '@/layouts/nav'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -55,6 +57,8 @@ const status = computed(() => record.value?.status)
 const canCorrect = computed(() => (status.value === 'approved' || status.value === 'purchased') && (mine.value || auth.isManager))
 const correcting = ref(false)
 const editable = computed(() => (record.value ? (status.value === 'draft' && mine.value) || (canCorrect.value && correcting.value) : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canReview = computed(() => {
   const role = auth.user?.role
   if (!record.value || mine.value) return false
@@ -76,6 +80,7 @@ function fill(r: PurchaseDetail) {
   form.items = r.items.length
     ? r.items.map((i) => ({ name: i.name, spec: i.spec, quantity: i.quantity, unit_price: Number(i.unit_price), link: i.link }))
     : [blankRow()]
+  markSaved()
 }
 
 function clearErrors() {
@@ -186,10 +191,12 @@ const withdraw = () =>
 const markPurchased = () =>
   confirmThen('确认已经下单采购？', '标记已采购', () => purchasesApi.markPurchased(record.value!.id), '已标记为已采购')
 const markArrived = () =>
-  confirmThen('确认货已到？之后可在新增设备、耗材入库时关联这张申请。', '标记已到货', () => purchasesApi.markArrived(record.value!.id), '已标记为已到货')
+  confirmThen('确认货已到？之后可在新建设备、耗材入库时关联这张申请。', '标记已到货', () => purchasesApi.markArrived(record.value!.id), '已标记为已到货')
 const remove = () =>
   confirmThen('删除这份草稿？', '删除', async () => {
     await purchasesApi.remove(record.value!.id)
+    markSaved() // deleted: nothing left to lose
+    closeTab(route.path)
     router.push({ name: 'purchases' })
   })
 

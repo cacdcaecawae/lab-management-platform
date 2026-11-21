@@ -16,6 +16,7 @@ import ParamsEditor from '@/modules/research/components/ParamsEditor.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -53,6 +54,8 @@ const scriptError = computed(
 // No record yet only means "new" on the -new route; a failed load must not turn into a create form.
 const isNew = !route.params.id
 const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canReturn = computed(() => record.value?.status === 'submitted' && auth.isSupervisor)
 const readonlyHint = computed(() => {
   const r = record.value
@@ -89,6 +92,7 @@ function fill(r: ProcessingRun) {
     conclusion: r.conclusion,
   })
   scriptMode.value = r.script_repo && !r.script_dataset ? 'git' : 'dataset'
+  markSaved()
 }
 
 async function load(id: number) {

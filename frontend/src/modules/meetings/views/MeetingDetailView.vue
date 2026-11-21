@@ -15,6 +15,8 @@ import { isNotFound, showActionError, showError, useFieldErrors } from '@/utils/
 import AttachmentList from '@/components/AttachmentList.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { closeTab } from '@/layouts/nav'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -42,6 +44,8 @@ interface Row {
 }
 const form = reactive({ date: today, title: '组会', minutes: '', agenda: [] as Row[], actions: [] as Row[] })
 const errors = useFieldErrors(['date', 'title', 'minutes', 'agenda', 'actions'])
+// Ask before leaving with unsaved changes while editing (startEdit() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editing.value)
 
 function startEdit() {
   const m = meeting.value
@@ -54,6 +58,7 @@ function startEdit() {
   })
   errors.clear()
   editing.value = true
+  markSaved()
 }
 
 function body(): MeetingWrite {
@@ -92,6 +97,8 @@ async function remove() {
   try {
     await meetingsApi.remove(meeting.value!.id)
     ElMessage.success('已删除')
+    markSaved() // deleted: nothing left to lose
+    closeTab(route.path)
     router.replace({ name: 'meetings' })
   } catch (e) {
     showActionError(e)

@@ -1,17 +1,30 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch, watchPostEffect } from 'vue'
-import { useRoute } from 'vue-router'
-import { Menu } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Close, Menu } from '@element-plus/icons-vue'
 import { useNotificationPolling } from '@/composables/useNotificationPolling'
+import { useAuthStore } from '@/stores/auth'
 import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
-import { useNav } from './nav'
+import { closeTab, openedTabs, trackTab, useNav, type OpenedTab } from './nav'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const drawer = ref(false)
 useNotificationPolling()
 const { current, page } = useNav()
 const tabs = computed(() => (current.value && current.value.pages.length > 1 ? current.value.pages : []))
+// Records opened anywhere stay as tabs on every page, after the current module's pages (webmail-style); while one is
+// shown, its list page is not highlighted. The current tab joins the card under it.
+watch([() => route.fullPath, () => auth.user?.id], () => trackTab(auth.user?.id, route), { immediate: true })
+const docs = computed(() => openedTabs())
+const onDoc = computed(() => docs.value.some((t) => t.path === route.path))
+const joined = computed(() => tabs.value.length > 0 || onDoc.value)
+function close(t: OpenedTab) {
+  closeTab(t.path)
+  if (t.path === route.path) router.push({ name: String(route.meta.menu) })
+}
 // On a phone the tabs scroll sideways: bring the current one into view (the last tab would otherwise sit off-screen).
 const tabsNav = useTemplateRef<HTMLElement>('tabsNav')
 // Runs after each render that changes the page or brings the tabs in (they wait for the signed-in user).
@@ -35,22 +48,31 @@ watch(
       <SideNav />
     </el-drawer>
     <div class="body">
-      <header class="topbar" :class="{ bare: !tabs.length && !title }">
+      <header class="topbar" :class="{ bare: !tabs.length && !docs.length && !title, 'with-tabs': tabs.length || docs.length, joined }">
         <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
-        <template v-if="tabs.length">
-          <h1 class="sr-only">{{ title }}</h1>
-          <nav ref="tabsNav" class="tabs" :aria-label="current!.label">
+        <!-- a module with its own page tabs names itself only for screen readers -->
+        <h1 v-if="title" :class="tabs.length ? 'sr-only' : 'title'">{{ title }}</h1>
+        <template v-if="tabs.length || docs.length">
+          <nav ref="tabsNav" class="tabs" :aria-label="tabs.length ? `${current!.label}和打开的记录` : '打开的记录'">
             <RouterLink
               v-for="p in tabs"
               :key="p.name"
               :to="{ name: p.name }"
               class="tab"
-              :class="{ on: p.name === page }"
-              :aria-current="p.name === page ? 'page' : undefined"
+              :class="{ on: p.name === page && !onDoc }"
+              :aria-current="p.name === page && !onDoc ? 'page' : undefined"
             >{{ p.label }}</RouterLink>
+            <span v-if="tabs.length && docs.length" class="tabs-sep" aria-hidden="true" />
+            <span v-for="t in docs" :key="t.path" class="tab doc" :class="{ on: t.path === route.path }">
+              <RouterLink :to="t.full" class="doc-link" :title="t.title" :aria-current="t.path === route.path ? 'page' : undefined">{{
+                t.title
+              }}</RouterLink>
+              <button type="button" class="doc-close" :aria-label="`关闭 ${t.title}`" @click="close(t)">
+                <el-icon><Close /></el-icon>
+              </button>
+            </span>
           </nav>
         </template>
-        <h1 v-else class="title">{{ title }}</h1>
       </header>
       <main class="main">
         <RoutePage />
@@ -118,32 +140,107 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A module's pages as pills; the current one is a white pill, like the current module in the sidebar. */
+/* Webmail / browser-style tabs (DESIGN.md): grey tabs with rounded top corners; the current one is white and joins
+   the white card under it (the strip starts past the card's rounded corner). A module's pages first, then the
+   records opened in it. */
+.topbar.with-tabs {
+  align-items: flex-end;
+}
+.topbar.with-tabs .menu-btn,
+.topbar.with-tabs .title {
+  align-self: center;
+}
 .tabs {
+  flex: 1;
   display: flex;
-  gap: 4px;
+  align-items: flex-end;
+  gap: 2px;
   min-width: 0;
-  padding: 2px;
+  padding-left: 16px;
   overflow-x: auto;
+  scroll-padding-inline: 16px; /* scrolling the current tab into view keeps it off the card's rounded corners */
   scrollbar-width: none;
+}
+/* the same clearance at the end, so the last tab also lands on the card's straight edge */
+.tabs::after {
+  content: '';
+  flex: none;
+  width: 16px;
+}
+.topbar.joined + .main {
+  padding-top: 0;
+}
+/* only opened records, none of them current (the workbench, 通知, 成员): leave room under the strip */
+.topbar.with-tabs:not(.joined) + .main {
+  padding-top: 20px;
 }
 .tab {
   flex: none;
-  padding: 6px 14px;
-  border-radius: 999px;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 10px 10px 0 0;
+  background: var(--lab-bg-hover);
   color: var(--lab-text-2);
+  line-height: 36px;
   white-space: nowrap;
 }
 .tab:hover {
-  background: var(--lab-bg-hover);
+  background: #dadbe0;
   color: var(--lab-text);
   text-decoration: none;
 }
 .tab.on {
   background: var(--lab-bg-card);
-  box-shadow: var(--lab-shadow-card);
   color: var(--lab-text);
   font-weight: 600;
+}
+.tab:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -4px;
+}
+.tabs-sep {
+  flex: none;
+  width: 10px;
+}
+/* An opened record: its title (cut off past 220px, full text on hover) and a close button. */
+.tab.doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding-right: 8px;
+}
+.doc-link {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+}
+.doc-link:hover {
+  text-decoration: none;
+}
+.doc-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.doc-close:hover,
+.doc-close:focus-visible {
+  background: rgba(0, 0, 0, 0.08);
+  opacity: 1;
+}
+.doc-close:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
 }
 .sr-only {
   position: absolute;
@@ -174,7 +271,7 @@ watch(
     display: inline-flex;
   }
   .topbar {
-    padding: 0 8px;
+    padding: 0 12px 0 8px; /* right edge in line with the cards */
   }
   .main {
     padding: 4px 12px 32px;

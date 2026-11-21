@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type RouteLocationNormalizedLoaded, type RouteLocationRaw } from 'vue-router'
 import { Bell, Collection, House, Memo, Monitor, Notebook, Setting, User, Wallet } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -52,8 +52,53 @@ const MODULES = [
   { key: 'system', label: '系统管理', icon: Setting, pages: [{ name: 'system', label: '系统管理' }] },
 ]
 
-// The page last opened in each module: clicking the module goes back there.
-const last = reactive<Record<string, string>>({})
+// The page last opened in each module (a list or one of its opened records): clicking the module goes back there.
+const last = reactive<Record<string, { page: string; full: string }>>({})
+
+// Records the user has opened (detail pages: routes with meta.menu, except the -new forms), shown as closable tabs
+// in the top bar on every page, like a webmail client's open messages (DESIGN.md). Kept for this browser tab only
+// (sessionStorage), and only for the user who opened them; the oldest goes past MAX_OPEN.
+export interface OpenedTab { path: string; full: string; title: string }
+const TABS_KEY = 'lab.tabs'
+const MAX_OPEN = 8
+const restored = (() => {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(TABS_KEY) ?? '') as { uid: number | null; tabs: OpenedTab[] }
+    return Array.isArray(v.tabs) ? v : null
+  } catch {
+    return null
+  }
+})()
+const opened = reactive(restored ?? { uid: null as number | null, tabs: [] as OpenedTab[] })
+watch(opened, (v) => sessionStorage.setItem(TABS_KEY, JSON.stringify(v)), { deep: true })
+
+export const openedTabs = () => opened.tabs
+
+export function trackTab(uid: number | undefined, r: RouteLocationNormalizedLoaded) {
+  if (uid == null) return
+  if (opened.uid !== uid) Object.assign(opened, { uid, tabs: [] })
+  if (!r.meta.menu || String(r.name).endsWith('-new')) return
+  const tab = opened.tabs.find((t) => t.path === r.path)
+  if (tab) tab.full = r.fullPath
+  else {
+    opened.tabs.push({ path: r.path, full: r.fullPath, title: String(r.meta.title ?? '') })
+    if (opened.tabs.length > MAX_OPEN) opened.tabs.shift()
+  }
+}
+
+// PageHeader reports the record's title (e.g. "UT-001 超声探伤仪") once it has loaded.
+export function setTabTitle(path: string, title: string) {
+  for (const t of opened.tabs) if (t.path === path && title) t.title = title
+}
+
+export function closeTab(path: string) {
+  opened.tabs = opened.tabs.filter((t) => t.path !== path)
+  for (const key of Object.keys(last)) if (last[key]!.full.split('?')[0] === path) delete last[key]
+}
+
+export function clearTabs() {
+  Object.assign(opened, { uid: null, tabs: [] })
+}
 
 export function useNav() {
   const auth = useAuthStore()
@@ -75,10 +120,15 @@ export function useNav() {
   // Detail pages highlight their list page (meta.menu).
   const page = computed(() => String(route.meta.menu ?? route.name))
   const current = computed(() => modules.value.find((m) => m.pages.some((p) => p.name === page.value)))
-  watch(page, (p) => current.value && (last[current.value.key] = p), { immediate: true })
-  const target = (m: (typeof modules.value)[number]) => ({
-    name: m.pages.some((p) => p.name === last[m.key]) ? last[m.key] : m.pages[0]!.name,
-  })
+  watch(
+    () => route.fullPath,
+    (full) => current.value && (last[current.value.key] = { page: page.value, full }),
+    { immediate: true },
+  )
+  const target = (m: (typeof modules.value)[number]): RouteLocationRaw => {
+    const l = last[m.key]
+    return l && m.pages.some((p) => p.name === l.page) ? l.full : { name: m.pages[0]!.name }
+  }
 
   return { modules, page, current, target }
 }

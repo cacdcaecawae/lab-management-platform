@@ -15,6 +15,7 @@ import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -50,6 +51,8 @@ const errors = useFieldErrors(Object.keys(form))
 const isNew = !route.params.id
 const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew))
 const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isSupervisor && !isOwner.value)
 const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)))
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
@@ -75,6 +78,7 @@ function fill(r: WeeklyReport) {
     dataset_ids: r.datasets.map((x) => x.id),
     run_ids: r.runs.map((x) => x.id),
   })
+  markSaved()
 }
 
 async function load(id: number) {

@@ -5,6 +5,7 @@ import { ArrowDown, Lock, SwitchButton } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import SiteSearch from '@/components/SiteSearch.vue'
 import AppMenu from './AppMenu.vue'
+import { clearTabs } from './nav'
 
 // The sidebar (DESIGN.md): who is signed in, search, then the menu. Used by the desktop sidebar and the phone drawer.
 const auth = useAuthStore()
@@ -13,6 +14,7 @@ const name = computed(() => auth.user?.name || auth.user?.username || '')
 
 async function logout() {
   await auth.logout()
+  clearTabs() // the next person on this computer does not see what was open
   router.push({ name: 'login' })
 }
 </script>

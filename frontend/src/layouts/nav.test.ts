@@ -43,9 +43,38 @@ it('lists only modules and pages the role may open, and highlights the list page
 it('sends a module back to the page last opened in it', async () => {
   const { router, nav } = await setup('manager')
   const lab = () => nav.modules.value.find((m) => m.key === 'lab')!
-  expect(nav.target(lab())).toEqual({ name: 'equipment' })
+  const money = () => nav.modules.value.find((m) => m.key === 'money')!
+  expect(nav.target(money())).toEqual({ name: 'purchases' }) // never opened: its first page
   await router.push('/bookings')
   await router.push('/purchases')
   await nextTick()
-  expect(nav.target(lab())).toEqual({ name: 'bookings' })
+  expect(nav.target(lab())).toBe('/bookings')
+  await router.push('/equipment/3') // an opened record counts too
+  await router.push('/purchases')
+  await nextTick()
+  expect(nav.target(lab())).toBe('/equipment/3')
+})
+
+it('keeps opened records as tabs on every page: once each, not the -new forms, at most eight, closable', async () => {
+  const { router } = await setup('manager')
+  const { trackTab, openedTabs, setTabTitle, closeTab } = await import('./nav')
+  router.addRoute({ path: '/equipment/new', name: 'equipment-new', component: page, meta: { menu: 'equipment' } })
+  const visit = async (path: string) => {
+    await router.push(path)
+    trackTab(1, router.currentRoute.value)
+  }
+  await visit('/equipment/3')
+  await visit('/equipment/3?tab=history') // same record: one tab, keeps the latest address
+  await visit('/equipment/new')
+  await visit('/purchases') // a list page in another module is not a tab, and the record's tab stays
+  expect(openedTabs().map((t) => t.full)).toEqual(['/equipment/3?tab=history'])
+  setTabTitle('/equipment/3', 'UT-003 测厚仪')
+  expect(openedTabs()[0]!.title).toBe('UT-003 测厚仪')
+  for (const id of [4, 5, 6, 7, 8, 9, 10, 11]) await visit(`/equipment/${id}`)
+  expect(openedTabs().map((t) => t.path)).toEqual([4, 5, 6, 7, 8, 9, 10, 11].map((id) => `/equipment/${id}`))
+  closeTab('/equipment/11')
+  expect(openedTabs()).toHaveLength(7)
+  await router.push('/bookings')
+  trackTab(2, router.currentRoute.value) // someone else signed in: nothing of the last person's
+  expect(openedTabs()).toEqual([])
 })
