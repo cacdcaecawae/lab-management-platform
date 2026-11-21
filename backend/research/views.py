@@ -35,15 +35,11 @@ class RecordViewSet(viewsets.ModelViewSet):
         params = self.request.query_params
         if params.get("status") and params["status"] not in RecordStatus.values:
             return queryset.none()  # also keeps NUL bytes, which PostgreSQL rejects with a 500, out of the query
-        lookups = {}
-        for name in ("project", "owner"):
-            if value := params.get(name):
-                if not (value.isascii() and value.isdigit() and len(value) <= 18):
-                    raise ValidationError({name: ["过滤参数格式不正确"]})
-                lookups[f"{name}_id"] = int(value)
-        if params.get("status"):
-            lookups["status"] = params["status"]
-        return queryset.filter(**lookups)
+        lookups = {name: params[name] for name in ("project", "owner", "status") if params.get(name)}
+        try:
+            return queryset.filter(**lookups)
+        except ValueError:  # e.g. ?project=abc
+            raise ValidationError({"non_field_errors": ["过滤参数格式不正确"]})
 
     def submit_errors(self, obj):
         """{field: [message]} for whatever is missing before obj can be submitted."""

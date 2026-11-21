@@ -207,7 +207,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
-      <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期</el-checkbox>
+      <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期（含已过期）</el-checkbox>
       <template #actions>
         <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新建耗材</el-button>
       </template>

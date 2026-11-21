@@ -123,10 +123,10 @@ const kinds = computed<Kind[]>(() => {
         rows: m.low_stock.map((c) => ({ key: c.id, to: { name: 'consumables', query: { low: '1' } }, text: `${c.name} ${c.spec}`, hint: `剩 ${c.stock} ${c.unit} / 安全库存 ${c.safety_stock}` })),
       },
       {
-        type: '批次将到期', count: m.expiring_batches?.length ?? 0, to: { name: 'consumables', query: { expiring_within: '30' } },
+        type: '批次到期', count: m.expiring_batches?.length ?? 0, to: { name: 'consumables', query: { expiring_within: '30' } },
         rows: (m.expiring_batches ?? []).map((b) => ({
           key: b.id, to: { name: 'consumables', query: { expiring_within: '30' } }, text: `${b.consumable__name} · ${b.batch_no}`,
-          hint: `${b.expires_on} 到期 · 库存 ${b.stock}`,
+          hint: `${b.expires_on} ${b.expires_on < todayStr ? '已过期' : '到期'} · 库存 ${b.stock}`,
           late: b.expires_on < todayStr,
         })),
       },
