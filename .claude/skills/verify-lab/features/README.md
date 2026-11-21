@@ -30,7 +30,7 @@
 
 | 文件 | 内容 | 实际走通 |
 |---|---|---|
-| [navigation.md](./navigation.md) | 模块菜单、页面标签、打开过的记录标签、离开前提醒 | 2026-11-21，PR #39 分支（mgr，1440 宽） |
+| [navigation.md](./navigation.md) | 可收起的侧栏分组、模块颜色、共用的顶栏标签、离开前提醒 | 2026-11-21，PR #39 分支（mgr，1440 宽） |
 | [search.md](./search.md) | 分组搜索、角色范围、导航、窄屏 | 未走过：环境限制 Chromium 启动 |
 | [datasets.md](./datasets.md) | 新建数据集、上传、同名拒绝、下载与 SHA256、跨账号隔离 | 2026-11-17，代码 `d01c121`（界面改版后重走） |
 | [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 未走过（组件与 PostgreSQL 回归已通过；需隔离真实浏览器） |

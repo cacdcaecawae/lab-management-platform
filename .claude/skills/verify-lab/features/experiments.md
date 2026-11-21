@@ -13,7 +13,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧 menuitem "科研记录" → 顶栏 link "实验记录" → 按钮"新建实验记录"。
+- 左侧展开 "科研记录" → menuitem "实验记录" → 按钮"新建实验记录"。
 - 实验记录列表里点编号进入记录页。
 - 记录页顶部的按钮："修改历史""退回""保存草稿""提交"。
 
@@ -26,7 +26,7 @@
 
 步骤：
 
-- **新建草稿。** 以 `s_a` 登录，点 menuitem "科研记录"、顶栏 link "实验记录"，点 button "新建实验记录"。点 combobox "*项目" 后按 `ArrowDown`、`Enter` 选"导波螺栓松动"；textbox "*实验名称" 填 `验证-螺栓预紧力扫描`；"*实验日期"的日期框填 `2026-11-17`；在"关联数据集（只能选择自己的数据集）"下拉框中用键盘选 `DS-2026-0001 验证-导波波形`。点 button "保存草稿"，用 `wait_for` 等 "草稿已保存"。
+- **新建草稿。** 以 `s_a` 登录，在左侧展开 "科研记录"、点 menuitem "实验记录"，点 button "新建实验记录"。点 combobox "*项目" 后按 `ArrowDown`、`Enter` 选"导波螺栓松动"；textbox "*实验名称" 填 `验证-螺栓预紧力扫描`；"*实验日期"的日期框填 `2026-11-17`；在"关联数据集（只能选择自己的数据集）"下拉框中用键盘选 `DS-2026-0001 验证-导波波形`。点 button "保存草稿"，用 `wait_for` 等 "草稿已保存"。
 - **提交。** 点 button "提交"，用 `wait_for` 等 "已提交，记录已锁定"。状态标签为"已提交"，"保存草稿""提交"按钮消失，出现锁定说明。截图存证。
 - **第二视角。** 运行 `bash .claude/skills/verify-lab/scripts/query.sh 'from research.models import Experiment; e = Experiment.objects.get(); print(e.status, e.data_versions)'`，输出 `submitted` 和 `{"1": "<64 位版本码>"}`。
 - **版本固定。** 回到 `DS-2026-0001` 上传 `wave_002.csv`。再次运行上一步的查询，`data_versions` 不变。

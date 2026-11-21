@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -40,22 +40,7 @@ it('lists only modules and pages the role may open, and highlights the list page
   expect(manager.nav.page.value).toBe('equipment')
 })
 
-it('sends a module back to the page last opened in it', async () => {
-  const { router, nav } = await setup('manager')
-  const lab = () => nav.modules.value.find((m) => m.key === 'lab')!
-  const money = () => nav.modules.value.find((m) => m.key === 'money')!
-  expect(nav.target(money())).toEqual({ name: 'purchases' }) // never opened: its first page
-  await router.push('/bookings')
-  await router.push('/purchases')
-  await nextTick()
-  expect(nav.target(lab())).toBe('/bookings')
-  await router.push('/equipment/3') // an opened record counts too
-  await router.push('/purchases')
-  await nextTick()
-  expect(nav.target(lab())).toBe('/equipment/3')
-})
-
-it('keeps opened records as tabs on every page: once each, not the -new forms, at most eight, closable', async () => {
+it('keeps the pages a user opens as tabs: lists and records, not the workbench or -new forms, at most ten', async () => {
   const { router } = await setup('manager')
   const { trackTab, openedTabs, setTabTitle, closeTab } = await import('./nav')
   router.addRoute({ path: '/equipment/new', name: 'equipment-new', component: page, meta: { menu: 'equipment' } })
@@ -63,18 +48,22 @@ it('keeps opened records as tabs on every page: once each, not the -new forms, a
     await router.push(path)
     trackTab(1, router.currentRoute.value)
   }
+  await visit('/') // the workbench is home, not a tab: nothing until something is opened
+  expect(openedTabs()).toEqual([])
+  await visit('/equipment')
   await visit('/equipment/3')
   await visit('/equipment/3?tab=history') // same record: one tab, keeps the latest address
   await visit('/equipment/new')
-  await visit('/purchases') // a list page in another module is not a tab, and the record's tab stays
-  expect(openedTabs().map((t) => t.full)).toEqual(['/equipment/3?tab=history'])
+  await visit('/purchases') // another module's page joins the same strip
+  expect(openedTabs().map((t) => t.full)).toEqual(['/equipment', '/equipment/3?tab=history', '/purchases'])
   setTabTitle('/equipment/3', 'UT-003 测厚仪')
-  expect(openedTabs()[0]!.title).toBe('UT-003 测厚仪')
+  expect(openedTabs()[1]!.title).toBe('UT-003 测厚仪')
   for (const id of [4, 5, 6, 7, 8, 9, 10, 11]) await visit(`/equipment/${id}`)
-  expect(openedTabs().map((t) => t.path)).toEqual([4, 5, 6, 7, 8, 9, 10, 11].map((id) => `/equipment/${id}`))
-  closeTab('/equipment/11')
-  expect(openedTabs()).toHaveLength(7)
+  expect(openedTabs()).toHaveLength(10)
+  expect(openedTabs()[0]!.path).toBe('/equipment/3') // the oldest went
+  expect(closeTab('/equipment/5')).toBe('/equipment/6') // closing shows the tab after it,
+  expect(closeTab('/equipment/11')).toBe('/equipment/10') // or the one before the last
   await router.push('/bookings')
-  trackTab(2, router.currentRoute.value) // someone else signed in: nothing of the last person's
-  expect(openedTabs()).toEqual([])
+  trackTab(2, router.currentRoute.value) // someone else signed in: none of the last person's tabs
+  expect(openedTabs().map((t) => t.full)).toEqual(['/bookings'])
 })

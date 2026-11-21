@@ -13,7 +13,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧 menuitem "项目" → 顶栏 link "组会"，button "新建组会"。
+- 左侧展开 "周报组会" → menuitem "组会"，button "新建组会"。
 - 新建 / 编辑页：卡片右上角 button "取消"、"保存"（编辑时还有 "删除组会"）；combobox "*日期"，textbox "标题"（默认"组会"）；"议程"每行 combobox "汇报人" 和 textbox "汇报内容"，button "添加汇报"、"删除这一项"；textbox "纪要"；"行动项"每行 combobox "负责人"、textbox "事项"、combobox "截止日期"，button "添加行动项"；底部 "取消"、"保存"。
 - 详情页：卡片右上角 button "修改历史"、"编辑"（只有管理员）；行动项表每行 checkbox "完成：<事项>"；"附件"卡片 button "上传附件"。
 - 工作台："需要你处理"里类型为"行动项"的行。

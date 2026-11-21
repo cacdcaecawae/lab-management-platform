@@ -21,6 +21,13 @@
   --lab-radius: 8px;
   --lab-radius-lg: 16px;
   --lab-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.04);
+  /* One colour per module (DESIGN.md): its sidebar icon (white glyph on it, at least 3:1) and the dot on its tabs. */
+  --lab-mod-projects: #0f8b8d;
+  --lab-mod-research: #0071e3;
+  --lab-mod-reporting: #7c4dcc;
+  --lab-mod-lab: #d9730d;
+  --lab-mod-money: #2f9e44;
+  --lab-mod-library: #d6336c;
 
   --el-font-family: var(--lab-font);
   --el-font-size-base: 14px;

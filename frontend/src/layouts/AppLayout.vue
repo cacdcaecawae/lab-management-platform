@@ -6,30 +6,32 @@ import { useNotificationPolling } from '@/composables/useNotificationPolling'
 import { useAuthStore } from '@/stores/auth'
 import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
-import { closeTab, openedTabs, trackTab, useNav, type OpenedTab } from './nav'
+import { closeTab, openedTabs, pageColor, trackTab, type OpenedTab } from './nav'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const drawer = ref(false)
 useNotificationPolling()
-const { current, page } = useNav()
-const tabs = computed(() => (current.value && current.value.pages.length > 1 ? current.value.pages : []))
-// Records opened anywhere stay as tabs on every page, after the current module's pages (webmail-style); while one is
-// shown, its list page is not highlighted. The current tab joins the card under it.
+// Every page you open (lists and records) becomes a tab in one strip shared by all modules (DESIGN.md); none at first.
+// The tab on screen is white and joins the card under it; each tab has its module's colour dot.
 watch([() => route.fullPath, () => auth.user?.id], () => trackTab(auth.user?.id, route), { immediate: true })
-const docs = computed(() => openedTabs())
-const onDoc = computed(() => docs.value.some((t) => t.path === route.path))
-const joined = computed(() => tabs.value.length > 0 || onDoc.value)
+const tabs = computed(() => openedTabs())
+const onTab = computed(() => tabs.value.some((t) => t.path === route.path))
+const dot = (t: OpenedTab) => {
+  const r = router.resolve(t.full)
+  return pageColor(String(r.meta.menu ?? r.name ?? ''))
+}
 function close(t: OpenedTab) {
-  closeTab(t.path)
-  if (t.path === route.path) router.push({ name: String(route.meta.menu) })
+  const next = closeTab(t.path)
+  if (t.path === route.path) router.push(next ?? { name: 'workbench' })
 }
 // On a phone the tabs scroll sideways: bring the current one into view (the last tab would otherwise sit off-screen).
 const tabsNav = useTemplateRef<HTMLElement>('tabsNav')
-// Runs after each render that changes the page or brings the tabs in (they wait for the signed-in user).
+// Runs after each render that changes the page or the tabs.
 watchPostEffect(() => {
-  void page.value
+  void route.path
+  void tabs.value.length
   tabsNav.value?.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 })
 // The workbench greets by name instead of repeating its title.
@@ -48,31 +50,21 @@ watch(
       <SideNav />
     </el-drawer>
     <div class="body">
-      <header class="topbar" :class="{ bare: !tabs.length && !docs.length && !title, 'with-tabs': tabs.length || docs.length, joined }">
+      <header class="topbar" :class="{ bare: !tabs.length && !title, 'with-tabs': tabs.length, joined: onTab }">
         <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
-        <!-- a module with its own page tabs names itself only for screen readers -->
+        <!-- with tabs, the page name is for screen readers only: its tab (or the card header) shows it -->
         <h1 v-if="title" :class="tabs.length ? 'sr-only' : 'title'">{{ title }}</h1>
-        <template v-if="tabs.length || docs.length">
-          <nav ref="tabsNav" class="tabs" :aria-label="tabs.length ? `${current!.label}和打开的记录` : '打开的记录'">
-            <RouterLink
-              v-for="p in tabs"
-              :key="p.name"
-              :to="{ name: p.name }"
-              class="tab"
-              :class="{ on: p.name === page && !onDoc }"
-              :aria-current="p.name === page && !onDoc ? 'page' : undefined"
-            >{{ p.label }}</RouterLink>
-            <span v-if="tabs.length && docs.length" class="tabs-sep" aria-hidden="true" />
-            <span v-for="t in docs" :key="t.path" class="tab doc" :class="{ on: t.path === route.path }">
-              <RouterLink :to="t.full" class="doc-link" :title="t.title" :aria-current="t.path === route.path ? 'page' : undefined">{{
-                t.title
-              }}</RouterLink>
-              <button type="button" class="doc-close" :aria-label="`关闭 ${t.title}`" @click="close(t)">
-                <el-icon><Close /></el-icon>
-              </button>
-            </span>
-          </nav>
-        </template>
+        <nav v-if="tabs.length" ref="tabsNav" class="tabs" aria-label="打开的页面">
+          <span v-for="t in tabs" :key="t.path" class="tab" :class="{ on: t.path === route.path }">
+            <span class="dot" :style="{ background: dot(t) }" aria-hidden="true" />
+            <RouterLink :to="t.full" class="tab-link" :title="t.title" :aria-current="t.path === route.path ? 'page' : undefined">{{
+              t.title
+            }}</RouterLink>
+            <button type="button" class="tab-close" :aria-label="`关闭 ${t.title}`" @click="close(t)">
+              <el-icon><Close /></el-icon>
+            </button>
+          </span>
+        </nav>
       </header>
       <main class="main">
         <RoutePage />
@@ -140,14 +132,12 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Webmail / browser-style tabs (DESIGN.md): grey tabs with rounded top corners; the current one is white and joins
-   the white card under it (the strip starts past the card's rounded corner). A module's pages first, then the
-   records opened in it. */
+/* Browser / webmail-style tabs (DESIGN.md): grey with rounded top corners; the one on screen is white and joins the
+   white card under it (the strip starts past the card's rounded corner). */
 .topbar.with-tabs {
   align-items: flex-end;
 }
-.topbar.with-tabs .menu-btn,
-.topbar.with-tabs .title {
+.topbar.with-tabs .menu-btn {
   align-self: center;
 }
 .tabs {
@@ -170,55 +160,52 @@ watch(
 .topbar.joined + .main {
   padding-top: 0;
 }
-/* only opened records, none of them current (the workbench, 通知, 成员): leave room under the strip */
+/* tabs, none of them this page (the workbench, a -new form): leave room under the strip */
 .topbar.with-tabs:not(.joined) + .main {
   padding-top: 20px;
 }
+/* A tab: module colour dot, title (cut off past 220px, full text on hover), close button. */
 .tab {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
   height: 36px;
-  padding: 0 18px;
+  padding: 0 8px 0 14px;
   border-radius: 10px 10px 0 0;
   background: var(--lab-bg-hover);
   color: var(--lab-text-2);
-  line-height: 36px;
   white-space: nowrap;
 }
 .tab:hover {
   background: #dadbe0;
   color: var(--lab-text);
-  text-decoration: none;
 }
 .tab.on {
   background: var(--lab-bg-card);
   color: var(--lab-text);
   font-weight: 600;
 }
-.tab:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -4px;
-}
-.tabs-sep {
+.dot {
   flex: none;
-  width: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
-/* An opened record: its title (cut off past 220px, full text on hover) and a close button. */
-.tab.doc {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 220px;
-  padding-right: 8px;
-}
-.doc-link {
+.tab-link {
   overflow: hidden;
   color: inherit;
   text-overflow: ellipsis;
 }
-.doc-link:hover {
+.tab-link:hover {
   text-decoration: none;
 }
-.doc-close {
+.tab-link:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.tab-close {
   flex: none;
   display: grid;
   place-items: center;
@@ -233,12 +220,12 @@ watch(
   opacity: 0.7;
   cursor: pointer;
 }
-.doc-close:hover,
-.doc-close:focus-visible {
+.tab-close:hover,
+.tab-close:focus-visible {
   background: rgba(0, 0, 0, 0.08);
   opacity: 1;
 }
-.doc-close:focus-visible {
+.tab-close:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 1px;
 }

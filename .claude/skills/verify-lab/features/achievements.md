@@ -12,7 +12,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧 menuitem "知识成果" → 顶栏 link "成果归档"。列表页：textbox "搜索标题、作者、出处"，combobox "类型"、"年份"、"状态"、"成员"，button "导出"（下拉里是 "导出 Excel"、"导出（附全文）"，button "登记成果"；每行标题是按钮，"全文"列是 link "PDF"。
+- 左侧展开 "知识成果" → menuitem "成果归档"。列表页：textbox "搜索标题、作者、出处"，combobox "类型"、"年份"、"状态"、"成员"，button "导出"（下拉里是 "导出 Excel"、"导出（附全文）"，button "登记成果"；每行标题是按钮，"全文"列是 link "PDF"。
 - 登记对话框：combobox "*类型"、"*状态"、"*日期"，textbox "*标题"、"*作者（按署名顺序，含外单位）"，combobox "本组成员"，textbox "期刊 / 会议"、"DOI / 链接"、"备注"；保存后出现"全文（PDF）"和 button "上传全文"。
 
 ## Driving it with chrome-devtools MCP

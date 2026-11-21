@@ -18,7 +18,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧 menuitem "设备耗材" → 顶栏 link "耗材库存"。
+- 左侧展开 "设备耗材" → menuitem "耗材库存"。
 - 工具栏：textbox "搜索名称、规格、位置"、checkbox "只看低于安全库存"、button "新建耗材"（仅管理员）。
 - 每行最后一列：管理员是 button "领用"、"退回"、"更多"（下拉里是 menuitem "入库""盘点""批次管理""编辑""流水"）；学生和导师是 button "领用"、"退回"、"流水"。
 
