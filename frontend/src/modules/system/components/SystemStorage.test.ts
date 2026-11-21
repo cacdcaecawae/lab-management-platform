@@ -17,6 +17,8 @@ const run = (ok: boolean, detail = '', snapshot = '') => ({ finished_at: '2026-1
 const none: StorageInfo = {
   primary: 'local',
   nas_ready: null,
+  disk_free: 50 * 1024 ** 3,
+  disk_low: false,
   backup: { last_ok: null, last_failure: null, overdue: true, failing: false },
   drill: { last: null, overdue: false },
   attention: true,
@@ -65,6 +67,13 @@ describe('SystemStorage', () => {
     })
     expect(wrapper.findAll('b').map((b) => b.text())).toEqual(['逾期', '失败', '逾期'])
     expect(wrapper.get('.failing').text()).toContain('写入备份仓库失败')
+  })
+
+  it('shows the free space and when it is too low for uploads', async () => {
+    expect((await show({})).text()).toContain('未启用50.0 GB') // the row after the NAS check
+    const wrapper = await show({ disk_free: 8 * 1024 ** 3, disk_low: true })
+    expect(wrapper.text()).toContain('8.0 GB')
+    expect(wrapper.findAll('b').map((b) => b.text())).toEqual(['不足，已暂停上传'])
   })
 
   it('refreshes and shows loss of NAS access', async () => {

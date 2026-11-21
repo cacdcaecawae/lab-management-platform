@@ -132,7 +132,7 @@ class ServerScripts(unittest.TestCase):
         (self.root / 'scripts/backup.sh').write_text(
             'echo \'["backup.sh"]\' >>"$TEST_ROOT/calls"\n'
             '[ "$MODE" != backup-fails ] || exit 1\n'
-            'case "$MODE" in INT|TERM) kill -"$MODE" "$PPID";; esac\n'
+            'case "$MODE" in INT|TERM|HUP) kill -"$MODE" "$PPID";; esac\n'
             '[ "$MODE" != missing-snapshot ] || exit 0\n'
             "echo 'snapshot abcdef12 saved'\n"
             '[ "$MODE" != incomplete-backup ] || exit 3\n')
@@ -255,7 +255,8 @@ class ServerScripts(unittest.TestCase):
         self.assertEqual((self.root / 'backend').read_text(), 'v0.1.0')
 
     def test_interruption_during_backup_resumes_old_site(self):
-        for signal, code in [('INT', 130), ('TERM', 143)]:
+        # HUP: the SSH session running the update dropped.
+        for signal, code in [('INT', 130), ('TERM', 143), ('HUP', 129)]:
             with self.subTest(signal=signal):
                 r = self.run_script('update.sh', 'v0.2.0', mode=signal)
                 self.assertEqual(r.returncode, code, r.stderr)
@@ -529,6 +530,10 @@ class ServerScripts(unittest.TestCase):
         # update.sh backs up with backend stopped, so this must be a one-off container, not exec.
         record = next(c for c in self.calls() if 'record_ops_run' in c)
         self.assertEqual(record[:8], ['compose', '--env-file', '.env', 'run', '--rm', '--no-deps', '-T', 'backend'])
+        # The update's before-<version> snapshot survives that evening's daily run: everything from 14 days is kept.
+        forget = next(c for c in self.calls() if 'forget' in c)
+        self.assertEqual(forget[forget.index('forget'):], [
+            'forget', '--host', 'lab', '--keep-within', '14d', '--keep-daily', '30', '--keep-monthly', '12', '--prune'])
 
     def test_backup_failure_and_interruption_are_recorded_with_the_step(self):
         shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')

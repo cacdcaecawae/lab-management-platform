@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.disk import free_bytes
 from core.nas_storage import nas_ready
 from core.permissions import IsSuperuser
 
@@ -44,10 +45,14 @@ class StorageView(APIView):
         nas = bool(settings.LAB_NAS_STORAGE_ID)
         ready = nas_ready(settings.MEDIA_ROOT) if nas else None
         backup, drill, attention = ops_status(timezone.now())
+        free = free_bytes()
+        disk_low = free is not None and free < settings.MIN_FREE_DISK  # uploads are refused (core.disk)
         return Response({
             "primary": "nas" if nas else "local",
             "nas_ready": ready,
+            "disk_free": free,
+            "disk_low": disk_low,
             "backup": backup,
             "drill": drill,
-            "attention": attention or ready is False,
+            "attention": attention or ready is False or disk_low,
         })

@@ -8,6 +8,9 @@ main() {
   local file
   source "$(dirname "$0")/server-env.sh"
   git diff --quiet HEAD || die "仓库里有未提交的改动（git status 查看），处理后再更新"
+  if [[ -n ${SSH_CONNECTION:-} && -z ${TMUX:-}${STY:-} ]]; then
+    echo "提示：建议在 tmux 或 screen 里运行；SSH 断线时，新版本启动之后的步骤会被中断，网站可能停着" >&2
+  fi
   current=$(envget APP_VERSION)
   [[ "$current" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die "$ENV_FILE 里需要正在运行的正式版本（例如 APP_VERSION=v0.1.0）"
   export APP_VERSION="$current"
@@ -50,6 +53,7 @@ main() {
   trap 'resume_before_start' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  trap 'exit 129' HUP  # an SSH session dropped before the new release starts: resume the old site
 
   # Stopped from here on: a change saved after the backup would be lost if the rollback restores it.
   echo "== 停止网站，更新前备份"
@@ -66,7 +70,7 @@ main() {
   export APP_VERSION="$target"
   # Once the target can run migrations, recovery must account for the database.
   echo "== 启动 $target 并检查网站"
-  trap - EXIT INT TERM
+  trap - EXIT INT TERM HUP
   if start_version; then
     echo "已更新到 $target。更新前的备份是快照 $snap"
     exit 0

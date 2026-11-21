@@ -65,3 +65,15 @@ def test_initial_password_must_be_changed_before_using_api(group, api):
     user.refresh_from_db()
     assert not user.must_change_password and user.check_password("Str0ng-and-new")
     assert client.get("/api/auth/me/").status_code == 200  # session survives the password change
+
+
+def test_admin_waits_for_the_initial_password_to_be_changed(ops):
+    ops.must_change_password = True  # e.g. the one-time password printed by scripts/install.sh
+    ops.save()
+    client = APIClient()
+    client.force_login(ops)
+    r = client.get("/admin/")
+    assert r.status_code == 302 and r["Location"].startswith("/admin/login/")
+    ops.must_change_password = False
+    ops.save()
+    assert client.get("/admin/").status_code == 200

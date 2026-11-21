@@ -92,24 +92,27 @@ class AchievementViewSet(viewsets.ModelViewSet):
                 raise NotFound("还没有上传全文")
             return download(achievement.fulltext, achievement.fulltext_name)
         self.check_writer(achievement)
-        # The name, not the FieldFile: saving a new file renames that same object.
-        storage, old_name = achievement.fulltext.storage, achievement.fulltext.name
-        if request.method == "POST":
-            uploaded, name = checked_upload(request, FULLTEXT_MAX_SIZE, FULLTEXT_TYPES)
-            achievement.fulltext.save(name, uploaded, save=False)
-            achievement.fulltext_name = name
-        else:
-            achievement.fulltext, achievement.fulltext_name = "", ""
-        new_name = achievement.fulltext.name
-        try:
-            with transaction.atomic():
-                achievement.save(update_fields=["fulltext", "fulltext_name", "updated_at"])
-                if old_name:  # the replaced or removed file
-                    delete_name_on_commit(storage, old_name)
-        except Exception:
-            if new_name:
-                storage.delete(new_name)
-            raise
+        with transaction.atomic():
+            # Locked: a second upload at the same time waits and then replaces this file, instead of orphaning it.
+            achievement = Achievement.objects.select_for_update().get(pk=achievement.pk)
+            # The name, not the FieldFile: saving a new file renames that same object.
+            storage, old_name = achievement.fulltext.storage, achievement.fulltext.name
+            if request.method == "POST":
+                uploaded, name = checked_upload(request, FULLTEXT_MAX_SIZE, FULLTEXT_TYPES)
+                achievement.fulltext.save(name, uploaded, save=False)
+                achievement.fulltext_name = name
+            else:
+                achievement.fulltext, achievement.fulltext_name = "", ""
+            new_name = achievement.fulltext.name
+            try:
+                with transaction.atomic():
+                    achievement.save(update_fields=["fulltext", "fulltext_name", "updated_at"])
+                    if old_name:  # the replaced or removed file
+                        delete_name_on_commit(storage, old_name)
+            except Exception:
+                if new_name:
+                    storage.delete(new_name)
+                raise
         return Response(self.get_serializer(achievement).data)
 
     @action(detail=True)
