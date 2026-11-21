@@ -10,10 +10,16 @@ import ProfileDialog from './ProfileDialog.vue'
 import { clearTabs } from './nav'
 
 // The sidebar (DESIGN.md): who is signed in, search, then the menu. Used by the desktop sidebar and the phone drawer.
+const emit = defineEmits<{ close: [] }>()
 const auth = useAuthStore()
 const router = useRouter()
 const name = computed(() => auth.user?.name || auth.user?.username || '')
 const profile = ref(false)
+
+function openProfile() {
+  profile.value = true
+  emit('close')
+}
 
 async function logout() {
   await auth.logout()
@@ -37,7 +43,7 @@ async function logout() {
       <template #dropdown>
         <el-dropdown-menu>
           <li class="me-card" role="presentation"><AccountCard :size="56" /></li>
-          <el-dropdown-item divided @click="profile = true">个人信息</el-dropdown-item>
+          <el-dropdown-item divided @click="openProfile">个人信息</el-dropdown-item>
           <el-dropdown-item @click="router.push({ name: 'password' })">修改密码</el-dropdown-item>
           <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
         </el-dropdown-menu>
@@ -124,6 +130,7 @@ async function logout() {
 }
 .me-popper .el-dropdown-menu {
   width: 296px;
+  max-width: calc(100vw - 20px);
   padding: 8px;
   border-radius: var(--lab-radius-lg);
 }

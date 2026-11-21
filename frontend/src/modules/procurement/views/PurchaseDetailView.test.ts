@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { Me, PurchaseDetail } from '@/api/types'
 import PurchaseDetailView from './PurchaseDetailView.vue'
@@ -53,8 +53,9 @@ async function mountAsManager(reviewResponse: { status: number; body: unknown },
     ],
   })
   await router.push('/p/5')
+  await router.isReady()
   useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
-  const wrapper = mount(PurchaseDetailView, { global: { plugins: [ElementPlus, pinia, router] }, attachTo: document.body })
+  const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] }, attachTo: document.body })
   await flushPromises()
   const click = async (text: string) => {
     await wrapper.findAll('button').find((b) => b.text() === text)!.trigger('click')

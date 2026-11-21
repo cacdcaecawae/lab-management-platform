@@ -13,7 +13,7 @@ it('debounces and drops earlier results as soon as the query changes', async () 
   let old!: (value: SearchGroup[]) => void
   lookup.mockImplementationOnce(() => new Promise(resolve => { old = resolve }))
   lookup.mockResolvedValueOnce([{ module: 'new', label: '新结果', items: [{ id: 7, title: '新试件', subtitle: '', link: '/specimens/7' }] }])
-  const wrapper = mount(SiteSearch, { global: { plugins: [ElementPlus], stubs: { RouterLink: true } } })
+  const wrapper = mount(SiteSearch, { global: { plugins: [ElementPlus], stubs: { RouterLink: true, teleport: true } } })
   try {
     await wrapper.get('button').trigger('click')
     await wrapper.get('input').setValue('旧查询')
@@ -31,5 +31,18 @@ it('debounces and drops earlier results as soon as the query changes', async () 
   } finally {
     wrapper.unmount()
     vi.useRealTimers()
+  }
+})
+
+it('teleports the search overlay to body and closes on Escape', async () => {
+  const wrapper = mount(SiteSearch, { global: { plugins: [ElementPlus], stubs: { RouterLink: true } }, attachTo: document.body })
+  try {
+    await wrapper.get('button').trigger('click')
+    expect(document.body.querySelector(':scope > .search-mask')).not.toBeNull()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(document.body.querySelector(':scope > .search-mask')).toBeNull()
+  } finally {
+    wrapper.unmount()
   }
 })

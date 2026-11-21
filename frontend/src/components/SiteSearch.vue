@@ -58,6 +58,11 @@ watch(query, () => {
 watch(() => route.fullPath, close)
 
 function shortcut(event: KeyboardEvent) {
+  if (open.value && event.key === 'Escape') {
+    event.preventDefault()
+    close()
+    return
+  }
   if (event.defaultPrevented || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing
     || (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable]'))) return
   // The sidebar and the phone drawer each have a search box: only the one on screen answers.
@@ -79,26 +84,28 @@ onBeforeUnmount(() => {
       <span>搜索</span>
       <kbd>/</kbd>
     </button>
-    <!-- One centred panel over a dimmed page: clicking outside or Esc closes it, nothing else floats beside it. -->
-    <div v-if="open" class="search-mask" @click.self="close">
-      <section class="search-panel" role="dialog" aria-label="全站搜索">
-        <form role="search" class="search-box" @submit.prevent="search">
-          <el-icon><Search /></el-icon>
-          <input ref="input" v-model="query" type="search" aria-label="搜索关键词" placeholder="输入关键词，至少 2 个字" />
-        </form>
-        <div v-if="status || groups.length" class="search-results">
-          <p v-if="status" role="status" class="search-status">{{ status }}</p>
-          <div v-for="group in groups" :key="group.module">
-            <h3>{{ group.label }}</h3>
-            <ul>
-              <li v-for="item in group.items" :key="item.id">
-                <RouterLink :to="item.link" @click="close">{{ item.title }} <small v-if="item.subtitle">{{ item.subtitle }}</small></RouterLink>
-              </li>
-            </ul>
+    <!-- Teleported to body so the sidebar's sticky stacking context (z-index: 20) never traps the mask under page overlays. -->
+    <Teleport to="body">
+      <div v-if="open" class="search-mask" @click.self="close" @keydown.esc.stop="close">
+        <section class="search-panel" role="dialog" aria-label="全站搜索">
+          <form role="search" class="search-box" @submit.prevent="search">
+            <el-icon><Search /></el-icon>
+            <input ref="input" v-model="query" type="search" aria-label="搜索关键词" placeholder="输入关键词，至少 2 个字" />
+          </form>
+          <div v-if="status || groups.length" class="search-results">
+            <p v-if="status" role="status" class="search-status">{{ status }}</p>
+            <div v-for="group in groups" :key="group.module">
+              <h3>{{ group.label }}</h3>
+              <ul>
+                <li v-for="item in group.items" :key="item.id">
+                  <RouterLink :to="item.link" @click="close">{{ item.title }} <small v-if="item.subtitle">{{ item.subtitle }}</small></RouterLink>
+                </li>
+              </ul>
+            </div>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>
 

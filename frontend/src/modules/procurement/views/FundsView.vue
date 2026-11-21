@@ -69,7 +69,7 @@ async function save() {
         </template>
       </el-table-column>
       <el-table-column prop="notes" label="备注" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" min-width="70">
+      <el-table-column label="操作" min-width="70" fixed="right">
         <template #default="{ row }"><el-button link type="primary" @click="openDialog(row as Fund)">编辑</el-button></template>
       </el-table-column>
     </el-table>

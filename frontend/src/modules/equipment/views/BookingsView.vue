@@ -221,10 +221,11 @@ async function submitReport() {
         </el-button-group>
         <el-button @click="api()?.today()">今天</el-button>
         <span class="cal-title">{{ title }}</span>
+        <!-- stays in the card on a phone (the top bar only fits 新建预约); right-aligned on desktop beside it -->
+        <el-radio-group class="view-switch" :model-value="view" aria-label="视图" @change="(v) => api()?.changeView(String(v))">
+          <el-radio-button v-for="(label, key) in VIEWS" :key="key" :value="key">{{ label }}</el-radio-button>
+        </el-radio-group>
         <template #actions>
-          <el-radio-group :model-value="view" aria-label="视图" @change="(v) => api()?.changeView(String(v))">
-            <el-radio-button v-for="(label, key) in VIEWS" :key="key" :value="key">{{ label }}</el-radio-button>
-          </el-radio-group>
           <el-button type="primary" @click="openCreate()">新建预约</el-button>
         </template>
       </PageToolbar>
@@ -383,6 +384,14 @@ async function submitReport() {
   margin-left: 8px;
   font-size: 16px;
   font-weight: 600;
+}
+.view-switch {
+  margin-left: auto;
+}
+@media (max-width: 768px) {
+  .view-switch {
+    margin-left: 0;
+  }
 }
 .status-alert {
   margin-bottom: 12px;
