@@ -41,7 +41,8 @@ async function save() {
 </script>
 
 <template>
-  <FormDialog v-model="open" title="个人信息" size="sm" :loading="saving" @submit="save">
+  <!-- under <body>: on a phone it is opened from the drawer, which closes and would hide it with itself -->
+  <FormDialog v-model="open" title="个人信息" size="sm" :loading="saving" append-to-body @submit="save">
     <template #before>
       <AccountCard class="head" :size="64" editable />
     </template>

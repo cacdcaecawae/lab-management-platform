@@ -71,7 +71,8 @@ def body_has(session, phrase):
 
 
 def button(session, text, within=""):
-    selector = f"//button[normalize-space(.)='{text}']"
+    # by its words, or by aria-label for icon buttons (修改历史, 打印标签 …: IconButton)
+    selector = f"//button[normalize-space(.)='{text}' or @aria-label='{text}']"
     if within:
         selector = within + selector
     return WebDriverWait(session, 12).until(ec.element_to_be_clickable((By.XPATH, selector)))

@@ -32,13 +32,18 @@ function setup() {
   const pinia = createPinia()
   const auth = useAuthStore(pinia)
   auth.user = { ...me }
-  const wrapper = mount(ProfileDialog, { props: { modelValue: true }, global: { plugins: [ElementPlus, pinia] }, attachTo: document.body })
+  // mounted where SideNav lives on a phone: inside the menu drawer, which closes as the dialog opens
+  const drawer = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'nav-drawer' }))
+  const wrapper = mount(ProfileDialog, { props: { modelValue: true }, global: { plugins: [ElementPlus, pinia] }, attachTo: drawer })
   return { calls, auth, wrapper }
 }
 
 it('shows who you are and saves only your own contact details', async () => {
   const { calls, auth, wrapper } = setup()
   await flushPromises()
+  // the dialog sits under <body>, not in the drawer that hides itself
+  expect(document.querySelector('.nav-drawer .el-dialog')).toBeNull()
+  expect(document.querySelector('.el-dialog')).not.toBeNull()
   const text = document.body.textContent!
   for (const shown of ['学生甲', '2026017', '学生 · 超声组']) expect(text).toContain(shown)
   expect(text).not.toContain('学号 / 工号') // the login name is a tag, without a label
