@@ -139,6 +139,23 @@ a:focus-visible {
   border-radius: 999px;
   font-weight: 500;
 }
+/* Tool actions (IconButton): a grey icon on nothing, a grey circle under it on hover. */
+.el-button.icon-only {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  color: var(--lab-text-2);
+  font-size: 16px;
+}
+.el-button.icon-only:not(.is-disabled):hover,
+.el-button.icon-only:not(.is-disabled):focus-visible {
+  background: var(--lab-bg-hover);
+  color: var(--lab-text);
+}
+.el-button.icon-only.is-disabled {
+  opacity: 0.4; /* e.g. 打印标签 before any row is ticked */
+}
 /* Segmented switch (月 / 周 / 日, 本月 / 本年 …): a grey track, the chosen one a white pill on it. */
 .el-radio-group:has(> .el-radio-button) {
   padding: 2px;

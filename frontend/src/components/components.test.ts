@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
+import { Printer } from '@element-plus/icons-vue'
 import StatusTag from './StatusTag.vue'
+import IconButton from './IconButton.vue'
 import PinnedDatasets from './PinnedDatasets.vue'
 
 const global = { plugins: [ElementPlus] }
@@ -14,6 +16,21 @@ describe('StatusTag', () => {
     ['reviewed', '已阅'],
   ])('shows %s as %s', (status, label) => {
     expect(mount(StatusTag, { props: { status }, global }).text()).toBe(label)
+  })
+})
+
+describe('IconButton', () => {
+  it('is named by its label and passes clicks, disabled and links to the button', async () => {
+    const onClick = vi.fn()
+    const button = mount(IconButton, { props: { icon: Printer, label: '打印标签' }, attrs: { onClick }, global }).find('button')
+    expect(button.attributes('aria-label')).toBe('打印标签')
+    expect(button.text()).toBe('') // no words on the button itself
+    await button.trigger('click')
+    expect(onClick).toHaveBeenCalledOnce()
+    const off = mount(IconButton, { props: { icon: Printer, label: '打印标签' }, attrs: { disabled: true }, global })
+    expect(off.find('button').attributes('disabled')).toBeDefined()
+    const link = mount(IconButton, { props: { icon: Printer, label: '导出 Excel' }, attrs: { tag: 'a', href: '/x.xlsx' }, global })
+    expect(link.find('a').attributes()).toMatchObject({ href: '/x.xlsx', 'aria-label': '导出 Excel' })
   })
 })
 
@@ -57,6 +74,12 @@ describe('pages use the shared skeleton (DESIGN.md)', () => {
 
   it('new things are 新建, not 新增', () => {
     expect(offenders(/[>'"`]新增/)).toEqual([])
+  })
+
+  it('tool actions are IconButtons, not worded pills', () => {
+    // the page's main button keeps its words (打印标签 on the labels page)
+    const tool = /<el-button(?![^>]*type="primary")[^>]*>\s*(修改历史|打印标签|复制链接|换一个链接|导出[^<]*|[^<>]*统计|重新检查|全部标为已读)\s*<\/el-button>/
+    expect(offenders(tool)).toEqual([])
   })
 
   it('every table says what is missing when empty (暂无 X), not the default 暂无数据', () => {

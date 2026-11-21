@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload } from '@element-plus/icons-vue'
+import { Clock, Upload } from '@element-plus/icons-vue'
 import { docsApi } from '../api'
 import { equipmentApi } from '@/modules/equipment/api'
 import type { DocCategory, DocDetail, DocWrite } from '@/api/types'
@@ -14,6 +14,7 @@ import { showActionError, showError, useFieldErrors } from '@/utils/errors'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -240,7 +241,7 @@ watch(() => route.query.doc, (doc, previous) => {
     <template #before>
       <div v-if="current" class="meta-line">
         <span>{{ current.author.name }} 创建于 {{ formatTime(current.created_at) }}</span>
-        <el-button link @click="historyOpen = true">修改历史</el-button>
+        <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
       </div>
     </template>
     <el-form-item label="标题" :error="errors.fe('title')" required><el-input v-model="form.title" /></el-form-item>

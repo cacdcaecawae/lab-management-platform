@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Upload } from '@element-plus/icons-vue'
+import { Clock, Download, Histogram, Upload } from '@element-plus/icons-vue'
 import { achievementsApi } from '@/modules/achievements/api'
 import { membersApi } from '@/modules/members/api'
 import type { Achievement, AchievementStatus, AchievementType, AchievementWrite } from '@/api/types'
@@ -23,6 +23,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AchievementStatsPanel from './AchievementStatsPanel.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 // the export answers with an attachment, so the page stays where it is
@@ -161,9 +162,9 @@ async function removeFulltext() {
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <template #actions>
-        <el-button @click="statsOpen = true">成果统计</el-button>
+        <IconButton :icon="Histogram" label="成果统计" @click="statsOpen = true" />
         <el-dropdown trigger="click" @command="(kind: string) => download(achievementsApi.exportUrl(exportQuery, kind === 'files'))">
-          <el-button>导出<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <el-button class="icon-only" :icon="Download" text circle aria-label="导出" />
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="excel">导出 Excel</el-dropdown-item>
@@ -207,7 +208,7 @@ async function removeFulltext() {
     <template #before>
       <div v-if="current" class="meta-line">
         <span>{{ current.created_by.name }} 登记于 {{ formatTime(current.created_at) }}</span>
-        <el-button link @click="historyOpen = true">修改历史</el-button>
+        <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
       </div>
     </template>
     <div class="form-grid">

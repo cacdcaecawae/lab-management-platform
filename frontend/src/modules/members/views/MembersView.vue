@@ -12,6 +12,8 @@ import StorageUsage from '@/components/StorageUsage.vue'
 import MemberSignups from '@/modules/members/components/MemberSignups.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import { PieChart } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const storageOpen = ref(false)
@@ -105,7 +107,7 @@ async function doReset() {
         <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
       <template #actions>
-        <el-button v-if="auth.isSupervisor" @click="storageOpen = true">本组存储用量</el-button>
+        <IconButton v-if="auth.isSupervisor" :icon="PieChart" label="本组存储用量" @click="storageOpen = true" />
         <el-button v-if="isManager" type="primary" @click="openForm(null)">新建成员</el-button>
       </template>
     </PageToolbar>

@@ -23,6 +23,8 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import { Download, Setting } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const tab = ref<'records' | 'stats'>('records')
@@ -303,8 +305,8 @@ async function editFinanceEmail() {
             <el-radio-button v-for="(label, k) in BY_LABELS" :key="k" :value="k">按{{ label }}</el-radio-button>
           </el-radio-group>
           <template #actions>
-            <el-button tag="a" :href="reimbursementsApi.exportUrl(statsQuery)">导出 Excel</el-button>
-            <el-button v-if="auth.isManager" @click="editFinanceEmail">财务邮箱</el-button>
+            <IconButton :icon="Download" label="导出 Excel" tag="a" :href="reimbursementsApi.exportUrl(statsQuery)" />
+            <IconButton v-if="auth.isManager" :icon="Setting" label="财务邮箱" @click="editFinanceEmail" />
             <el-button v-if="auth.isManager" @click="remindFinance">发送财务提醒</el-button>
           </template>
         </PageToolbar>

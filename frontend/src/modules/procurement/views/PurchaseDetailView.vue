@@ -3,7 +3,7 @@ import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import { Clock, Delete, Plus } from '@element-plus/icons-vue'
 import { ApiError } from '@/api/client'
 import { attachmentsApi, fundsApi, purchasesApi } from '@/modules/procurement/api'
 import type { Approval, FundBrief, PurchaseDetail, PurchaseWrite } from '@/api/types'
@@ -17,6 +17,7 @@ import AttachmentList from '@/components/AttachmentList.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { closeTab } from '@/layouts/nav'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -246,7 +247,7 @@ if (route.params.id) load(Number(route.params.id))
             <StatusTag :status="record.status" />
             <el-tag v-if="record.returned" class="status-tag" type="danger" disable-transitions>被退回</el-tag>
           </template>
-          <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
+          <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <template v-if="canReview" />
           <template v-else-if="editable && !correcting">
             <el-button v-if="record && !record.submitted_at" type="danger" plain :disabled="busy" @click="remove">删除草稿</el-button>

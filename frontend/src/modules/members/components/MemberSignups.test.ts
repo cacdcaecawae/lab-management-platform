@@ -33,7 +33,7 @@ async function show(code: string, pending = [a, b]) {
   return wrapper
 }
 const button = (wrapper: Awaited<ReturnType<typeof show>>, text: string) =>
-  wrapper.findAll('button').find((x) => x.text() === text)!
+  wrapper.findAll('button').find((x) => x.text() === text || x.attributes('aria-label') === text)!
 
 describe('MemberSignups', () => {
   beforeEach(() => {

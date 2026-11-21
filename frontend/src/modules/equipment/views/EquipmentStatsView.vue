@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usageStatsApi, type UsageStatsQuery, type UsageStatsRow } from '../api'
+import { Download } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' })
   .formatToParts(new Date())
@@ -56,7 +58,7 @@ onMounted(refresh)
       </el-form-item>
       <el-form-item>
         <el-button native-type="submit" type="primary" :loading="loading">查询</el-button>
-        <el-button v-if="exportUrl" tag="a" :href="exportUrl">导出当前结果 Excel</el-button>
+        <IconButton v-if="exportUrl" :icon="Download" label="导出当前结果 Excel" tag="a" :href="exportUrl" />
       </el-form-item>
     </el-form>
     <p v-if="applied">{{ applied.from }} 至 {{ applied.to }}（不含），按{{ groups[applied.by] }}统计</p>

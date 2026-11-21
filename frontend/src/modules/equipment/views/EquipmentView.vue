@@ -9,6 +9,8 @@ import { EQUIPMENT_STATUSES, STATUS } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
+import { Histogram, Printer } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -42,8 +44,8 @@ const onCreated = (e: Equipment) => router.push({ name: 'equipment-detail', para
       </el-select>
       <el-checkbox v-model="filters.calibration_within" :true-value="30" false-value="">校准到期（含已过期）</el-checkbox>
       <template #actions>
-        <el-button v-if="auth.isSupervisor" @click="router.push({ name: 'equipment-stats' })">使用统计</el-button>
-        <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
+        <IconButton v-if="auth.isSupervisor" :icon="Histogram" label="使用统计" @click="router.push({ name: 'equipment-stats' })" />
+        <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" :disabled="loading || !selected.length" @click="printSelected" />
         <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建设备</el-button>
       </template>
     </PageToolbar>

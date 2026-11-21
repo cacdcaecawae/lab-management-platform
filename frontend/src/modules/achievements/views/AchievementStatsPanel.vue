@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import { achievementStatsApi, type AchievementStatsQuery, type AchievementStats } from '@/modules/achievements/api'
 import { ACHIEVEMENT_STATUS_LABELS, ACHIEVEMENT_TYPE_LABELS } from '@/utils/format'
 import { showError } from '@/utils/errors'
+import { Download } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const groups = { formal: '正式成果（按类型）', all: '全部状态', ...ACHIEVEMENT_STATUS_LABELS }
 const filters = reactive<AchievementStatsQuery>({ status: 'formal' })
@@ -49,7 +51,7 @@ onMounted(refresh)
       </el-form-item>
       <el-form-item>
         <el-button :loading="loading" native-type="submit" type="primary">查询</el-button>
-        <el-button v-if="exportUrl" tag="a" :href="exportUrl">导出当前统计 Excel</el-button>
+        <IconButton v-if="exportUrl" :icon="Download" label="导出当前统计 Excel" tag="a" :href="exportUrl" />
       </el-form-item>
     </el-form>
     <p>默认仅统计正式成果：已录用及已发表论文、已授权专利、获奖和已登记软著。</p>

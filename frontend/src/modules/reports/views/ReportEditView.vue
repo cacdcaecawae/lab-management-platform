@@ -16,6 +16,8 @@ import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
+import { Clock } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -166,7 +168,7 @@ if (route.params.id) load(Number(route.params.id))
       <template #header>
         <PageHeader :back="{ name: 'reports' }" :title="record ? `${record.owner.name} · ${record.week_start} 这一周` : '写周报'">
           <template v-if="record" #tags><StatusTag :status="record.status" /></template>
-          <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
+          <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <template v-if="editable">
             <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
             <el-button type="primary" :loading="saving" @click="submit">

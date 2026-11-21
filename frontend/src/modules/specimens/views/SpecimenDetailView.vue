@@ -14,6 +14,8 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import { Clock, Edit, Printer } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 // The history uses the model's field names; these differ from the shared labels (code there is 设备编号).
 const HISTORY_LABELS = { code: '编号', kind: '类别', material: '材料', dimensions: '尺寸', defects_public: '缺陷参数对学生公开' }
@@ -103,9 +105,9 @@ load()
       <template #header>
         <PageHeader :back="{ name: 'specimens' }">
           <template #title><span class="code">{{ specimen.code }}</span> {{ specimen.name }}</template>
-          <el-button @click="historyOpen = true">修改历史</el-button>
-          <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'specimen', ids: String(specimen.id) } })">打印标签</el-button>
-          <el-button v-if="auth.isManager" @click="editing = true">编辑试件</el-button>
+          <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
+          <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" @click="router.push({ name: 'labels', query: { type: 'specimen', ids: String(specimen.id) } })" />
+          <IconButton v-if="auth.isManager" :icon="Edit" label="编辑试件" @click="editing = true" />
           <el-button v-if="canReturn" type="primary" @click="giveBack">登记归还</el-button>
           <el-button v-else-if="canBorrow" type="primary" @click="openBorrow">借用</el-button>
         </PageHeader>

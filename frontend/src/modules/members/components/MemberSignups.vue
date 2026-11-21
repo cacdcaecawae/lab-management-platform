@@ -6,6 +6,8 @@ import type { PendingMember } from '@/api/types'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
 import PageToolbar from '@/components/PageToolbar.vue'
+import { CopyDocument, RefreshRight } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 // For managers: the group's registration link and the applications waiting for approval.
 const emit = defineEmits<{ approved: [] }>()
@@ -88,8 +90,8 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
       />
       <template v-if="code">
         <el-input ref="linkInput" :model-value="link" readonly aria-label="注册链接" class="grow" @focus="linkInput?.select()" />
-        <el-button @click="copy">复制链接</el-button>
-        <el-button @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')">换一个链接</el-button>
+        <IconButton :icon="CopyDocument" label="复制链接" @click="copy" />
+        <IconButton :icon="RefreshRight" label="换一个链接" @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')" />
       </template>
     </PageToolbar>
     <template v-if="pending.length">

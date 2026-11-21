@@ -11,6 +11,8 @@ import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { Clock, Edit, Printer } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -45,9 +47,9 @@ load()
       <template #header>
         <PageHeader :back="{ name: 'equipment' }">
           <template #title><span class="code">{{ equipment.code }}</span> {{ equipment.name }}</template>
-          <el-button @click="historyOpen = true">修改历史</el-button>
-          <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })">打印标签</el-button>
-          <el-button v-if="auth.isManager" @click="editing = true">编辑设备</el-button>
+          <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
+          <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })" />
+          <IconButton v-if="auth.isManager" :icon="Edit" label="编辑设备" @click="editing = true" />
           <el-button type="primary" @click="router.push({ name: 'bookings', query: { equipment: equipment.id } })">预约</el-button>
         </PageHeader>
       </template>

@@ -17,6 +17,8 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
+import { Clock } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -182,7 +184,7 @@ if (route.params.id) load(Number(route.params.id))
       <PageHeader :back="{ name: 'runs' }">
         <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建数据处理记录</template></template>
         <template v-if="record" #tags><StatusTag :status="record.status" /></template>
-        <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
+        <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
         <el-button v-if="canReturn" type="warning" @click="returnToDraft">退回</el-button>
         <template v-if="editable">
           <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>

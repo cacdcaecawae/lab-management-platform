@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import { systemApi, type OpsRun, type StorageInfo } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
 import { formatSize, formatTime } from '@/utils/format'
+import { Refresh } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 // Shared with SystemView, whose tab label says when something here needs attention.
 const info = defineModel<StorageInfo | null>('info', { default: null })
@@ -41,7 +43,7 @@ onMounted(check)
     </el-descriptions-item>
   </el-descriptions>
   <p>NAS 挂载和凭据由服务器运维配置。此处只检查读取，不写入文件，也不代表备份已成功。剩余空间不到 10 GB 时，所有上传都会被拒绝。</p>
-  <el-button :loading="checking" @click="check">重新检查</el-button>
+  <IconButton :icon="Refresh" label="重新检查" :loading="checking" @click="check" />
   <el-descriptions v-if="info" title="备份" :column="1" border class="backup">
     <el-descriptions-item label="最近成功的备份">
       <template v-if="info.backup.last_ok">{{ describe(info.backup.last_ok) }}</template>

@@ -7,6 +7,8 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
 import PageToolbar from '@/components/PageToolbar.vue'
+import { Finished } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const router = useRouter()
 const store = useNotificationsStore()
@@ -49,7 +51,7 @@ async function readAll() {
     <PageToolbar>
       <el-checkbox v-model="filters.unread" :true-value="1" false-value="">仅未读</el-checkbox>
       <template #actions>
-        <el-button :loading="busy" @click="readAll">全部标为已读</el-button>
+        <IconButton :icon="Finished" label="全部标为已读" :loading="busy" @click="readAll" />
       </template>
     </PageToolbar>
     <el-empty v-if="!items.length" description="暂无通知" />

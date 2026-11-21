@@ -3,7 +3,7 @@ import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import { Clock, Delete, Plus } from '@element-plus/icons-vue'
 import { meetingsApi } from '@/modules/meetings/api'
 import { membersApi } from '@/modules/members/api'
 import { ApiError } from '@/api/client'
@@ -17,6 +17,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { closeTab } from '@/layouts/nav'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -147,7 +148,7 @@ async function reload() {
             <el-button type="primary" :loading="saving" @click="save">保存</el-button>
           </template>
           <template v-else-if="meeting">
-            <el-button @click="historyOpen = true">修改历史</el-button>
+            <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
             <el-button v-if="auth.isManager" type="primary" @click="startEdit">编辑</el-button>
           </template>
         </PageHeader>

@@ -9,6 +9,8 @@ import { SPECIMEN_KIND_LABELS, SPECIMEN_STATUSES, STATUS } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
+import { Printer } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -50,7 +52,7 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
       <el-checkbox v-model="filters.mine" :true-value="1" false-value="">我借的</el-checkbox>
       <el-checkbox v-model="filters.overdue" :true-value="1" false-value="">逾期未还</el-checkbox>
       <template #actions>
-        <el-button v-if="auth.isManager" :disabled="loading || !selected.length" @click="printSelected">打印标签</el-button>
+        <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" :disabled="loading || !selected.length" @click="printSelected" />
         <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建试件</el-button>
       </template>
     </PageToolbar>

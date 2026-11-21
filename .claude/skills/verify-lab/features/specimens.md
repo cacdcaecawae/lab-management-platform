@@ -30,7 +30,7 @@
 - **新增。** `mgr` 登录，进入"试样与标准件"，点 "新建试件"。textbox "*编号" 填 `CSK-IA-01`，"*名称" 填 `CSK-IA 标准试块`，"材料" 填 `20 钢`，"存放位置" 填 `A305 试块柜`。点 "添加缺陷" 两次，spinbutton "第 1 个缺陷的尺寸" 填 `2`、"埋深" 填 `15`，textbox "第 1 个缺陷的位置" 填 `距左端 50 mm`；第 2 个尺寸 `3`、埋深 `40`。点 "保存"，`wait_for` "借用记录"。截图。
 - **学生看不到。** 新的 isolatedContext 用 `s_a` 登录，直接打开 `/specimens/1`，`wait_for` "未公开"。`evaluate_script` 读 `/api/specimens/1/` 和 `/api/specimens/` 的 `defects`，都是 `null`。截图。
 - **借用。** 点 "借用"，combobox "项目" 用 ArrowDown、Enter 选"导波螺栓松动"，"用途"填一句，combobox "预计归还日期" 用 `fill` 填昨天的日期再按 Enter，点 dialog 里的 "借用"，`wait_for` "已登记借用"。截图。
-- **别人借不了。** 用 `s_b` 登录打开列表，`wait_for` "借用中"；打开详情，`evaluate_script` 读 `main` 里的按钮文字（只有"修改历史"），并带 `X-CSRFToken` POST `borrow/`（409 `on_loan`）和携带当前 `loan_id_seen` 的 `return/`（403）。
+- **别人借不了。** 用 `s_b` 登录打开列表，`wait_for` "借用中"；打开详情，`evaluate_script` 读 `main` 里按钮的名字（文字或 `aria-label`，只有"修改历史"），并带 `X-CSRFToken` POST `borrow/`（409 `on_loan`）和携带当前 `loan_id_seen` 的 `return/`（403）。
 - **归还。** 回到 `s_a`，点 "登记归还"，提示框里 `fill` "完好"，点 "确定"，`wait_for` "已登记归还"。
 - **公开和历史。** `mgr` 刷新详情，点 "编辑试件"，改第 2 个缺陷的位置后保存。再点 "编辑试件"，打开 switch（见 Gotchas），点 "保存"，`wait_for` "学生可见"。点 "修改历史"，`wait_for` "修改了缺陷参数"。截图。`s_a` 刷新详情，缺陷表格出现。
 - **实验记录。** `s_a` 打开 `/experiments/new`，选项目、填名称，combobox "台账试件" 用 ArrowDown、Enter 选中，按 Escape 收起，点 "保存草稿"，`wait_for` "EX-"。截图。

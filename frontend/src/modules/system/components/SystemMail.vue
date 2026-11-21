@@ -7,6 +7,8 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
+import { Clock } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const SECURITY: Record<MailSecurity, { label: string; port: number }> = {
   ssl: { label: 'SSL', port: 465 },
@@ -127,7 +129,7 @@ async function sendTest() {
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     <div class="actions">
       <el-button type="primary" native-type="submit" :loading="saving">保存</el-button>
-      <el-button @click="historyOpen = true">修改历史</el-button>
+      <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
     </div>
   </el-form>
 
