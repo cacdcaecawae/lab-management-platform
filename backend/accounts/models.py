@@ -7,6 +7,7 @@ class ResearchGroup(models.Model):
 
     name = models.CharField("名称", max_length=100, unique=True)
     finance_email = models.EmailField("财务邮箱", blank=True, help_text="每周一收到“已交财务、尚未到账”的报销提醒")
+    signup_code = models.CharField("学生注册码", max_length=16, blank=True)  # empty: the registration link is off
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -32,9 +33,25 @@ class User(AbstractUser):
     phone = models.CharField("联系电话", max_length=30, blank=True)
     research_direction = models.CharField("研究方向", max_length=100, blank=True)
     must_change_password = models.BooleanField("需修改初始密码", default=True)
+    # A student who registered through the group's link; inactive until a manager approves (or deletes) it.
+    pending = models.BooleanField("待审核", default=False)
 
     class Meta:
         verbose_name = verbose_name_plural = "成员"
+        constraints = [
+            # Managers approve or delete pending accounts, so only an inactive student may be one.
+            models.CheckConstraint(
+                condition=models.Q(pending=False) | models.Q(is_active=False, role="student"), name="pending_is_inactive_student",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Switched on (系统管理, /admin/) or given another role by ops: no longer an application for the managers.
+        if self.pending and (self.is_active or self.role != self.Role.STUDENT):
+            self.pending = False
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = {*kwargs["update_fields"], "pending"}
+        super().save(*args, **kwargs)
 
     @property
     def is_supervisor(self):

@@ -128,7 +128,8 @@ async function doReset() {
     <el-table-column prop="email" label="邮箱" min-width="170" />
     <el-table-column label="状态" min-width="160">
       <template #default="{ row }">
-        <el-tag :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
+        <el-tag v-if="row.pending" type="warning" disable-transitions>待审核</el-tag>
+        <el-tag v-else :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
         <el-tag v-if="row.is_active && row.must_change_password" class="next-tag" type="warning" disable-transitions>未改初始密码</el-tag>
       </template>
     </el-table-column>

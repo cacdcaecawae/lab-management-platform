@@ -63,7 +63,7 @@ class NewAccountMixin:
     def create(self, validated_data):
         try:
             with transaction.atomic():
-                return User.objects.create_user(**validated_data, must_change_password=True)
+                return User.objects.create_user(**{"must_change_password": True, **validated_data})
         except IntegrityError:  # a concurrent request took the username after validate_username
             raise Conflict("用户名已存在")
 
@@ -83,6 +83,35 @@ class MemberCreateSerializer(NewAccountMixin, MemberSerializer):
 
     def create(self, validated_data):
         return super().create({**validated_data, "group": self.context["request"].user.group})
+
+
+class RegisterSerializer(NewAccountMixin, serializers.ModelSerializer):
+    """A student registering through the group's link (the view checks the code first). They chose the password."""
+
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    class Meta:
+        model = User
+        fields = ["username", "name", "email", "password"]
+        extra_kwargs = {
+            "name": {"required": True, "allow_blank": False},
+            "username": {"validators": [User.username_validator]},
+        }
+
+    def create(self, validated_data):
+        return super().create({
+            **validated_data, "role": User.Role.STUDENT, "is_active": False, "pending": True, "must_change_password": False,
+        })
+
+
+class PendingMemberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "username", "name", "email", "date_joined"]
+
+
+class IdsSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False, max_length=100)
 
 
 class PasswordResetSerializer(serializers.Serializer):

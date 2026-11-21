@@ -56,6 +56,23 @@ export interface MemberCreate {
 
 export type MemberUpdate = Partial<Pick<MemberDetail, 'name' | 'role' | 'email' | 'phone' | 'research_direction' | 'is_active'>>
 
+// A student who registered through the group's link and waits for a manager.
+export interface PendingMember {
+  id: number
+  username: string
+  name: string
+  email: string
+  date_joined: string
+}
+
+export interface Registration {
+  code: string
+  username: string
+  name: string
+  email: string
+  password: string
+}
+
 // ---- projects ----
 
 export interface ProjectBrief {
@@ -742,6 +759,7 @@ export interface Account {
   research_direction: string
   is_active: boolean
   must_change_password: boolean
+  pending: boolean
   last_login: string | null
 }
 

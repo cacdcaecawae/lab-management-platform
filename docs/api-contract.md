@@ -53,10 +53,11 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/auth/csrf/` | 204，设置 `csrftoken` Cookie |
-| POST | `/api/auth/login/` | `{username, password}` → 200 `Me`；失败 403 `invalid_credentials` |
+| POST | `/api/auth/login/` | `{username, password}` → 200 `Me`；失败 403 `invalid_credentials`；待审核的账号且密码正确时 403 `pending_approval` |
 | POST | `/api/auth/logout/` | 204 |
 | GET | `/api/auth/me/` | 200 `Me`（未改初始密码也可访问） |
 | POST | `/api/auth/password/` | `{old_password, new_password}` → 204；新密码按 Django 密码规则校验 |
+| POST | `/api/auth/register/` | 匿名，要 CSRF。`{code, username, name, email?, password}` → 201。`code` 是课题组注册链接里的码，在事务里按它锁住课题组后、先于其他字段核对（链接关闭或更换与在途申请不会交错），不对 400（`errors.code`），不会提示学号是否已存在；学号已存在 409；密码按 Django 规则校验。建成该组的学生账号，`is_active=false`、`pending=true`、`must_change_password=false`，并给本组管理员发站内通知。每组待审核超过 30 个时 409 `too_many_pending`；同一来源地址每小时 10 次，超过 429 |
 
 `Me = {id, username, name, role, is_supervisor, is_superuser, group: {id, name} | null, email, phone, research_direction, must_change_password}`（`is_superuser`：运维账号）
 
@@ -130,6 +131,13 @@
 | POST | `/api/members/` | 管理员 | `{username, name, role, email?, phone?, research_direction?, password}` → 201 `MemberDetail`；`role` 只能是 `student`；用户名已存在 → 409 `conflict`；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
 | PATCH | `/api/members/{id}/` | 管理员 | 可改 `name, role, email, phone, research_direction, is_active`；不可改 `username`、课题组；管理员不能停用自己 |
 | POST | `/api/members/{id}/reset-password/` | 管理员 | `{password}` → 204，并置 `must_change_password=true` |
+| GET | `/api/members/signup/` | 管理员 | 本组注册链接的码 `{code}`，空串表示关闭 |
+| POST | `/api/members/signup/` | 管理员 | `{open: true}` 生成新码（旧码失效），`{open: false}` 关闭 → `{code}` |
+| GET | `/api/members/pending/` | 管理员 | 本组待审核的申请 `[{id, username, name, email, date_joined}]`，不分页 |
+| POST | `/api/members/approve/` | 管理员 | `{ids}`（1–100 个）→ `{count}`；只处理本组待审核的账号，其他编号忽略；通过后 `is_active=true`、`pending=false` |
+| POST | `/api/members/reject/` | 管理员 | `{ids}` → `{count}`；锁住仍待审核的那几行再删除（从未登录过，没有数据），同时被别人通过的不删；同一学号可以重新申请 |
+
+待审核的申请不是成员：成员列表、详情、修改都看不到它们（404），选人的地方也不接受。
 
 不提供删除（离组用 `is_active=false`）。管理员只能修改、停用、重置**学生**账号（以及修改自己的资料），`role` 只能设为 `student`，不能改自己的角色；导师、管理员账号由运维在"系统管理 → 账号"里管理，运维账号只在 `/admin/` 管理；对它们 PATCH / 重置密码返回 404。
 
@@ -512,7 +520,7 @@
 | PATCH | `/api/system/accounts/{id}/` | `{name?, role?, email?, phone?, research_direction?, is_active?}`；课题组和登录名创建后不能改；运维账号 404 |
 | POST | `/api/system/accounts/{id}/reset-password/` | `{password}` → 204，对方下次登录需改密码 |
 
-`Account = {id, username, name, role, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, last_login}`
+`Account = {id, username, name, role, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
 
 邮件的发送失败（业务通知和测试邮件都算）记为 `last_mail_error` / `last_mail_error_at`，格式同上（原因 + 要检查什么，见 `docs/mail-setup.md`），之后发送成功一次就清空。
 

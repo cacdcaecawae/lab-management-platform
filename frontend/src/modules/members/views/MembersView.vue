@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { ROLE_LABELS } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import StorageUsage from '@/components/StorageUsage.vue'
+import MemberSignups from '@/modules/members/components/MemberSignups.vue'
 
 const auth = useAuthStore()
 const storageOpen = ref(false)
@@ -91,6 +92,7 @@ async function doReset() {
 </script>
 
 <template>
+  <MemberSignups v-if="isManager" @approved="load" />
   <el-card class="card">
     <div class="page-toolbar">
       <el-button v-if="auth.isSupervisor" @click="storageOpen = true">本组存储用量</el-button>
