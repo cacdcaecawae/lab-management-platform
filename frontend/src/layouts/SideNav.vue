@@ -19,7 +19,8 @@ async function logout() {
 
 <template>
   <div class="side-nav">
-    <el-dropdown trigger="click" placement="bottom-start" class="me-menu">
+    <!-- opens beside the sidebar, so it never covers the search box and menu under the button -->
+    <el-dropdown trigger="click" placement="right-start" class="me-menu">
       <button type="button" class="me">
         <span class="avatar" aria-hidden="true">{{ name.slice(0, 1) }}</span>
         <span class="who">

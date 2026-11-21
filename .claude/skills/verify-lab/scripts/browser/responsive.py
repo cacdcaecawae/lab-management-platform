@@ -79,6 +79,19 @@ def responsive(stack, helpers):
         # Close without selecting the already-active route (its watcher would not fire).
         session.find_element(By.TAG_NAME, 'body').send_keys('\ue00c')
         WebDriverWait(session, 12).until(ec.invisibility_of_element_located((By.CSS_SELECTOR, '.nav-drawer')))
+        def measure(label, shot):
+            visible(session, By.CSS_SELECTOR, 'main')
+            WebDriverWait(session, 12).until(lambda s: not any(e.is_displayed() for e in s.find_elements(By.CSS_SELECTOR, '.el-loading-mask')))
+            # Wait for two animation frames after fonts/layout; do not mutate app state.
+            session.execute_async_script('const done=arguments[0]; document.fonts.ready.then(()=>requestAnimationFrame(()=>requestAnimationFrame(done)));')
+            metrics = session.execute_script(METRICS)
+            metrics.update(role=role, menu=label, url=session.current_url)
+            results.append(metrics)
+            screenshot(session, shot)
+            evidence('responsive-metrics', results)  # retain partial evidence on later failure
+            if metrics['clientWidth'] != 390 or metrics['innerHeight'] != 844 or metrics['horizontalOverflow'] > 1:
+                failures.append({'menu': label, 'role': role, 'metrics': metrics})
+
         for i, name in enumerate(names):
             visible(session, By.CSS_SELECTOR, menu_button).click()
             WebDriverWait(session, 12).until(drawer_labels)
@@ -91,17 +104,15 @@ def responsive(stack, helpers):
             # The selected active route can leave the drawer open; dismiss via Escape.
             session.find_element(By.TAG_NAME, 'body').send_keys('\ue00c')
             WebDriverWait(session, 12).until(ec.invisibility_of_element_located((By.CSS_SELECTOR, '.nav-drawer')))
-            visible(session, By.CSS_SELECTOR, 'main')
-            WebDriverWait(session, 12).until(lambda s: not any(e.is_displayed() for e in s.find_elements(By.CSS_SELECTOR, '.el-loading-mask')))
-            # Wait for two animation frames after fonts/layout; do not mutate app state.
-            session.execute_async_script('const done=arguments[0]; document.fonts.ready.then(()=>requestAnimationFrame(()=>requestAnimationFrame(done)));')
-            metrics = session.execute_script(METRICS)
-            metrics.update(role=role, menu=name, url=session.current_url)
-            results.append(metrics)
-            screenshot(session, f'responsive-{role}-{i:02d}')
-            evidence('responsive-metrics', results)  # retain partial evidence on later failure
-            if metrics['clientWidth'] != 390 or metrics['innerHeight'] != 844 or metrics['horizontalOverflow'] > 1:
-                failures.append({'menu': name, 'role': role, 'metrics': metrics})
+            measure(name, f'responsive-{role}-{i:02d}')
+            # The menu lists modules; a module's other pages are tabs in the top bar (DESIGN.md).
+            tabs = [t.get_attribute('textContent').strip() for t in session.find_elements(By.CSS_SELECTOR, '.topbar .tabs a:not(.on)')]
+            for j, tab in enumerate(tabs):
+                session.find_element(By.XPATH, f"//nav[contains(@class,'tabs')]//a[normalize-space(.)='{tab}']").click()
+                WebDriverWait(session, 12).until(lambda s: any(
+                    e.get_attribute('textContent').strip() == tab for e in s.find_elements(By.CSS_SELECTOR, '.topbar .tabs a.on')
+                ))
+                measure(f'{name} / {tab}', f'responsive-{role}-{i:02d}-{j}')
     evidence('responsive-summary', {'viewport': '390x844x3 mobile/touch', 'pages': len(results), 'failures': failures,
         'limitations': ['Synthetic seed only; no populated long tables/detail forms.', 'Chromium emulation is not physical mobile Safari/Chrome.', 'Screenshots require visual inspection for clipped controls even without root overflow.']})
     assert not failures, f'Responsive viewport/overflow failures: {[f["menu"] for f in failures]}'

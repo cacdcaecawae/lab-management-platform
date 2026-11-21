@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Menu } from '@element-plus/icons-vue'
 import { useNotificationPolling } from '@/composables/useNotificationPolling'
 import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
+import { useNav } from './nav'
 
 const route = useRoute()
 const drawer = ref(false)
 useNotificationPolling()
+const { current, page } = useNav()
+const tabs = computed(() => (current.value && current.value.pages.length > 1 ? current.value.pages : []))
+// The workbench greets by name instead of repeating its title.
+const title = computed(() => (route.name === 'workbench' ? '' : String(route.meta.title ?? '')))
 
 watch(
   () => route.fullPath,
@@ -23,9 +28,22 @@ watch(
       <SideNav />
     </el-drawer>
     <div class="body">
-      <header class="topbar">
+      <header class="topbar" :class="{ bare: !tabs.length && !title }">
         <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
-        <h1 class="title">{{ route.meta.title }}</h1>
+        <template v-if="tabs.length">
+          <h1 class="sr-only">{{ title }}</h1>
+          <nav class="tabs" :aria-label="current!.label">
+            <RouterLink
+              v-for="p in tabs"
+              :key="p.name"
+              :to="{ name: p.name }"
+              class="tab"
+              :class="{ on: p.name === page }"
+              :aria-current="p.name === page ? 'page' : undefined"
+            >{{ p.label }}</RouterLink>
+          </nav>
+        </template>
+        <h1 v-else class="title">{{ title }}</h1>
       </header>
       <main class="main">
         <RoutePage />
@@ -86,11 +104,56 @@ watch(
 }
 .title {
   margin: 0;
+  padding-left: 4px;
   font-size: 17px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A module's pages, like the tabs inside a card: the current one is darker with a blue bar under it. */
+.tabs {
+  align-self: stretch;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--lab-text-2);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--lab-text);
+}
+.tab.on {
+  border-bottom-color: var(--el-color-primary);
+  color: var(--lab-text);
+  font-weight: 600;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Nothing to show (the workbench): no empty bar on a computer; phones still need the menu button. */
+@media (min-width: 769px) {
+  .topbar.bare {
+    display: none;
+  }
+  .topbar.bare + .main {
+    padding-top: 24px;
+  }
 }
 .main {
   box-sizing: border-box;
