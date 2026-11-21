@@ -233,20 +233,20 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <template #default="{ row }">
           <el-button link type="primary" @click="openTxn(row as Consumable, 'out')">领用</el-button>
           <el-button link type="primary" @click="openTxn(row as Consumable, 'return')">退回</el-button>
-          <el-dropdown trigger="click" class="row-more" @command="(c: string) => more(row as Consumable, c)">
+          <el-dropdown v-if="auth.isManager" trigger="click" class="row-more" @command="(c: string) => more(row as Consumable, c)">
             <el-button link type="primary">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <template v-if="auth.isManager">
-                  <el-dropdown-item command="in">入库</el-dropdown-item>
-                  <el-dropdown-item command="adjust">盘点</el-dropdown-item>
-                  <el-dropdown-item command="batches">批次管理</el-dropdown-item>
-                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                </template>
-                <el-dropdown-item command="history" :divided="auth.isManager">流水</el-dropdown-item>
+                <el-dropdown-item command="in">入库</el-dropdown-item>
+                <el-dropdown-item command="adjust">盘点</el-dropdown-item>
+                <el-dropdown-item command="batches">批次管理</el-dropdown-item>
+                <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                <el-dropdown-item command="history" divided>流水</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <!-- everyone else has three actions, so 流水 stays a plain link -->
+          <el-button v-else link type="primary" @click="openHistory(row as Consumable)">流水</el-button>
         </template>
       </el-table-column>
     </el-table>
