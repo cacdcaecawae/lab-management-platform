@@ -19,6 +19,7 @@ const stubs = {
   ElSwitch: { name: 'ElSwitch', props: ['modelValue'], emits: ['change'], template: '<i />' },
   ElInput: { props: ['modelValue'], template: '<input :value="modelValue" />', methods: { select() {} } },
   ElButton: { template: '<button><slot /></button>' },
+  ElTooltip: { template: '<slot />' },
   ElTable: { name: 'ElTable', emits: ['selection-change'], template: '<div />' },
   ElTableColumn: true,
 }

@@ -16,11 +16,11 @@ export const topBarOwner = ref<symbol | null>(null)
  *  styles can turn table rows into cards ("表头 值" lines) without a separate template per page. */
 export function labelTableCells(root: ParentNode) {
   for (const table of root.querySelectorAll('.el-table')) {
-    const heads = Array.from(table.querySelectorAll('.el-table__header-wrapper th'), (th) => th.textContent?.trim() ?? '')
+    const heads = Array.from(table.querySelectorAll('.el-table__header-wrapper th.el-table__cell'), (th) => th.textContent?.trim() ?? '')
     for (const row of table.querySelectorAll('.el-table__body-wrapper tr.el-table__row')) {
       Array.from(row.children).forEach((cell, i) => {
         if (cell.getAttribute('data-label') !== heads[i]) cell.setAttribute('data-label', heads[i] ?? '')
-        const empty = !cell.textContent?.trim() && !cell.querySelector('img, input, button, a, .el-checkbox')
+        const empty = !cell.textContent?.trim() && !cell.querySelector('img, input, button, a, .el-checkbox, .el-icon, svg')
         cell.toggleAttribute('data-empty', empty)
       })
     }

@@ -129,6 +129,9 @@ async function upload() {
   gap: 8px;
   min-width: 0;
 }
+.name-row .el-tag {
+  flex: none;
+}
 .name {
   font-size: 18px;
   font-weight: 600;
@@ -139,6 +142,8 @@ async function upload() {
 .line {
   color: var(--lab-text-3);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 </style>

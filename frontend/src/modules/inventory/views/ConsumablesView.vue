@@ -20,8 +20,10 @@ const auth = useAuthStore()
 const route = inject(routeLocationKey, undefined)
 const router = inject(routerKey, undefined)
 const routeItem = () => typeof route?.query.item === 'string' ? route.query.item : ''
+const routeLow = (): 1 | '' => (route?.query.low === '1' ? 1 : '')
 const routeExpiry = () => route?.query.expiring_within === '30' ? 30 : ''
-const filters = reactive({ item: routeItem(), search: '', low: '' as 1 | '', expiring_within: routeExpiry() })
+const filters = reactive({ item: routeItem(), search: '', low: routeLow(), expiring_within: routeExpiry() })
+watch(routeLow, (low) => { filters.low = low })
 watch(routeExpiry, (days) => { filters.expiring_within = days })
 const dates = (d: string) => new Date(d + 'T00:00:00')
 const expiryTone = (d: string) => {
@@ -205,7 +207,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
       <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
-      <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期</el-checkbox>
+      <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期（含已过期）</el-checkbox>
       <template #actions>
         <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新建耗材</el-button>
       </template>
@@ -229,7 +231,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         <template #default="{ row }">{{ row.safety_stock }}</template>
       </el-table-column>
       <el-table-column prop="location" label="存放位置" min-width="110" />
-      <el-table-column label="操作" min-width="170">
+      <el-table-column label="操作" min-width="170" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openTxn(row as Consumable, 'out')">领用</el-button>
           <el-button link type="primary" @click="openTxn(row as Consumable, 'return')">退回</el-button>

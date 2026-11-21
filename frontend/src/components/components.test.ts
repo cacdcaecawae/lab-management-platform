@@ -88,4 +88,11 @@ describe('pages use the shared skeleton (DESIGN.md)', () => {
     )
     expect(bare).toEqual([])
   })
+
+  it('every 操作 column is fixed="right" so phone cards place its actions at the bottom right', () => {
+    const unfixed = Object.keys(pages).filter((path) =>
+      (pages[path].match(/<el-table-column\b[^>]*label="操作"[^>]*>/g) ?? []).some((tag) => !/fixed="right"/.test(tag)),
+    )
+    expect(unfixed).toEqual([])
+  })
 })

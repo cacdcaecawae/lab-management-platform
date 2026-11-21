@@ -39,7 +39,7 @@ function onMenu(command: string) {
   else if (command === 'all') void closeAll()
   else router.push(command)
 }
-// On a phone the tabs scroll sideways: bring the current one into view (the last tab would otherwise sit off-screen).
+// When many tabs are open, bring the current one into view (the last tab would otherwise sit off-screen).
 const tabsNav = useTemplateRef<HTMLElement>('tabsNav')
 // Runs after each render that changes the page or the tabs.
 watchPostEffect(() => {
@@ -55,7 +55,8 @@ const title = computed(() => (route.name === 'workbench' ? '' : String(route.met
 // own back + title in the card.
 const tabBar = computed(() => phone.value && !!auth.user?.group)
 const phoneBarHidden = computed(() => phone.value && tabBar.value && (!title.value || pageHeaders.value > 0))
-// Tables become cards on a phone; the cards need each cell's column name. Dialogs live under <body>, so watch it all.
+// Tables become cards on a phone; the cards need each cell's column name. Dialogs live under <body>, so watch it all
+// while on a phone (stopped on desktop so normal mutations do not trigger it).
 let observer: MutationObserver | undefined
 let queued = 0
 const relabel = () => {
@@ -65,13 +66,24 @@ const relabel = () => {
     labelTableCells(document.body)
   })
 }
-onMounted(() => {
+function stopObserver() {
+  observer?.disconnect()
+  observer = undefined
+  if (queued) {
+    cancelAnimationFrame(queued)
+    queued = 0
+  }
+}
+function syncObserver(on: boolean) {
+  stopObserver()
+  if (!on) return
   observer = new MutationObserver(relabel)
-  observer.observe(document.body, { childList: true, subtree: true })
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true })
   relabel()
-})
-onBeforeUnmount(() => observer?.disconnect())
-watch(phone, relabel)
+}
+onMounted(() => syncObserver(phone.value))
+onBeforeUnmount(stopObserver)
+watch(phone, syncObserver)
 
 watch(
   () => route.fullPath,
@@ -81,9 +93,9 @@ watch(
 
 <template>
   <div class="shell" :class="{ 'with-tab-bar': tabBar }">
-    <aside class="sidebar"><SideNav /></aside>
-    <el-drawer v-model="drawer" direction="ltr" size="260px" :with-header="false" class="nav-drawer">
-      <SideNav />
+    <aside v-if="!phone" class="sidebar"><SideNav /></aside>
+    <el-drawer v-if="phone" v-model="drawer" direction="ltr" size="260px" :with-header="false" class="nav-drawer">
+      <SideNav @close="drawer = false" />
     </el-drawer>
     <div class="body">
       <header

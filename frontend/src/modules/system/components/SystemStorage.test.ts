@@ -11,6 +11,7 @@ const stubs = {
   ElDescriptionsItem: { template: '<div><slot /></div>' },
   ElButton: { template: '<button><slot /></button>' },
   ElTag: { template: '<b><slot /></b>' },
+  ElTooltip: { template: '<slot />' },
 }
 
 const run = (ok: boolean, detail = '', snapshot = '') => ({ finished_at: '2026-11-20T02:31:00+08:00', ok, snapshot, detail })

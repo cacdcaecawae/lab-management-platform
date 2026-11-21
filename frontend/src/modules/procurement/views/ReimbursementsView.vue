@@ -270,7 +270,7 @@ async function editFinanceEmail() {
             </template>
           </el-table-column>
           <el-table-column prop="description" label="说明" min-width="140" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="190">
+          <el-table-column label="操作" min-width="190" fixed="right">
             <template #default="{ row }">
               <template v-if="writer(row as Reimbursement) && NEXT[row.status]">
                 <el-button link type="primary" @click="advance(row as Reimbursement, NEXT[row.status].to, NEXT[row.status].confirm)">

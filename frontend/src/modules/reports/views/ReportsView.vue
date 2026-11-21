@@ -46,7 +46,7 @@ watch(missingWeek, loadMissing)
     </el-tabs>
 
     <template v-if="tab === 'missing'">
-      <PageToolbar>
+      <PageToolbar :foldable="false">
         <span>周一日期</span>
         <el-date-picker v-model="missingWeek" type="date" value-format="YYYY-MM-DD" :disabled-date="notMonday" :clearable="false" />
       </PageToolbar>

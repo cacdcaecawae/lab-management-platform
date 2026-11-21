@@ -176,6 +176,9 @@ a:focus-visible {
   color: var(--lab-text-2);
   box-shadow: none !important;
 }
+.el-radio-group > .el-radio-button:not(.is-active) > .el-radio-button__inner:hover {
+  color: var(--lab-text);
+}
 .el-radio-group > .el-radio-button > .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
@@ -576,7 +579,10 @@ a:focus-visible {
   .page-toolbar .el-date-editor.el-range-editor {
     width: 100%;
   }
-  .page-toolbar:not(.filters-open) .page-toolbar-filters > :is(.el-select, .el-checkbox, .el-date-editor) {
+  .page-toolbar.phone-empty {
+    display: none;
+  }
+  .page-toolbar.filters-foldable:not(.filters-open) .page-toolbar-filters > :is(.el-select, .el-checkbox, .el-date-editor) {
     display: none;
   }
   /* only folded filters: "筛选" leads the row instead of sitting alone at its right end */
@@ -615,15 +621,36 @@ a:focus-visible {
   }
   .el-table .el-table__header-wrapper,
   .el-table .el-table__body colgroup,
+  .el-table .el-table__footer colgroup,
   .el-table .el-scrollbar__bar.is-horizontal,
   .el-table__inner-wrapper::before {
     display: none;
   }
   .el-table .el-table__body,
   .el-table .el-table__body tbody,
+  .el-table .el-table__footer,
+  .el-table .el-table__footer tbody,
   .el-table .el-scrollbar__view {
     display: block;
     width: 100% !important;
+  }
+  .el-table .el-table__footer tr {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--lab-border);
+  }
+  .el-table .el-table__footer td.el-table__cell {
+    width: auto !important;
+    padding: 0;
+    border: 0;
+    background: transparent !important;
+    font-weight: 600;
+  }
+  .el-table .el-table__footer td.el-table__cell .cell {
+    padding: 0;
   }
   .el-table .el-table__body tr.el-table__row {
     position: relative;
@@ -673,28 +700,28 @@ a:focus-visible {
     font-size: 15px;
     font-weight: 600;
   }
-  .el-table .el-table__body tr:has(.status-tag) td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {
+  .el-table .el-table__body tr:has(td[data-label='状态'] .status-tag) td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {
     padding-right: 88px;
   }
-  .el-table .el-table__body td:is(:first-child, .el-table-column--selection + td, .el-table-fixed-column--right, :has(.status-tag))::before {
+  .el-table .el-table__body td:is(:first-child, .el-table-column--selection + td, .el-table-fixed-column--right, [data-label='操作'], [data-label='状态']:has(.status-tag))::before {
     content: none;
   }
-  .el-table .el-table__body td.el-table__cell:has(.status-tag) {
+  .el-table .el-table__body td.el-table__cell[data-label='状态']:has(.status-tag) {
     position: absolute !important;
     top: 12px;
     right: 0;
   }
-  .el-table .el-table__body td.el-table-fixed-column--right {
+  .el-table .el-table__body td:is(.el-table-fixed-column--right, [data-label='操作']) {
     flex-basis: 100%;
     justify-content: flex-end;
   }
-  .el-table .el-table__body td.el-table-fixed-column--right .cell {
+  .el-table .el-table__body td:is(.el-table-fixed-column--right, [data-label='操作']) .cell {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 4px 12px;
   }
-  .el-table .el-table__body td.el-table-fixed-column--right .el-button + .el-button {
+  .el-table .el-table__body td:is(.el-table-fixed-column--right, [data-label='操作']) .el-button + .el-button {
     margin-left: 0;
   }
 
