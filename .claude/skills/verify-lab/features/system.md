@@ -4,7 +4,7 @@
 
 ## Sub-features
 
-- `ops-landing`：`ops` 登录后地址是 `/system`，菜单只有 menuitem "系统管理"，右上角只显示"运维"（没有课题组名）。
+- `ops-landing`：`ops` 登录后地址是 `/system`，菜单只有 menuitem "系统管理"，左侧栏顶部只显示"运维"（没有课题组名）。
 - `mail-validate`：打开"启用邮件"但没填 SMTP 服务器，点 "保存"：字段下出现"启用邮件时必须填写 SMTP 服务器"。
 - `mail-port-follows`：加密方式从 "SSL" 改为 "不加密"，端口从 465 变成 25；手动填过的端口不再跟着变。
 - `mail-password-write-only`：保存后"授权码"输入框清空，占位变成"已设置，留空不修改"；保存请求的响应里没有授权码，只有 `password_set: true`。

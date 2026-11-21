@@ -367,6 +367,10 @@ async function submitReport() {
   margin-right: 0;
   white-space: normal;
 }
+/* a ticked device is a choice, not a link: keep its name black */
+.side :deep(.el-checkbox__input.is-checked + .el-checkbox__label) {
+  color: var(--lab-text);
+}
 .swatch {
   display: inline-block;
   width: 10px;

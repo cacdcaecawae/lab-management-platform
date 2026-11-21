@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  Bell,
   Box,
   Aim,
   Calendar,
@@ -23,8 +24,10 @@ import {
   Wallet,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationsStore } from '@/stores/notifications'
 
 const auth = useAuthStore()
+const notifications = useNotificationsStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -37,7 +40,13 @@ const allowed = (name: string) => {
   return !!auth.user?.group && (!meta.supervisor || auth.isSupervisor) && (!meta.manager || auth.isManager)
 }
 const raw = [
-  { group: '', items: [{ name: 'workbench', label: '工作台', icon: House }] },
+  {
+    group: '',
+    items: [
+      { name: 'workbench', label: '工作台', icon: House },
+      { name: 'notifications', label: '通知', icon: Bell },
+    ],
+  },
   {
     group: '科研记录',
     items: [
@@ -102,6 +111,8 @@ const active = computed(() => String(route.meta.menu ?? route.name))
       <el-menu-item v-for="item in s.items" :key="item.name" :index="item.name" :route="{ name: item.name }">
         <el-icon><component :is="item.icon" /></el-icon>
         <span>{{ item.label }}</span>
+        <!-- counts that need someone go on the menu item (DESIGN.md), not in a pop-up -->
+        <span v-if="item.name === 'notifications' && notifications.unread" class="badge">{{ notifications.unread > 99 ? '99+' : notifications.unread }}</span>
       </el-menu-item>
     </template>
   </el-menu>
@@ -111,7 +122,7 @@ const active = computed(() => String(route.meta.menu ?? route.name))
 .app-menu {
   --el-menu-bg-color: transparent;
   --el-menu-text-color: var(--lab-text);
-  --el-menu-active-color: var(--lab-selected-fg);
+  --el-menu-active-color: var(--lab-text);
   --el-menu-hover-bg-color: var(--lab-bg-hover);
   --el-menu-item-height: 34px;
   --el-menu-item-font-size: 14px;
@@ -124,8 +135,10 @@ const active = computed(() => String(route.meta.menu ?? route.name))
   border-radius: var(--lab-radius);
   line-height: 34px;
 }
+/* The current page: a white pill on the grey sidebar, like the cards it opens. */
 .app-menu .el-menu-item.is-active {
-  background: var(--lab-selected-bg);
+  background: var(--lab-bg-card);
+  box-shadow: var(--lab-shadow-card);
   font-weight: 600;
 }
 .app-menu .el-menu-item .el-icon {
@@ -136,6 +149,20 @@ const active = computed(() => String(route.meta.menu ?? route.name))
 }
 .app-menu .el-menu-item.is-active .el-icon {
   color: var(--lab-selected-fg);
+}
+.badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--el-color-danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .group-title {
   padding: 16px 10px 6px;

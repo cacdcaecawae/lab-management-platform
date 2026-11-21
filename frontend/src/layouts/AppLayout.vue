@@ -1,61 +1,31 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Lock, Menu, SwitchButton } from '@element-plus/icons-vue'
-import { useAuthStore } from '@/stores/auth'
-import AppMenu from './AppMenu.vue'
-import NotificationBell from '@/components/NotificationBell.vue'
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { Menu } from '@element-plus/icons-vue'
+import { useNotificationPolling } from '@/composables/useNotificationPolling'
 import RoutePage from './RoutePage.vue'
-import SiteSearch from '@/components/SiteSearch.vue'
+import SideNav from './SideNav.vue'
 
-const auth = useAuthStore()
 const route = useRoute()
-const router = useRouter()
 const drawer = ref(false)
-const displayName = computed(() => auth.user?.name || auth.user?.username || '')
+useNotificationPolling()
 
 watch(
   () => route.fullPath,
   () => (drawer.value = false),
 )
-
-async function logout() {
-  await auth.logout()
-  router.push({ name: 'login' })
-}
 </script>
 
 <template>
   <div class="shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="logo" aria-hidden="true">课</span>课题组管理</div>
-      <AppMenu />
-    </aside>
-    <el-drawer v-model="drawer" direction="ltr" size="240px" :with-header="false" class="nav-drawer">
-      <div class="brand"><span class="logo" aria-hidden="true">课</span>课题组管理</div>
-      <AppMenu />
+    <aside class="sidebar"><SideNav /></aside>
+    <el-drawer v-model="drawer" direction="ltr" size="260px" :with-header="false" class="nav-drawer">
+      <SideNav />
     </el-drawer>
     <div class="body">
       <header class="topbar">
-        <div class="left">
-          <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
-          <span class="title">{{ route.meta.title }}</span>
-        </div>
-        <div class="right">
-          <SiteSearch v-if="auth.user?.group && !auth.user.must_change_password" />
-          <NotificationBell v-if="auth.user?.group && !auth.user.must_change_password" :key="auth.user.id + ':' + auth.user.group.id + ':' + auth.user.role" />
-          <el-dropdown trigger="click" placement="bottom-end">
-            <span class="user">
-              <span class="avatar" aria-hidden="true">{{ displayName.slice(0, 1) }}</span>{{ displayName }}<template v-if="auth.user?.group">（{{ auth.user.group.name }}）</template>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item :icon="Lock" @click="router.push({ name: 'password' })">修改密码</el-dropdown-item>
-                <el-dropdown-item divided :icon="SwitchButton" @click="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
+        <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
+        <h1 class="title">{{ route.meta.title }}</h1>
       </header>
       <main class="main">
         <RoutePage />
@@ -65,6 +35,7 @@ async function logout() {
 </template>
 
 <style scoped>
+/* DESIGN.md: one grey ground for the sidebar and the page; the content sits on it in white cards. */
 .shell {
   display: flex;
   min-height: 100vh;
@@ -72,29 +43,18 @@ async function logout() {
 .sidebar {
   position: sticky;
   top: 0;
-  flex: 0 0 232px;
+  /* sticky makes its own stacking layer: above the top bar, so the search panel opened from here covers the page */
+  z-index: 20;
+  flex: 0 0 240px;
   height: 100vh;
   overflow-y: auto;
-  background: var(--lab-bg-side);
-  border-right: 1px solid var(--lab-border);
+  box-sizing: border-box;
+  /* the menu is taller than a laptop screen: scroll it, but show the bar only while the pointer is over it */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 20px 10px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.logo {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 13px;
+.sidebar:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 .body {
   flex: 1;
@@ -102,22 +62,18 @@ async function logout() {
   display: flex;
   flex-direction: column;
 }
-.right { display: flex; align-items: center; gap: 12px; }
-
 .topbar {
   position: sticky;
   top: 0;
   z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   height: 52px;
-  padding: 0 24px;
-  /* The only frosted surface (DESIGN.md): content scrolls under it; solid where blur is off or unwanted. */
-  background: rgba(245, 245, 247, 0.8);
+  padding: 0 24px 0 8px;
+  /* The only frosted surface (DESIGN.md): cards scroll under it; solid where blur is off or unwanted. */
+  background: rgba(242, 243, 245, 0.8);
   backdrop-filter: saturate(180%) blur(12px);
-  border-bottom: 1px solid var(--lab-border);
 }
 @supports not (backdrop-filter: blur(1px)) {
   .topbar { background: var(--lab-bg); }
@@ -125,49 +81,20 @@ async function logout() {
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   .topbar { background: var(--lab-bg); backdrop-filter: none; }
 }
-.left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
 .menu-btn {
   display: none;
 }
 .title {
-  font-size: 15px;
+  margin: 0;
+  font-size: 17px;
   font-weight: 600;
   white-space: nowrap;
-}
-.user {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  border-radius: 999px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  outline: none;
-}
-.user:hover,
-.user:focus-visible {
-  background: var(--lab-bg-hover);
-}
-.avatar {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--lab-selected-bg);
-  color: var(--lab-selected-fg);
-  font-size: 13px;
-  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .main {
   box-sizing: border-box;
-  padding: 24px 24px 48px;
+  padding: 4px 24px 48px 8px;
 }
 @media (max-width: 768px) {
   .sidebar {
@@ -179,14 +106,8 @@ async function logout() {
   .topbar {
     padding: 0 8px;
   }
-  .user {
-    max-width: 60vw;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
   .main {
-    padding: 16px 12px 32px;
+    padding: 4px 12px 32px;
   }
 }
 </style>
@@ -194,6 +115,9 @@ async function logout() {
 <style>
 .nav-drawer {
   --el-drawer-padding-primary: 0;
-  background: var(--lab-bg-side);
+  background: var(--lab-bg);
+}
+.nav-drawer .el-drawer__body {
+  scrollbar-width: thin;
 }
 </style>

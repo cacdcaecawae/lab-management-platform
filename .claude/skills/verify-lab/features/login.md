@@ -4,7 +4,7 @@
 
 ## Sub-features
 
-- `login-ok`：正确账号密码登录后进入工作台，右上角显示"姓名（课题组）"。
+- `login-ok`：正确账号密码登录后进入工作台，左侧栏顶部显示姓名和课题组。
 - `login-wrong`：密码错误时登录页出现错误提示，仍停留在登录页。
 - `login-first-change`：`s_new` 登录后被带到"修改密码"页，页面提示"首次登录，请先修改初始密码。"；改密后才能进入工作台。
 - `login-logout`：姓名菜单 → "退出登录"后回到登录页，再打开 `/datasets` 会被带回登录页。
@@ -12,7 +12,7 @@
 ## How to get to it (user POV)
 
 - 打开任意页面，未登录时自动跳到 `/login`。
-- 右上角姓名按钮展开的菜单：menuitem "修改密码"、"退出登录"。
+- 左侧栏顶部姓名按钮展开的菜单：menuitem "修改密码"、"退出登录"。
 
 ## Driving it with chrome-devtools MCP
 
