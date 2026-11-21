@@ -127,8 +127,8 @@ class DashboardView(APIView):
             calibration = calibration_within(scope_group(Equipment.objects.all(), user), today=today).order_by("calibration_due", "id")
             expiring_batches = batches_with_balance().filter(
                 consumable__group_id=user.group_id, consumable__tracks_batches=True, stock__gt=0,
-                expires_on__range=(today, today + timedelta(days=30)),
-            ).values("id", "batch_no", "expires_on", "stock", "consumable__name")[:LIMIT]
+                expires_on__lte=today + timedelta(days=30),
+            ).order_by("expires_on", "id").values("id", "batch_no", "expires_on", "stock", "consumable__name")[:LIMIT]
             data["manager"] = {
                 "overdue_loans": [loan_preview(loan, today, include_borrower=True) for loan in overdue[:LIMIT]],
                 "overdue_loans_count": overdue.count(),

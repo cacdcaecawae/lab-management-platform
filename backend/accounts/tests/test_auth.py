@@ -116,6 +116,7 @@ def test_person_changes_own_avatar(api, student_a, group, settings, django_captu
     got = client.get(url)
     assert got.status_code == 200 and b"".join(got.streaming_content) == b"first"
     assert got["Content-Type"] == "image/png" and got["X-Content-Type-Options"] == "nosniff"
+    assert got["Cache-Control"] == "private, max-age=86400"
 
     with django_capture_on_commit_callbacks(execute=True):
         r = client.post(url, {"file": SimpleUploadedFile("me.jpg", b"second")})

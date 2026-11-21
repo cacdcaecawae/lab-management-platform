@@ -96,3 +96,8 @@ def test_list_has_no_n_plus_1(api, student_a, project, django_assert_max_num_que
     # session + user + count + page + datasets prefetch + specimens prefetch
     with django_assert_max_num_queries(6):
         assert client.get(URL).json()["count"] == 5
+
+
+@pytest.mark.parametrize("query", ["?project=abc", "?owner=99999999999999999999999", "?project=-1"])
+def test_invalid_id_filters_return_400(api, student_a, query):
+    assert api(student_a).get(URL + query).status_code == 400

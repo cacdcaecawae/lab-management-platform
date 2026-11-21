@@ -147,7 +147,10 @@ class AvatarView(APIView):
     def get(self, request):
         if not request.user.avatar:
             raise NotFound()
-        return download(request.user.avatar, Path(request.user.avatar.name).name)
+        response = download(request.user.avatar, Path(request.user.avatar.name).name)
+        # avatar_url carries ?v=<uuid> which changes on every upload; cache privately to avoid refetching on every page.
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
 
     def post(self, request):
         if request.user.must_change_password:
