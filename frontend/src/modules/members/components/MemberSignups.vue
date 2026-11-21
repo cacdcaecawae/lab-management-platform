@@ -89,7 +89,16 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
         @change="(on) => setOpen(!!on, on ? '' : '关闭后，已经发出去的链接都会失效。确定关闭？')"
       />
       <template v-if="code">
-        <el-input ref="linkInput" :model-value="link" readonly aria-label="注册链接" class="grow" @focus="linkInput?.select()" />
+        <!-- as wide as the link (monospace, so 1ch per character), the copy / regenerate icons right after it -->
+        <el-input
+          ref="linkInput"
+          :model-value="link"
+          readonly
+          aria-label="注册链接"
+          class="signup-link"
+          :style="{ width: `calc(${link.length}ch + 24px)` }"
+          @focus="linkInput?.select()"
+        />
         <IconButton :icon="CopyDocument" label="复制链接" @click="copy" />
         <IconButton :icon="RefreshRight" label="换一个链接" @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')" />
       </template>
@@ -119,3 +128,13 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
     </template>
   </el-card>
 </template>
+
+<style scoped>
+/* monospace on the box too, so the width's ch is the text's character width */
+.signup-link,
+.signup-link :deep(.el-input__inner) {
+  max-width: 100%;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-2);
+}
+</style>
