@@ -3,7 +3,7 @@ import { replaceSavedEditor } from '@/router/saved-editor'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Plus } from '@element-plus/icons-vue'
+import { Delete, Plus } from '@element-plus/icons-vue'
 import { meetingsApi } from '@/modules/meetings/api'
 import { membersApi } from '@/modules/members/api'
 import { ApiError } from '@/api/client'
@@ -14,6 +14,9 @@ import { formatTime, mergeById, toDateStr } from '@/utils/format'
 import { isNotFound, showActionError, showError, useFieldErrors } from '@/utils/errors'
 import AttachmentList from '@/components/AttachmentList.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { closeTab } from '@/layouts/nav'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -41,6 +44,8 @@ interface Row {
 }
 const form = reactive({ date: today, title: '组会', minutes: '', agenda: [] as Row[], actions: [] as Row[] })
 const errors = useFieldErrors(['date', 'title', 'minutes', 'agenda', 'actions'])
+// Ask before leaving with unsaved changes while editing (startEdit() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editing.value)
 
 function startEdit() {
   const m = meeting.value
@@ -53,6 +58,7 @@ function startEdit() {
   })
   errors.clear()
   editing.value = true
+  markSaved()
 }
 
 function body(): MeetingWrite {
@@ -91,6 +97,8 @@ async function remove() {
   try {
     await meetingsApi.remove(meeting.value!.id)
     ElMessage.success('已删除')
+    markSaved() // deleted: nothing left to lose
+    closeTab(route.path)
     router.replace({ name: 'meetings' })
   } catch (e) {
     showActionError(e)
@@ -130,30 +138,27 @@ async function reload() {
 <template>
   <div v-if="loadError" class="card"><el-empty :description="loadError" /></div>
   <template v-else>
-    <div class="head">
-      <el-button :icon="ArrowLeft" text @click="router.push({ name: 'meetings' })">返回</el-button>
-      <h2 v-if="meeting && !editing">{{ meeting.date }} {{ meeting.title }}</h2>
-      <h2 v-else-if="!meeting">新建组会</h2>
-      <span class="grow" />
-      <template v-if="meeting && !editing">
-        <el-button @click="historyOpen = true">修改历史</el-button>
-        <el-button v-if="auth.isManager" type="primary" @click="startEdit">编辑</el-button>
+    <el-card class="card">
+      <template #header>
+        <PageHeader :back="{ name: 'meetings' }" :title="meeting ? `${meeting.date} ${meeting.title}` : '新建组会'">
+          <template v-if="editing">
+            <el-button v-if="meeting" type="danger" plain @click="remove">删除组会</el-button>
+            <el-button @click="meeting ? (editing = false) : router.push({ name: 'meetings' })">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+          </template>
+          <template v-else-if="meeting">
+            <el-button @click="historyOpen = true">修改历史</el-button>
+            <el-button v-if="auth.isManager" type="primary" @click="startEdit">编辑</el-button>
+          </template>
+        </PageHeader>
       </template>
-    </div>
-
-    <!-- edit -->
-    <el-card v-if="editing" class="card">
-      <el-form label-position="top" @submit.prevent="save">
-        <el-row :gutter="12">
-          <el-col :xs="24" :sm="8">
-            <el-form-item label="日期" :error="errors.fe('date')" required>
-              <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="16">
-            <el-form-item label="标题" :error="errors.fe('title')"><el-input v-model="form.title" /></el-form-item>
-          </el-col>
-        </el-row>
+      <el-form v-if="editing" class="form-page" label-position="top" @submit.prevent="save">
+        <div class="form-grid">
+          <el-form-item label="日期" :error="errors.fe('date')" required>
+            <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+          </el-form-item>
+          <el-form-item class="span-2" label="标题" :error="errors.fe('title')"><el-input v-model="form.title" /></el-form-item>
+        </div>
 
         <el-form-item label="议程" :error="errors.fe('agenda')">
           <div class="rows">
@@ -187,28 +192,22 @@ async function reload() {
         </el-form-item>
         <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
       </el-form>
-      <div class="actions">
-        <el-button v-if="meeting" type="danger" plain @click="remove">删除组会</el-button>
-        <span class="grow" />
-        <el-button @click="meeting ? (editing = false) : router.push({ name: 'meetings' })">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-      </div>
-    </el-card>
-
-    <!-- read -->
-    <template v-else-if="meeting">
-      <el-card class="card" header="议程">
+      <template v-else-if="meeting">
+        <div class="section-title">议程</div>
         <ol v-if="meeting.agenda.length" class="agenda">
           <li v-for="a in meeting.agenda" :key="a.id"><b>{{ a.presenter.name }}</b>：{{ a.topic }}</li>
         </ol>
-        <p v-else class="muted">没有议程</p>
-      </el-card>
+        <p v-else class="muted">暂无议程</p>
+      </template>
+    </el-card>
+
+    <template v-if="meeting && !editing">
       <el-card class="card" header="纪要">
         <p v-if="meeting.minutes" class="pre">{{ meeting.minutes }}</p>
-        <p v-else class="muted">还没有纪要</p>
+        <p v-else class="muted">暂无纪要</p>
       </el-card>
       <el-card class="card" header="行动项">
-        <el-table :data="meeting.actions" empty-text="没有行动项">
+        <el-table :data="meeting.actions" empty-text="暂无行动项">
           <el-table-column label="完成" width="70">
             <template #default="{ row }">
               <el-checkbox
@@ -251,15 +250,8 @@ async function reload() {
 </template>
 
 <style scoped>
-.head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.head h2 {
-  margin: 0;
-  font-size: 18px;
+.section-title {
+  margin-bottom: 8px;
   font-weight: 600;
 }
 .grow {
@@ -301,10 +293,5 @@ async function reload() {
 }
 .overdue {
   color: var(--el-color-danger);
-}
-.actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
 }
 </style>

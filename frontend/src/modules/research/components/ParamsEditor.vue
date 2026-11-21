@@ -50,7 +50,7 @@ defineExpose({ validate: () => !problem.value })
 }
 .problem {
   color: var(--el-color-danger);
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 8px;
 }
 .empty {

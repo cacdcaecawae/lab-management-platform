@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
+from accounts.models import User
 from conftest import PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
@@ -77,3 +81,51 @@ def test_admin_waits_for_the_initial_password_to_be_changed(ops):
     ops.must_change_password = False
     ops.save()
     assert client.get("/admin/").status_code == 200
+
+
+def test_person_updates_own_contact_details_only(api, student_a, group):
+    client = api(student_a)
+    body = {"email": "a@example.edu", "phone": "13800000000", "wechat": "a_ut", "research_direction": "导波",
+            "name": "冒名", "username": "taken", "role": "manager"}
+    r = client.patch("/api/auth/me/", body, format="json")
+    assert r.status_code == 200
+    assert [r.data[k] for k in ("email", "phone", "wechat", "research_direction")] == [
+        "a@example.edu", "13800000000", "a_ut", "导波"]
+    student_a.refresh_from_db()
+    # name, login name and role stay as the managers set them
+    assert (student_a.name, student_a.username, student_a.role) == ("s_a", "s_a", "student")  # make_user names them after the login
+    r = client.patch("/api/auth/me/", {"email": "not-an-email"}, format="json")
+    assert r.status_code == 400 and "email" in r.data["errors"]
+
+    fresh = make_user("s_new", group, must_change_password=True)
+    r = api(fresh).patch("/api/auth/me/", {"phone": "1"}, format="json")
+    assert r.status_code == 403 and r.data["code"] == "password_change_required"
+
+
+def test_person_changes_own_avatar(api, student_a, group, settings, django_capture_on_commit_callbacks):
+    client = api(student_a)
+    url = "/api/auth/me/avatar/"
+    assert client.get("/api/auth/me/").data["avatar_url"] is None
+    assert client.get(url).status_code == 404
+
+    with django_capture_on_commit_callbacks(execute=True):
+        r = client.post(url, {"file": SimpleUploadedFile("me.png", b"first")})
+    assert r.status_code == 200 and r.data["avatar_url"].startswith(url + "?v=")
+    first_url = r.data["avatar_url"]
+    first = Path(settings.MEDIA_ROOT, User.objects.get(pk=student_a.pk).avatar.name)
+    got = client.get(url)
+    assert got.status_code == 200 and b"".join(got.streaming_content) == b"first"
+    assert got["Content-Type"] == "image/png" and got["X-Content-Type-Options"] == "nosniff"
+
+    with django_capture_on_commit_callbacks(execute=True):
+        r = client.post(url, {"file": SimpleUploadedFile("me.jpg", b"second")})
+    assert r.status_code == 200 and r.data["avatar_url"] != first_url  # a new URL: the browser drops the cached one
+    assert not first.exists()  # the replaced picture is gone
+    assert b"".join(client.get(url).streaming_content) == b"second"
+
+    # pictures only (an SVG could run script), at most 2 MB, and not before the initial password is changed
+    assert client.post(url, {"file": SimpleUploadedFile("me.svg", b"<svg/>")}).status_code == 400
+    assert client.post(url, {"file": SimpleUploadedFile("me.jpg", b"x" * (2 * 1024**2 + 1))}).status_code == 413
+    fresh = make_user("s_new", group, must_change_password=True)
+    r = api(fresh).post(url, {"file": SimpleUploadedFile("me.png", b"x")})
+    assert r.status_code == 403 and r.data["code"] == "password_change_required"

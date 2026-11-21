@@ -14,6 +14,9 @@ import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { closeTab } from '@/layouts/nav'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -54,6 +57,8 @@ const status = computed(() => record.value?.status)
 const canCorrect = computed(() => (status.value === 'approved' || status.value === 'purchased') && (mine.value || auth.isManager))
 const correcting = ref(false)
 const editable = computed(() => (record.value ? (status.value === 'draft' && mine.value) || (canCorrect.value && correcting.value) : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canReview = computed(() => {
   const role = auth.user?.role
   if (!record.value || mine.value) return false
@@ -67,7 +72,6 @@ const waitingFor = computed(() =>
   ({ pending_initial: '等待管理员初审', pending_final: '等待导师终审' } as Record<string, string>)[status.value ?? ''] ?? '',
 )
 const canMark = computed(() => auth.isManager && (status.value === 'approved' || status.value === 'purchased'))
-const hasActions = computed(() => canReview.value || editable.value || canCorrect.value || canMark.value || (mine.value && !!waitingFor.value))
 
 function fill(r: PurchaseDetail) {
   record.value = r
@@ -76,6 +80,7 @@ function fill(r: PurchaseDetail) {
   form.items = r.items.length
     ? r.items.map((i) => ({ name: i.name, spec: i.spec, quantity: i.quantity, unit_price: Number(i.unit_price), link: i.link }))
     : [blankRow()]
+  markSaved()
 }
 
 function clearErrors() {
@@ -186,10 +191,12 @@ const withdraw = () =>
 const markPurchased = () =>
   confirmThen('确认已经下单采购？', '标记已采购', () => purchasesApi.markPurchased(record.value!.id), '已标记为已采购')
 const markArrived = () =>
-  confirmThen('确认货已到？之后可在新增设备、耗材入库时关联这张申请。', '标记已到货', () => purchasesApi.markArrived(record.value!.id), '已标记为已到货')
+  confirmThen('确认货已到？之后可在新建设备、耗材入库时关联这张申请。', '标记已到货', () => purchasesApi.markArrived(record.value!.id), '已标记为已到货')
 const remove = () =>
   confirmThen('删除这份草稿？', '删除', async () => {
     await purchasesApi.remove(record.value!.id)
+    markSaved() // deleted: nothing left to lose
+    closeTab(route.path)
     router.push({ name: 'purchases' })
   })
 
@@ -233,15 +240,30 @@ if (route.params.id) load(Number(route.params.id))
   <div v-else v-loading="loading" class="purchase">
     <el-card class="card">
       <template #header>
-        <div class="actions">
-          <el-page-header @back="router.push({ name: backTo })">
-            <template #content><span :class="{ code: record }">{{ record ? record.code : '新建采购申请' }}</span></template>
-          </el-page-header>
-          <StatusTag v-if="record" :status="record.status" />
-          <el-tag v-if="record?.returned" class="status-tag" type="danger" disable-transitions>被退回</el-tag>
-          <span class="grow" />
+        <PageHeader :back="{ name: backTo }">
+          <template #title><span :class="{ code: record }">{{ record ? record.code : '新建采购申请' }}</span></template>
+          <template v-if="record" #tags>
+            <StatusTag :status="record.status" />
+            <el-tag v-if="record.returned" class="status-tag" type="danger" disable-transitions>被退回</el-tag>
+          </template>
           <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
-        </div>
+          <template v-if="canReview" />
+          <template v-else-if="editable && !correcting">
+            <el-button v-if="record && !record.submitted_at" type="danger" plain :disabled="busy" @click="remove">删除草稿</el-button>
+            <el-button :loading="busy" @click="saveDraft">保存草稿</el-button>
+            <el-button type="primary" :loading="busy" @click="submit">提交审批</el-button>
+          </template>
+          <template v-else-if="correcting">
+            <el-button :disabled="busy" @click="correcting = false; fill(record!)">取消</el-button>
+            <el-button type="primary" :loading="busy" @click="save">保存修改</el-button>
+          </template>
+          <template v-else-if="record">
+            <el-button v-if="mine && waitingFor" :loading="busy" @click="withdraw">撤回</el-button>
+            <el-button v-if="canCorrect" :disabled="busy" @click="correcting = true">修改明细</el-button>
+            <el-button v-if="canMark && status === 'approved'" type="primary" :loading="busy" @click="markPurchased">标记已采购</el-button>
+            <el-button v-if="canMark && status === 'purchased'" type="primary" :loading="busy" @click="markArrived">标记已到货</el-button>
+          </template>
+        </PageHeader>
       </template>
 
       <el-alert
@@ -279,21 +301,17 @@ if (route.params.id) load(Number(route.params.id))
         <div class="total"><span>合计</span><span class="amount">¥ {{ formatMoney(record.total) }}</span></div>
       </template>
 
-      <el-form v-else label-position="top" @submit.prevent>
-        <el-row :gutter="16">
-          <el-col :xs="24" :sm="10">
-            <el-form-item label="经费来源" :error="errors.fe('fund_id')" required>
-              <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
-                <el-option v-for="f in fundOptions" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="14">
-            <el-form-item label="用途" :error="errors.fe('purpose')" required>
-              <el-input v-model="form.purpose" type="textarea" :autosize="{ minRows: 1 }" placeholder="买来做什么，用在哪个实验或项目" />
-            </el-form-item>
-          </el-col>
-        </el-row>
+      <el-form v-else class="form-page" label-position="top" @submit.prevent>
+        <div class="form-grid">
+          <el-form-item class="span-2" label="经费来源" :error="errors.fe('fund_id')" required>
+            <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
+              <el-option v-for="f in fundOptions" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item class="span-2" label="用途" :error="errors.fe('purpose')" required>
+            <el-input v-model="form.purpose" type="textarea" :autosize="{ minRows: 1 }" placeholder="买来做什么，用在哪个实验或项目" />
+          </el-form-item>
+        </div>
         <el-form-item label="明细" :error="itemsMessage" required>
           <div class="rows">
             <div class="row head" aria-hidden="true">
@@ -365,42 +383,21 @@ if (route.params.id) load(Number(route.params.id))
       </ul>
     </el-card>
 
-    <!-- actions: sticky at the bottom, so the review buttons are always in reach on a phone -->
-    <div v-if="hasActions" class="action-bar">
-      <template v-if="canReview">
-        <div class="comment-box">
-          <el-input
-            v-model="comment"
-            type="textarea"
-            :autosize="{ minRows: 1, maxRows: 4 }"
-            placeholder="审批意见（退回时必填）"
-            aria-label="审批意见"
-            @input="commentError = ''"
-          />
-          <div v-if="commentError" class="row-error">{{ commentError }}</div>
-        </div>
+    <el-card v-if="canReview" header="审批" class="card">
+      <el-input
+        v-model="comment"
+        type="textarea"
+        :autosize="{ minRows: 2, maxRows: 6 }"
+        placeholder="审批意见（退回时必填）"
+        aria-label="审批意见"
+        @input="commentError = ''"
+      />
+      <div v-if="commentError" class="row-error">{{ commentError }}</div>
+      <div class="review-actions">
         <el-button :loading="busy" @click="review('return')">退回修改</el-button>
         <el-button type="primary" :loading="busy" @click="review('approve')">通过</el-button>
-      </template>
-      <template v-else-if="editable && !correcting">
-        <el-button v-if="record && !record.submitted_at" type="danger" text :disabled="busy" @click="remove">删除草稿</el-button>
-        <span class="grow" />
-        <el-button :loading="busy" @click="saveDraft">保存草稿</el-button>
-        <el-button type="primary" :loading="busy" @click="submit">提交审批</el-button>
-      </template>
-      <template v-else-if="correcting">
-        <span class="grow" />
-        <el-button :disabled="busy" @click="correcting = false; fill(record!)">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="save">保存修改</el-button>
-      </template>
-      <template v-else-if="record">
-        <span class="grow" />
-        <el-button v-if="mine && waitingFor" :loading="busy" @click="withdraw">撤回</el-button>
-        <el-button v-if="canCorrect" :disabled="busy" @click="correcting = true">修改明细</el-button>
-        <el-button v-if="canMark && status === 'approved'" type="primary" :loading="busy" @click="markPurchased">标记已采购</el-button>
-        <el-button v-if="canMark && status === 'purchased'" type="primary" :loading="busy" @click="markArrived">标记已到货</el-button>
-      </template>
-    </div>
+      </div>
+    </el-card>
   </div>
   <HistoryDrawer v-if="record" v-model="historyOpen" :load="() => purchasesApi.history(record!.id)" />
 </template>
@@ -429,7 +426,7 @@ if (route.params.id) load(Number(route.params.id))
   grid-column: 1 / -1;
 }
 .facts dt {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 .facts dd {
@@ -499,13 +496,13 @@ if (route.params.id) load(Number(route.params.id))
 }
 .row.head {
   margin-bottom: 4px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--el-text-color-secondary);
 }
 .row-error {
   margin: -4px 0 8px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--el-color-danger);
 }
@@ -531,26 +528,14 @@ if (route.params.id) load(Number(route.params.id))
   padding-left: 18px;
   line-height: 1.9;
 }
-.action-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
+.review-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
-  padding: 12px 0;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(6px);
-  border-top: 1px solid var(--lab-border);
+  margin-top: 12px;
 }
-.action-bar .el-button + .el-button {
+.review-actions .el-button + .el-button {
   margin-left: 0;
-}
-.comment-box {
-  flex: 1;
-  min-width: 200px;
 }
 @media (max-width: 768px) {
   /* two short facts per line, so the items, total and review history fit on a phone screen */
@@ -567,15 +552,6 @@ if (route.params.id) load(Number(route.params.id))
   }
   .row.head {
     display: none;
-  }
-  .action-bar {
-    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
-  }
-  .comment-box {
-    flex-basis: 100%;
-  }
-  .action-bar > .el-button {
-    flex: 1;
   }
 }
 </style>

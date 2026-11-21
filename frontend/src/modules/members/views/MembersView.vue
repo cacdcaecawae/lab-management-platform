@@ -5,10 +5,13 @@ import { membersApi } from '@/modules/members/api'
 import type { MemberListItem, Role } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { ROLE_LABELS } from '@/utils/format'
+import { ROLE_LABELS, renamedMessage } from '@/utils/format'
+import { authApi } from '@/api/auth'
 import { showError, useFieldErrors } from '@/utils/errors'
 import StorageUsage from '@/components/StorageUsage.vue'
 import MemberSignups from '@/modules/members/components/MemberSignups.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const auth = useAuthStore()
 const storageOpen = ref(false)
@@ -21,15 +24,15 @@ const { items, count, page, pageSize, loading, load } = usePagedList(membersApi.
 // ---- create / edit ----
 const dialog = ref(false)
 const editing = ref<MemberListItem | null>(null)
-const blank = { username: '', name: '', role: 'student' as Role, email: '', phone: '', research_direction: '', password: '' }
+const blank = { username: '', name: '', role: 'student' as Role, email: '', phone: '', wechat: '', research_direction: '', password: '' }
 const form = reactive({ ...blank })
-const formErrors = useFieldErrors(Object.keys(blank))
+const formErrors = useFieldErrors(Object.keys(blank), 'username')
 const saving = ref(false)
 
 function openForm(m: MemberListItem | null) {
   editing.value = m
-  const { name, role, research_direction, username = '', email = '', phone = '' } = m ?? blank
-  Object.assign(form, blank, { name, role, research_direction, username, email, phone })
+  const { name, role, research_direction, username = '', email = '', phone = '', wechat = '' } = m ?? blank
+  Object.assign(form, blank, { name, role, research_direction, username, email, phone, wechat })
   formErrors.clear()
   dialog.value = true
 }
@@ -38,9 +41,11 @@ async function save() {
   saving.value = true
   try {
     const { username, password, ...common } = form
-    if (editing.value) await membersApi.update(editing.value.id, common)
+    const before = editing.value
+    if (before) await membersApi.update(before.id, { ...common, username })
     else await membersApi.create({ ...common, username, password })
-    ElMessage.success('已保存')
+    ElMessage.success(renamedMessage(before?.username, username))
+    if (before?.id === auth.user?.id) auth.user = await authApi.me() // own account: the sidebar shows the new name
     dialog.value = false
     load()
   } catch (e) {
@@ -94,29 +99,31 @@ async function doReset() {
 <template>
   <MemberSignups v-if="isManager" @approved="load" />
   <el-card class="card">
-    <div class="page-toolbar">
-      <el-button v-if="auth.isSupervisor" @click="storageOpen = true">本组存储用量</el-button>
+    <PageToolbar>
       <el-input v-model="keyword" :placeholder="auth.isSupervisor ? '搜索姓名、学号、研究方向' : '搜索姓名、研究方向'" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.role" aria-label="角色" placeholder="全部角色" clearable>
         <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
-      <span class="grow" />
-      <el-button v-if="isManager" type="primary" @click="openForm(null)">新建成员</el-button>
-    </div>
-    <el-table v-loading="loading" :data="items">
+      <template #actions>
+        <el-button v-if="auth.isSupervisor" @click="storageOpen = true">本组存储用量</el-button>
+        <el-button v-if="isManager" type="primary" @click="openForm(null)">新建成员</el-button>
+      </template>
+    </PageToolbar>
+    <el-table empty-text="暂无成员" v-loading="loading" :data="items">
       <el-table-column prop="name" label="姓名" min-width="100" />
       <el-table-column v-if="auth.isSupervisor" prop="username" label="学号 / 工号" min-width="120" />
       <el-table-column label="角色" min-width="80">
         <template #default="{ row }">{{ ROLE_LABELS[row.role] }}</template>
       </el-table-column>
-      <el-table-column prop="research_direction" label="研究方向" min-width="160" />
+      <el-table-column prop="research_direction" label="研究方向" min-width="140" />
       <template v-if="auth.isSupervisor">
         <el-table-column prop="email" label="邮箱" min-width="160" />
-        <el-table-column prop="phone" label="电话" min-width="120" />
+        <el-table-column prop="phone" label="电话" min-width="140" />
+        <el-table-column prop="wechat" label="微信号" min-width="120" />
       </template>
       <el-table-column label="状态" min-width="80">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
+          <el-tag class="status-tag" :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column v-if="isManager" label="操作" min-width="200" fixed="right">
@@ -143,50 +150,43 @@ async function doReset() {
     />
   </el-card>
 
-  <el-dialog v-model="dialog" :title="editing ? '编辑成员' : '新建成员'" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
-        <el-input v-model="form.username" :disabled="!!editing" />
-      </el-form-item>
-      <el-form-item label="姓名" :error="formErrors.fe('name')" required>
-        <el-input v-model="form.name" />
-      </el-form-item>
-      <el-form-item label="角色" :error="formErrors.fe('role')">
-        <span>{{ ROLE_LABELS[form.role] }}</span>
-      </el-form-item>
-      <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
-        <el-input v-model="form.research_direction" />
-      </el-form-item>
-      <el-form-item label="邮箱" :error="formErrors.fe('email')">
-        <el-input v-model="form.email" />
-      </el-form-item>
-      <el-form-item label="电话" :error="formErrors.fe('phone')">
-        <el-input v-model="form.phone" />
-      </el-form-item>
-      <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
-        <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
-      </el-form-item>
-      <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="dialog = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-    </template>
-  </el-dialog>
+  <FormDialog v-model="dialog" :title="editing ? '编辑成员' : '新建成员'" :loading="saving" @submit="save">
+    <el-form-item label="学号 / 工号（登录名）" :error="formErrors.fe('username')" required>
+      <el-input v-model="form.username" />
+    </el-form-item>
+    <el-form-item label="姓名" :error="formErrors.fe('name')" required>
+      <el-input v-model="form.name" />
+    </el-form-item>
+    <el-form-item label="角色" :error="formErrors.fe('role')">
+      <span>{{ ROLE_LABELS[form.role] }}</span>
+    </el-form-item>
+    <el-form-item label="研究方向" :error="formErrors.fe('research_direction')">
+      <el-input v-model="form.research_direction" />
+    </el-form-item>
+    <el-form-item label="邮箱" :error="formErrors.fe('email')">
+      <el-input v-model="form.email" />
+    </el-form-item>
+    <el-form-item label="电话" :error="formErrors.fe('phone')">
+      <el-input v-model="form.phone" />
+    </el-form-item>
+    <el-form-item label="微信号" :error="formErrors.fe('wechat')">
+      <el-input v-model="form.wechat" />
+    </el-form-item>
+    <el-form-item v-if="!editing" label="初始密码" :error="formErrors.fe('password')" required>
+      <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
+    </el-form-item>
+    <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 
-  <el-dialog v-model="resetVisible" title="重置密码" width="min(420px, 95vw)">
-    <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
-    <el-form label-position="top" @submit.prevent="doReset">
-      <el-form-item label="新密码" :error="resetErrors.fe('password')">
-        <el-input v-model="newPassword" type="password" show-password autocomplete="new-password" />
-      </el-form-item>
-      <el-alert v-for="msg in resetErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="resetVisible = false">取消</el-button>
-      <el-button type="primary" @click="doReset">重置</el-button>
+  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" @submit="doReset">
+    <template #before>
+      <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
     </template>
-  </el-dialog>
+    <el-form-item label="新密码" :error="resetErrors.fe('password')">
+      <el-input v-model="newPassword" type="password" show-password autocomplete="new-password" />
+    </el-form-item>
+    <el-alert v-for="msg in resetErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
   <el-dialog v-model="storageOpen" title="本组存储用量" width="min(720px, 95vw)" destroy-on-close>
     <StorageUsage v-if="storageOpen" />
   </el-dialog>

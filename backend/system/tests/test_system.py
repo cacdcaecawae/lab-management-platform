@@ -202,3 +202,13 @@ def test_accounts(api, ops, group, other_group, student_a, manager):
     assert login(api, "t_adv2", "Reset-2026-pass!").status_code in (401, 403)
     assert User.objects.get(pk=advisor_id).check_password("Reset-2026-pass!")
     assert login(api, "mgr", PASSWORD).status_code == 200
+
+
+def test_ops_corrects_a_login_name(api, ops, student_a, manager):
+    url = f"/api/system/accounts/{student_a.id}/"
+    r = api(ops).patch(url, {"username": "2026018"}, format="json")
+    assert r.status_code == 200 and r.data["username"] == "2026018"
+    assert login(api, "2026018", PASSWORD).status_code == 200
+    assert api(ops).patch(url, {"username": "mgr"}, format="json").status_code == 409
+    assert api(ops).patch(url, {"username": "ops"}, format="json").status_code == 409  # the ops account's name too
+    assert api(ops).patch(url, {"username": "有 空格"}, format="json").status_code == 400

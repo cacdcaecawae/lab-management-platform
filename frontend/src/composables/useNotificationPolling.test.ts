@@ -1,22 +1,26 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
-import { defineComponent, ref } from 'vue'
+import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Me } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
-import NotificationBell from './NotificationBell.vue'
-
-const Popover = defineComponent({
-  emits: ['show'],
-  setup: () => ({ open: ref(false) }),
-  template: '<div><span @click="open=true; $emit(\'show\')"><slot name="reference"/></span><div v-if="open"><slot/></div></div>',
-})
+import { useNotificationsStore } from '@/stores/notifications'
+import NotificationsView from '@/modules/notifications/views/NotificationsView.vue'
+import { useNotificationPolling } from './useNotificationPolling'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+const Host = defineComponent({
+  setup() {
+    useNotificationPolling()
+    return () => null
+  },
 })
 
 async function setup() {
@@ -28,44 +32,38 @@ async function setup() {
   const fetch = vi.fn((url: string) => {
     if (url.endsWith('/8/read/')) unread = 0
     return Promise.resolve(new Response(JSON.stringify(
-      url.includes('unread-count') ? { count: unread } : { results: [item] },
+      url.includes('unread-count') ? { count: unread } : { results: [item], count: 1, next: null, previous: null },
     ), { status: 200 }))
   })
   vi.stubGlobal('fetch', fetch)
   const pinia = createPinia()
   useAuthStore(pinia).user = { id: 1, role: 'student', group: { id: 7, name: 'Fixture' } } as Me
-  const wrapper = mount(NotificationBell, { global: {
-    plugins: [router, pinia],
-    stubs: {
-      ElPopover: Popover,
-      ElBadge: { template: '<span><slot /></span>' },
-      ElButton: { template: '<button><slot /></button>' },
-    },
-    directives: { loading: {} },
-  } })
-  await flushPromises()
-  return { wrapper, router, fetch }
+  return { router, fetch, pinia, global: { plugins: [router, pinia, ElementPlus] } }
 }
 
-it('shows the unread count and reads the item before navigating', async () => {
+it('the notifications page reads an item before opening it, and the unread count follows', async () => {
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-  const { wrapper, router, fetch } = await setup()
-  const bell = wrapper.get('button[aria-label="通知，1 条未读"]')
-  await bell.trigger('click')
+  const { router, fetch, pinia, global } = await setup()
+  const host = mount(Host, { global })
   await flushPromises()
-  expect(fetch).toHaveBeenCalledWith('/api/notifications/?page_size=10', expect.anything())
-  await wrapper.findAll('button').find((button) => button.text().includes('采购申请退回修改'))!.trigger('click')
+  expect(useNotificationsStore(pinia).unread).toBe(1)
+  const page = mount(NotificationsView, { global })
+  await flushPromises()
+  await page.findAll('button').find((button) => button.text().includes('采购申请退回修改'))!.trigger('click')
   await flushPromises()
   expect(fetch).toHaveBeenCalledWith('/api/notifications/8/read/', expect.objectContaining({ method: 'POST' }))
   expect(router.currentRoute.value.path).toBe('/purchases/2')
-  expect(wrapper.find('button[aria-label="通知，0 条未读"]').exists()).toBe(true)
-  wrapper.unmount()
+  expect(useNotificationsStore(pinia).unread).toBe(0)
+  page.unmount()
+  host.unmount()
 })
 
 it('does not poll while hidden and disposes its interval when unmounted', async () => {
   vi.useFakeTimers()
   const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-  const { wrapper, fetch } = await setup()
+  const { fetch, global } = await setup()
+  const host = mount(Host, { global })
+  await flushPromises()
   expect(fetch).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(60_000)
   expect(fetch).not.toHaveBeenCalled()
@@ -74,7 +72,7 @@ it('does not poll while hidden and disposes its interval when unmounted', async 
   expect(fetch).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(60_000)
   expect(fetch).toHaveBeenCalledTimes(2)
-  wrapper.unmount()
+  host.unmount()
   await vi.advanceTimersByTimeAsync(60_000)
   expect(fetch).toHaveBeenCalledTimes(2)
 })

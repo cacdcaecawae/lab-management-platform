@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'dayjs/locale/zh-cn' // Element Plus date pickers: weeks start on Monday
 import 'element-plus/dist/index.css'
 import './styles/theme.css'
 import App from './App.vue'

@@ -10,6 +10,7 @@ import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import ProjectBoard from '@/modules/projects/components/ProjectBoard.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -81,11 +82,9 @@ loadLogs(true)
   <template v-else-if="project">
     <el-card class="card">
       <template #header>
-        <div class="actions">
-          <el-page-header :content="project.name" @back="router.push({ name: 'projects' })" />
-          <span style="flex: 1" />
+        <PageHeader :back="{ name: 'projects' }" :title="project.name">
           <el-button v-if="canEdit" type="primary" @click="editing = true">编辑项目</el-button>
-        </div>
+        </PageHeader>
       </template>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="负责人">{{ project.leader.name }}</el-descriptions-item>
@@ -101,31 +100,33 @@ loadLogs(true)
       </el-descriptions>
     </el-card>
 
-    <el-tabs v-model="boardTab">
-      <el-tab-pane label="进展" name="progress" />
-      <el-tab-pane label="任务" name="tasks" />
-      <el-tab-pane label="里程碑" name="milestones" />
-    </el-tabs>
-    <ProjectBoard :project="project" :session-user-id="auth.user?.id" :can-manage="canEdit" :tab="boardTab" />
-    <el-card v-if="boardTab === 'progress'" class="card" header="项目进展">
-      <el-form v-if="canEdit" label-position="top" class="log-form" @submit.prevent="addLog">
-        <el-form-item label="日期" :error="logErrors.fe('date')">
-          <el-date-picker v-model="logForm.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
-        </el-form-item>
-        <el-form-item label="进展内容" :error="logErrors.fe('content')">
-          <el-input v-model="logForm.content" type="textarea" :autosize="{ minRows: 2 }" />
-        </el-form-item>
-        <el-alert v-for="msg in logErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-        <el-button type="primary" :loading="addingLog" native-type="submit">添加进展</el-button>
-      </el-form>
-      <el-empty v-if="!logs.length" description="暂无进展" />
-      <el-timeline>
-        <el-timeline-item v-for="log in logs" :key="log.id" :timestamp="log.date" placement="top">
-          <pre class="pre">{{ log.content }}</pre>
-          <div class="meta">{{ log.author.name }} · {{ formatTime(log.created_at) }}</div>
-        </el-timeline-item>
-      </el-timeline>
-      <el-button v-if="hasMore" link type="primary" @click="more">加载更多</el-button>
+    <el-card class="card">
+      <el-tabs v-model="boardTab">
+        <el-tab-pane label="进展" name="progress" />
+        <el-tab-pane label="任务" name="tasks" />
+        <el-tab-pane label="里程碑" name="milestones" />
+      </el-tabs>
+      <ProjectBoard :project="project" :session-user-id="auth.user?.id" :can-manage="canEdit" :tab="boardTab" />
+      <template v-if="boardTab === 'progress'">
+        <el-form v-if="canEdit" label-position="top" class="log-form form-page" @submit.prevent="addLog">
+          <el-form-item label="日期" :error="logErrors.fe('date')">
+            <el-date-picker v-model="logForm.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+          </el-form-item>
+          <el-form-item label="进展内容" :error="logErrors.fe('content')">
+            <el-input v-model="logForm.content" type="textarea" :autosize="{ minRows: 2 }" />
+          </el-form-item>
+          <el-alert v-for="msg in logErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+          <el-button type="primary" :loading="addingLog" native-type="submit">添加进展</el-button>
+        </el-form>
+        <el-empty v-if="!logs.length" description="暂无进展" />
+        <el-timeline>
+          <el-timeline-item v-for="log in logs" :key="log.id" :timestamp="log.date" placement="top">
+            <pre class="pre">{{ log.content }}</pre>
+            <div class="meta">{{ log.author.name }} · {{ formatTime(log.created_at) }}</div>
+          </el-timeline-item>
+        </el-timeline>
+        <el-button v-if="hasMore" link type="primary" @click="more">加载更多</el-button>
+      </template>
     </el-card>
 
     <ProjectFormDialog v-model="editing" :project="project" @saved="(p) => (project = p)" />
@@ -138,7 +139,7 @@ loadLogs(true)
 }
 .meta {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 4px;
 }
 </style>

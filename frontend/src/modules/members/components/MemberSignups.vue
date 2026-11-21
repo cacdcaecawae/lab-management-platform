@@ -5,6 +5,7 @@ import { membersApi } from '@/modules/members/api'
 import type { PendingMember } from '@/api/types'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 // For managers: the group's registration link and the applications waiting for approval.
 const emit = defineEmits<{ approved: [] }>()
@@ -78,7 +79,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-switch
         :model-value="!!code"
         active-text="允许学生用链接注册"
@@ -90,10 +91,10 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
         <el-button @click="copy">复制链接</el-button>
         <el-button @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')">换一个链接</el-button>
       </template>
-    </div>
+    </PageToolbar>
     <template v-if="pending.length">
       <h3>待审核（{{ pending.length }}）</h3>
-      <el-table :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
+      <el-table empty-text="暂无待审核的申请" :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="name" label="姓名" min-width="100" />
         <el-table-column prop="username" label="学号" min-width="120" />
@@ -102,7 +103,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
           <template #default="{ row }">{{ formatTime(row.date_joined) }}</template>
         </el-table-column>
       </el-table>
-      <div class="page-toolbar">
+      <PageToolbar>
         <el-button type="primary" :disabled="!selected.length" @click="decide(true, selected)">通过</el-button>
         <el-button
           type="danger"
@@ -112,7 +113,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
           拒绝
         </el-button>
         <el-button @click="decide(true, pending, `通过全部 ${pending.length} 个申请？请先核对学号和姓名。`)">全部通过</el-button>
-      </div>
+      </PageToolbar>
     </template>
   </el-card>
 </template>

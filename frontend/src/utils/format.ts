@@ -1,6 +1,11 @@
 // Display labels and formatting shared by the pages.
 
 export const ROLE_LABELS: Record<string, string> = { student: '学生', manager: '管理员', advisor: '导师' }
+
+// After editing an account (成员, 系统管理): a changed login name is spelled out, since the person signs in with it.
+export function renamedMessage(before: string | undefined, after: string): string {
+  return before !== undefined && before !== after ? `已保存。学号 / 工号改成了 ${after}，下次登录要用新的` : '已保存'
+}
 export const KIND_LABELS: Record<string, string> = { raw: '原始数据', script: '脚本', result: '处理结果', other: '其他' }
 export const VERDICT_LABELS: Record<string, string> = { reviewed: '已阅', needs_revision: '需补充' }
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { ArrowRight, Plus } from '@element-plus/icons-vue'
 import { dashboardApi } from '@/modules/workbench/api'
 import type { Dashboard } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
-import { STATUS, formatMoney, formatPeriod, toDateStr } from '@/utils/format'
+import { formatMoney, formatPeriod, toDateStr } from '@/utils/format'
 import { showError } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 
@@ -20,259 +20,285 @@ dashboardApi
   .then((d) => (data.value = d), showError)
   .finally(() => (loading.value = false))
 
-// The API returns at most 20 items per list (workbench/views.py LIMIT).
-const n = (list: unknown[]) => (list.length >= 20 ? '20+' : String(list.length))
+// One line: a link on the left; on the right a hint, a status tag or a red tag. lead: a time in front (the schedule).
+interface Row { key: string | number; to: RouteLocationRaw; code?: string; text: string; lead?: string; hint?: string; late?: boolean; status?: string; danger?: string }
+// One kind of thing to do. to: the matching filtered list; count: the real total (the API sends at most 20 rows).
+interface Kind {
+  type: string
+  count: number
+  to: RouteLocationRaw
+  alert?: boolean
+  rows?: Row[]
+  names?: string[] // e.g. who has not handed in this week's report, on one line
+  hint?: string
+  action?: { label: string; to: RouteLocationRaw } // nothing to list, one thing to do
+}
+const total = (k: Kind) => (k.rows && k.rows.length >= 20 && k.count <= 20 ? '20+' : String(k.count))
 
-const tiles = computed(() => {
+// The workbench answers "what needs me now" (DESIGN.md).
+const kinds = computed<Kind[]>(() => {
   const d = data.value
   if (!d) return []
-  const result: { label: string; value: string; to: RouteLocationRaw; alert?: boolean }[] = []
+  const s: Kind[] = []
   if (d.supervisor) {
-    result.push(
-      { label: '待反馈的周报', value: n(d.supervisor.pending_reviews), to: { name: 'reports' }, alert: d.supervisor.pending_reviews.length > 0 },
-      { label: '本周未交', value: n(d.supervisor.missing_reports), to: { name: 'reports' } },
+    const sv = d.supervisor
+    s.push(
       {
-        label: '待我审批的采购',
-        value: n(d.supervisor.purchases_to_review),
-        to: { name: 'purchase-reviews' },
-        alert: d.supervisor.purchases_to_review.length > 0,
+        type: '待审批采购', count: sv.purchases_to_review.length, to: { name: 'purchase-reviews' }, alert: true,
+        rows: sv.purchases_to_review.map((p) => ({
+          key: p.id, to: { name: 'purchase-detail', params: { id: p.id }, query: { from: 'reviews' } },
+          code: p.code, text: `${p.owner.name} · ${p.purpose}`, hint: `¥ ${formatMoney(p.total)}`,
+        })),
+      },
+      {
+        type: '待反馈周报', count: sv.pending_reviews.length, to: { name: 'reports' }, alert: true,
+        rows: sv.pending_reviews.map((r) => ({
+          key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.owner.name} · ${r.week_start} 这一周`,
+        })),
+      },
+      { type: '未交周报', count: sv.missing_reports.length, to: { name: 'reports' }, names: sv.missing_reports.map((u) => u.name), hint: `${sv.week_start} 这一周` },
+    )
+  }
+  const my = d.my
+  s.push({
+    type: '采购被退回', count: my.returned_purchases.length, to: { name: 'purchases' }, alert: true,
+    rows: my.returned_purchases.map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: p.purpose, hint: '去修改' })),
+  })
+  if (!d.supervisor && !my.current_week_report) {
+    s.push({ type: '本周周报', count: 1, to: { name: 'reports' }, alert: true, action: { label: '写本周周报', to: { name: 'report-new' } } })
+  }
+  s.push(
+    {
+      type: '周报需补充', count: my.reports_needing_revision.length, to: { name: 'reports' }, alert: true,
+      rows: my.reports_needing_revision.map((r) => ({ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周` })),
+    },
+    {
+      type: '待登记使用', count: my.unreported_bookings.length, to: { name: 'bookings' },
+      rows: my.unreported_bookings.map((b) => ({
+        key: b.id, to: { name: 'bookings', query: { booking: b.id } }, code: b.equipment.code, text: formatPeriod(b.start_at, b.end_at), hint: '去登记',
+      })),
+    },
+    {
+      type: '实验未提交', count: my.draft_experiments.length, to: { name: 'experiments' },
+      rows: my.draft_experiments.map((x) => ({ key: x.id, to: { name: 'experiment-edit', params: { id: x.id } }, code: x.code, text: x.title, status: x.status })),
+    },
+    {
+      type: '行动项', count: my.action_items.length, to: { name: 'meetings' }, alert: my.action_items.some((a) => a.due_date && a.due_date < todayStr),
+      rows: my.action_items.map((a) => ({
+        key: a.id, to: { name: 'meeting-detail', params: { id: a.meeting.id } }, text: a.content,
+        hint: a.due_date ? `${a.due_date} 截止` : `${a.meeting.date} 组会`, late: !!a.due_date && a.due_date < todayStr,
+      })),
+    },
+    {
+      type: '任务', count: my.tasks?.length ?? 0, to: { name: 'projects' },
+      rows: (my.tasks ?? []).map((t) => ({
+        key: t.id, to: { name: 'project-detail', params: { id: t.project.id }, query: { tab: 'tasks' } }, text: t.title,
+        hint: t.due_date ? `${t.project.name} · ${t.due_date}` : t.project.name,
+      })),
+    },
+  )
+  if (d.manager) {
+    const m = d.manager
+    s.push(
+      {
+        type: '逾期未还', count: m.overdue_loans_count, to: { name: 'specimens', query: { overdue: '1' } }, alert: true,
+        rows: m.overdue_loans.map((l) => ({
+          key: l.loan_id, to: { name: 'specimen-detail', params: { id: l.specimen.id } }, code: l.specimen.code, text: l.specimen.name,
+          hint: `${l.borrower.name} · 到期 ${l.due_date}`,
+        })),
+      },
+      {
+        type: '设备待检查', count: m.equipment_to_check.length, to: { name: 'equipment', query: { status: 'needs_check' } }, alert: true,
+        rows: m.equipment_to_check.map((e) => ({ key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name })),
+      },
+      {
+        type: '校准到期', count: m.calibration_due_count, to: { name: 'equipment', query: { calibration_within: '30' } },
+        rows: m.calibration_due.map((e) => ({
+          key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name, hint: `${e.calibration_due} 到期`,
+          late: e.calibration_due < todayStr,
+        })),
+      },
+      {
+        type: '库存不足', count: m.low_stock.length, to: { name: 'consumables' },
+        rows: m.low_stock.map((c) => ({ key: c.id, to: { name: 'consumables' }, text: `${c.name} ${c.spec}`, hint: `剩 ${c.stock} ${c.unit} / 安全库存 ${c.safety_stock}` })),
+      },
+      {
+        type: '批次将到期', count: m.expiring_batches?.length ?? 0, to: { name: 'consumables', query: { expiring_within: '30' } },
+        rows: (m.expiring_batches ?? []).map((b) => ({
+          key: b.id, to: { name: 'consumables', query: { expiring_within: '30' } }, text: `${b.consumable__name} · ${b.batch_no}`,
+          hint: `${b.expires_on} 到期 · 库存 ${b.stock}`,
+        })),
       },
     )
-  } else {
-    const current = d.my.current_week_report
-    result.push({
-      label: '本周周报',
-      value: current ? STATUS[current.status]?.label ?? current.status : '未写',
-      to: current ? { name: 'report-edit', params: { id: current.id } } : { name: 'report-new' },
-      alert: !current,
-    })
   }
-  if (!d.supervisor || d.my.reports_needing_revision.length) {
-    result.push({ label: '需补充的周报', value: n(d.my.reports_needing_revision), to: { name: 'reports' }, alert: d.my.reports_needing_revision.length > 0 })
-  }
-  if (!d.supervisor || d.my.draft_experiments.length) {
-    result.push({ label: '未提交的实验记录', value: n(d.my.draft_experiments), to: { name: 'experiments' } })
-  }
-  if (d.my.action_items.length) {
-    const late = d.my.action_items.some((a) => a.due_date && a.due_date < todayStr)
-    result.push({ label: '我的行动项', value: n(d.my.action_items), to: { name: 'meetings' }, alert: late })
-  }
-  if (d.my.returned_purchases.length) {
-    result.push({ label: '被退回的采购', value: n(d.my.returned_purchases), to: { name: 'purchases' }, alert: true })
-  }
-  if (!d.supervisor || d.my.upcoming_bookings.length) {
-    result.push({ label: '我的预约', value: n(d.my.upcoming_bookings), to: { name: 'bookings' } })
-  }
-  result.push({ label: '我借的试件', value: String(d.my.borrowed_specimens_count), to: { name: 'specimens', query: { mine: '1' } }, alert: d.my.borrowed_specimens.some((loan) => loan.overdue) })
-  if (d.manager) {
-    result.push(
-      { label: '逾期未还', value: String(d.manager.overdue_loans_count), to: { name: 'specimens', query: { overdue: '1' } }, alert: d.manager.overdue_loans_count > 0 },
-      { label: '校准到期', value: String(d.manager.calibration_due_count), to: { name: 'equipment', query: { calibration_within: '30' } }, alert: d.manager.calibration_due_count > 0 },
-      { label: '待检查的设备', value: n(d.manager.equipment_to_check), to: { name: 'equipment', query: { status: 'needs_check' } }, alert: d.manager.equipment_to_check.length > 0 },
-      { label: '库存不足的耗材', value: n(d.manager.low_stock), to: { name: 'consumables' }, alert: d.manager.low_stock.length > 0 },
-    )
-  }
-  return result
+  return s.filter((k) => k.count > 0)
 })
 
-// Supervisors see their own cards only when they have items in them.
-const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
+// Flat to-do list: red kinds first, then the order above; at most SHOW rows of a kind, then a link to the whole filtered list.
+const SHOW = 5
+// more: the "全部 N 条" line (no type in front); link: blue, the line is something to do rather than an item
+type Line = Row & { type: string; alert?: boolean; more?: boolean; link?: boolean }
+const lines = computed<Line[]>(() =>
+  [...kinds.value.filter((k) => k.alert), ...kinds.value.filter((k) => !k.alert)].flatMap((k): Line[] => {
+    const head = { type: k.type, alert: k.alert }
+    if (k.action) return [{ ...head, key: k.type, to: k.action.to, text: k.action.label, link: true }]
+    if (k.names) return [{ ...head, key: k.type, to: k.to, text: k.names.join('、'), hint: k.hint }]
+    const rows = k.rows ?? []
+    const shown: Line[] = rows.slice(0, SHOW).map((r) => ({ ...head, ...r, key: `${k.type}-${r.key}` }))
+    if (k.count > shown.length) shown.push({ ...head, key: `${k.type}-more`, to: k.to, text: `全部 ${total(k)} 条`, more: true, link: true })
+    return shown
+  }),
+)
+
+// The schedule: bookings by day, each day with a tear-off date on the left; then this week's report and borrowed
+// specimens. Empty parts are left out.
+interface Day { key: string; month: string; day: number; weekday: string; today: boolean; rows: Row[] }
+const days = computed<Day[]>(() => {
+  const out: Day[] = []
+  for (const b of data.value?.my.upcoming_bookings ?? []) {
+    const p = formatPeriod(b.start_at, b.end_at) // "2026-11-23 09:00 – 11:00"
+    const key = p.slice(0, 10)
+    let d = out.find((x) => x.key === key)
+    if (!d) {
+      const date = new Date(`${key}T00:00:00`)
+      d = { key, month: `${date.getMonth() + 1}月`, day: date.getDate(), weekday: date.toLocaleDateString('zh-CN', { weekday: 'short' }), today: key === todayStr, rows: [] }
+      out.push(d)
+    }
+    d.rows.push({ key: b.id, to: { name: 'bookings', query: { booking: b.id } }, code: b.equipment.code, text: b.equipment.name, hint: p.slice(11) })
+  }
+  return out
+})
+const others = computed(() => {
+  const my = data.value?.my
+  if (!my) return []
+  const groups: { title: string; rows: Row[] }[] = []
+  if (my.current_week_report) {
+    const r = my.current_week_report
+    groups.push({ title: '本周周报', rows: [{ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周`, status: r.status }] })
+  }
+  if (my.borrowed_specimens_count) {
+    const rows: Row[] = my.borrowed_specimens.map((l) => ({
+      key: l.loan_id, to: { name: 'specimen-detail', params: { id: l.specimen.id } }, code: l.specimen.code, text: l.specimen.name,
+      hint: l.due_date ? `到期 ${l.due_date}` : '未设到期日', danger: l.overdue ? '已逾期' : undefined,
+    }))
+    if (my.borrowed_specimens_count > rows.length) {
+      rows.push({ key: 'more', to: { name: 'specimens', query: { mine: '1' } }, text: `全部 ${my.borrowed_specimens_count} 件` })
+    }
+    groups.push({ title: '我借的试件', rows })
+  }
+  return groups
+})
+
+// One line under the greeting; a kind listing names (未交周报) counts once.
+const summary = computed(() => {
+  const todo = kinds.value.reduce((n, k) => n + (k.names ? 1 : k.count), 0)
+  const booked = data.value?.my.upcoming_bookings.length ?? 0
+  return [todo ? `${todo} 件事等你处理` : '没有要你处理的事', booked ? `接下来 ${booked} 个预约` : ''].filter(Boolean).join(' · ')
+})
+
+// Width of the right column: drag the gap between the cards, or focus it and use ←/→; double-click resets.
+// Kept per browser. Above half the row it is capped by CSS (min(…, 50%)), so a wide setting cannot squeeze the list.
+const SIDE_KEY = 'lab.workbench.side'
+const SIDE_DEFAULT = 400
+const clampSide = (w: number) => Math.round(Math.min(720, Math.max(300, w)))
+const side = ref(clampSide(Number(localStorage.getItem(SIDE_KEY)) || SIDE_DEFAULT))
+const setSide = (w: number) => localStorage.setItem(SIDE_KEY, String((side.value = clampSide(w))))
+function drag(e: PointerEvent) {
+  const bar = e.currentTarget as HTMLElement
+  const row = bar.parentElement!.getBoundingClientRect()
+  bar.setPointerCapture(e.pointerId)
+  // follow the pointer only as far as the CSS cap (half the row) lets the column grow
+  const move = (m: PointerEvent) => (side.value = clampSide(Math.min(row.right - m.clientX - 8, row.width / 2)))
+  const up = () => {
+    bar.removeEventListener('pointermove', move)
+    bar.removeEventListener('pointerup', up)
+    setSide(side.value)
+  }
+  bar.addEventListener('pointermove', move)
+  bar.addEventListener('pointerup', up)
+}
 </script>
 
 <template>
   <div v-loading="loading" class="wb">
-    <div class="wb-head">
+    <header class="wb-head">
       <div>
-        <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}。</h1>
-        <div class="sub">{{ auth.user?.group?.name }} · {{ today }}</div>
+        <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}</h1>
+        <p class="sub">{{ today }}<template v-if="data"> · {{ summary }}</template></p>
       </div>
-      <el-button v-if="!auth.isSupervisor" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
-    </div>
+      <el-button v-if="!auth.isSupervisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
+    </header>
 
-    <template v-if="data">
-      <div class="tiles">
-        <RouterLink v-for="t in tiles" :key="t.label" :to="t.to" class="tile" :class="{ alert: t.alert }">
-          <span class="tile-label">{{ t.label }}</span>
-          <span class="tile-value">{{ t.value }}</span>
-        </RouterLink>
-      </div>
-
-      <div class="grid">
-        <el-card v-if="data.supervisor" header="待反馈的周报" class="wb-card">
-          <el-empty v-if="!data.supervisor.pending_reviews.length" :image-size="40" description="没有待反馈的周报" />
-          <ul v-else class="rows">
-            <li v-for="r in data.supervisor.pending_reviews" :key="r.id">
-              <RouterLink :to="{ name: 'report-edit', params: { id: r.id } }">{{ r.owner.name }} · {{ r.week_start }} 这一周</RouterLink>
-              <StatusTag :status="r.status" />
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.supervisor" :header="`本周未交名单（${data.supervisor.week_start} 这一周）`" class="wb-card">
-          <el-empty v-if="!data.supervisor.missing_reports.length" :image-size="40" description="本周周报已全部提交" />
-          <div v-else class="actions">
-            <el-tag v-for="u in data.supervisor.missing_reports" :key="u.id" type="danger" disable-transitions>{{ u.name }}</el-tag>
-          </div>
-        </el-card>
-
-        <el-card v-if="data.supervisor" header="待我审批的采购" class="wb-card">
-          <el-empty v-if="!data.supervisor.purchases_to_review.length" :image-size="40" description="没有等你审批的采购申请" />
-          <ul v-else class="rows">
-            <li v-for="p in data.supervisor.purchases_to_review" :key="p.id">
-              <RouterLink :to="{ name: 'purchase-detail', params: { id: p.id }, query: { from: 'reviews' } }">
-                <span class="code">{{ p.code }}</span> {{ p.owner.name }} · {{ p.purpose }}
-              </RouterLink>
-              <span class="hint">¥ {{ formatMoney(p.total) }}</span>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.my.tasks?.length" header="我的任务" class="wb-card">
-          <ul class="rows">
-            <li v-for="task in data.my.tasks" :key="task.id">
-              <RouterLink :to="{ name: 'project-detail', params: { id: task.project.id }, query: { tab: 'tasks' } }">
-                {{ task.title }}
-              </RouterLink>
-              <span>{{ task.project.name }}<template v-if="task.due_date"> · {{ task.due_date }}</template></span>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.my.action_items.length" header="我的行动项" class="wb-card">
-          <ul class="rows">
-            <li v-for="a in data.my.action_items" :key="a.id">
-              <RouterLink :to="{ name: 'meeting-detail', params: { id: a.meeting.id } }">{{ a.content }}</RouterLink>
-              <span class="hint" :class="{ late: a.due_date && a.due_date < todayStr }">
-                {{ a.due_date ? `${a.due_date} 截止` : `${a.meeting.date} 组会` }}
+    <!-- Left: things only you can move forward. Right: what is already booked or borrowed, to keep in mind. -->
+    <div v-if="data" class="wb-cols" :style="{ '--side': `${side}px` }">
+      <el-card class="card" header="需要你处理">
+        <ul v-if="lines.length" class="rows">
+          <li v-for="r in lines" :key="r.key">
+            <RouterLink :to="r.to" class="row" :class="{ more: r.more }">
+              <el-tag v-if="!r.more" class="kind" :type="r.alert ? 'danger' : 'info'" disable-transitions>{{ r.type }}</el-tag>
+              <span class="main">
+                <span class="title" :class="{ link: r.link }"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</span>
+                <span v-if="r.hint" class="detail" :class="{ late: r.late }">{{ r.hint }}</span>
               </span>
-            </li>
-          </ul>
-        </el-card>
+              <StatusTag v-if="r.status" :status="r.status" />
+              <el-icon class="chev" aria-hidden="true"><ArrowRight /></el-icon>
+            </RouterLink>
+          </li>
+        </ul>
+        <p v-else class="quiet">都处理完了。</p>
+      </el-card>
 
-        <el-card v-if="data.my.returned_purchases.length" header="被退回的采购" class="wb-card">
+      <div
+        class="splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖动调整两栏宽度"
+        :aria-valuenow="side"
+        aria-valuemin="300"
+        aria-valuemax="720"
+        tabindex="0"
+        @pointerdown="drag"
+        @dblclick="setSide(SIDE_DEFAULT)"
+        @keydown.left.prevent="setSide(side + 24)"
+        @keydown.right.prevent="setSide(side - 24)"
+      />
+
+      <el-card class="card" header="接下来">
+        <div v-for="d in days" :key="d.key" class="day">
+          <div class="date" :class="{ today: d.today }">
+            <span>{{ d.today ? '今天' : d.month }}</span>
+            <b>{{ d.day }}</b>
+            <span>{{ d.weekday }}</span>
+          </div>
           <ul class="rows">
-            <li v-for="p in data.my.returned_purchases" :key="p.id">
-              <RouterLink :to="{ name: 'purchase-detail', params: { id: p.id } }"><span class="code">{{ p.code }}</span> {{ p.purpose }}</RouterLink>
-              <span class="hint">去修改</span>
-            </li>
-          </ul>
-        </el-card>
-
-        <el-card v-if="!data.supervisor || data.my.current_week_report" header="本周周报" class="wb-card">
-          <ul v-if="data.my.current_week_report" class="rows">
-            <li>
-              <RouterLink :to="{ name: 'report-edit', params: { id: data.my.current_week_report.id } }">
-                {{ data.my.current_week_report.week_start }} 这一周
+            <li v-for="r in d.rows" :key="r.key">
+              <RouterLink :to="r.to" class="row">
+                <span class="main">
+                  <span class="title"><span class="code">{{ r.code }}</span> {{ r.text }}</span>
+                  <span class="detail">{{ r.hint }}</span>
+                </span>
               </RouterLink>
-              <StatusTag :status="data.my.current_week_report.status" />
             </li>
           </ul>
-          <el-button v-else type="primary" @click="$router.push({ name: 'report-new' })">写本周周报</el-button>
-        </el-card>
-        <el-card v-if="showMine(data.my.reports_needing_revision)" header="需补充的周报" class="wb-card">
-          <el-empty v-if="!data.my.reports_needing_revision.length" :image-size="40" description="没有需要补充的周报" />
-          <ul v-else class="rows">
-            <li v-for="r in data.my.reports_needing_revision" :key="r.id">
-              <RouterLink :to="{ name: 'report-edit', params: { id: r.id } }">{{ r.week_start }} 这一周</RouterLink>
-              <StatusTag :status="r.status" />
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="showMine(data.my.draft_experiments)" header="未提交的实验记录" class="wb-card">
-          <el-empty v-if="!data.my.draft_experiments.length" :image-size="40" description="没有未提交的实验记录" />
-          <ul v-else class="rows">
-            <li v-for="x in data.my.draft_experiments" :key="x.id">
-              <RouterLink :to="{ name: 'experiment-edit', params: { id: x.id } }">
-                <span class="code">{{ x.code }}</span> {{ x.title }}
-              </RouterLink>
-              <StatusTag :status="x.status" />
-            </li>
-          </ul>
-        </el-card>
-
-        <el-card v-if="data.my.unreported_bookings.length" header="待登记使用结果" class="wb-card">
+        </div>
+        <section v-for="g in others" :key="g.title" class="group">
+          <h3 class="group-title">{{ g.title }}</h3>
           <ul class="rows">
-            <li v-for="b in data.my.unreported_bookings" :key="b.id">
-              <RouterLink :to="{ name: 'bookings', query: { booking: b.id } }">
-                <span class="code">{{ b.equipment.code }}</span> {{ formatPeriod(b.start_at, b.end_at) }}
+            <li v-for="r in g.rows" :key="r.key">
+              <RouterLink :to="r.to" class="row">
+                <span class="main">
+                  <span class="title" :class="{ link: r.key === 'more' }"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</span>
+                  <span v-if="r.hint" class="detail">{{ r.hint }}</span>
+                </span>
+                <StatusTag v-if="r.status" :status="r.status" />
+                <el-tag v-if="r.danger" type="danger" disable-transitions>{{ r.danger }}</el-tag>
               </RouterLink>
-              <span class="hint">去登记</span>
             </li>
           </ul>
-        </el-card>
-        <el-card v-if="showMine(data.my.upcoming_bookings)" header="我的预约" class="wb-card">
-          <el-empty v-if="!data.my.upcoming_bookings.length" :image-size="40" description="没有接下来的预约" />
-          <ul v-else class="rows">
-            <li v-for="b in data.my.upcoming_bookings" :key="b.id">
-              <RouterLink :to="{ name: 'bookings', query: { booking: b.id } }">
-                <span class="code">{{ b.equipment.code }}</span> {{ b.equipment.name }}
-              </RouterLink>
-              <span class="hint">{{ formatPeriod(b.start_at, b.end_at) }}</span>
-            </li>
-          </ul>
-        </el-card>
-
-        <el-card header="我借的试件" class="wb-card">
-          <el-empty v-if="!data.my.borrowed_specimens.length" :image-size="40" description="没有未归还的试件" />
-          <ul v-else class="rows">
-            <li v-for="loan in data.my.borrowed_specimens" :key="loan.loan_id">
-              <RouterLink :to="{ name: 'specimen-detail', params: { id: loan.specimen.id } }">
-                <span class="code">{{ loan.specimen.code }}</span> {{ loan.specimen.name }}
-              </RouterLink>
-              <span class="hint">{{ loan.due_date ? '到期 ' + loan.due_date : '未设到期日' }}</span>
-              <el-tag v-if="loan.overdue" type="danger" size="small">已逾期</el-tag>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.manager" header="逾期未还" class="wb-card">
-          <el-empty v-if="!data.manager.overdue_loans.length" :image-size="40" description="没有逾期借用" />
-          <ul v-else class="rows">
-            <li v-for="loan in data.manager.overdue_loans" :key="loan.loan_id">
-              <RouterLink :to="{ name: 'specimen-detail', params: { id: loan.specimen.id } }">
-                <span class="code">{{ loan.specimen.code }}</span> {{ loan.specimen.name }}
-              </RouterLink>
-              <span class="hint">{{ loan.borrower.name }} · 到期 {{ loan.due_date }}</span>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.manager" header="校准到期" class="wb-card">
-          <el-empty v-if="!data.manager.calibration_due.length" :image-size="40" description="没有到期或即将到期的设备" />
-          <ul v-else class="rows">
-            <li v-for="device in data.manager.calibration_due" :key="device.id">
-              <RouterLink :to="{ name: 'equipment-detail', params: { id: device.id } }">
-                <span class="code">{{ device.code }}</span> {{ device.name }}
-              </RouterLink>
-              <span class="hint">校准到期 {{ device.calibration_due }}</span>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.manager" header="待检查的设备" class="wb-card">
-          <el-empty v-if="!data.manager.equipment_to_check.length" :image-size="40" description="没有待检查的设备" />
-          <ul v-else class="rows">
-            <li v-for="e in data.manager.equipment_to_check" :key="e.id">
-              <RouterLink :to="{ name: 'equipment-detail', params: { id: e.id } }">
-                <span class="code">{{ e.code }}</span> {{ e.name }}
-              </RouterLink>
-              <StatusTag :status="e.status" />
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.manager?.expiring_batches?.length" header="30 天内到期的耗材批次" class="wb-card">
-          <ul class="rows">
-            <li v-for="b in data.manager.expiring_batches" :key="b.id">
-              <RouterLink :to="{ name: 'consumables', query: { expiring_within: '30' } }">{{ b.consumable__name }} · {{ b.batch_no }}</RouterLink>
-              <span class="hint">{{ b.expires_on }} 到期 · 库存 {{ b.stock }}</span>
-            </li>
-          </ul>
-        </el-card>
-        <el-card v-if="data.manager" header="库存不足的耗材" class="wb-card">
-          <el-empty v-if="!data.manager.low_stock.length" :image-size="40" description="耗材库存充足" />
-          <ul v-else class="rows">
-            <li v-for="c in data.manager.low_stock" :key="c.id">
-              <RouterLink :to="{ name: 'consumables' }">{{ c.name }} {{ c.spec }}</RouterLink>
-              <span class="hint">剩 {{ c.stock }} {{ c.unit }} / 安全库存 {{ c.safety_stock }}</span>
-            </li>
-          </ul>
-        </el-card>
-      </div>
-    </template>
+        </section>
+        <p v-if="!days.length && !others.length" class="quiet">近期没有预约。</p>
+      </el-card>
+    </div>
   </div>
 </template>
 
@@ -289,107 +315,171 @@ const showMine = (list: unknown[]) => !data.value?.supervisor || list.length > 0
 }
 .hello {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .sub {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+  margin: 4px 0 0;
+  color: var(--lab-text-3);
 }
-.tiles {
+.wb-cols {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: minmax(0, 1fr) 16px min(var(--side), 50%);
+  row-gap: 16px;
+  align-items: start;
 }
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border: 1px solid var(--lab-border);
-  border-radius: var(--lab-radius-lg);
-  color: inherit;
-  text-decoration: none;
-  transition: border-color 0.15s, background-color 0.15s;
+/* The gap between the cards is the handle: a short bar shows on hover, focus or while dragging. */
+.splitter {
+  align-self: stretch;
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
 }
-.tile:hover {
-  border-color: #d4d4d4;
-  background: #fcfcfc;
-}
-.tile-label {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-.tile-value {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-.tile.alert .tile-label::after {
+.splitter::after {
   content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 6px;
-  vertical-align: middle;
-  border-radius: 50%;
-  background: var(--el-color-danger);
+  position: absolute;
+  top: 24px;
+  left: 6px;
+  width: 4px;
+  height: 48px;
+  border-radius: 999px;
+  background: transparent;
 }
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
+.splitter:hover::after,
+.splitter:focus-visible::after,
+.splitter:active::after {
+  background: var(--el-color-primary-light-5);
 }
-.wb-card :deep(.el-card__body) {
-  padding: 8px 12px 12px;
+.wb-cols > .card {
+  margin-top: 0;
 }
-.wb-card :deep(.el-card__body) > .el-button {
-  margin: 8px;
-}
-.wb-card :deep(.el-empty__image) {
-  display: none;
-}
+/* Rows are whole links: two lines (what, then the detail), a rounded highlight on hover, no rules between them. */
 .rows {
-  margin: 0;
+  margin: 0 -10px;
   padding: 0;
   list-style: none;
 }
-.rows li {
+.row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 8px;
-  border-radius: var(--lab-radius);
+  padding: 9px 10px;
+  border-radius: 12px;
+  color: var(--lab-text);
 }
-.rows li:hover {
-  background: #fafafa;
+.row:hover {
+  background: var(--lab-bg);
+  text-decoration: none;
 }
-.hint {
+.kind {
   flex: none;
-  color: var(--el-text-color-secondary);
-  font-size: 12.5px;
+  width: 92px;
+  justify-content: center;
 }
-.hint.late {
-  color: var(--el-color-danger);
-}
-.rows a {
+.main {
+  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.title.link {
+  color: var(--lab-link);
+}
+.row.more .main {
+  padding-left: 104px; /* under the titles, past the kind pills */
+}
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lab-text-3);
+  font-size: 13px;
+}
+.detail.late {
+  color: var(--el-color-danger);
+}
+.chev {
+  flex: none;
+  color: var(--lab-text-3);
+}
+.day {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.day + .day {
+  margin-top: 10px;
+}
+.day .rows {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+}
+.date {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 52px;
+  padding: 6px 0;
+  border-radius: 12px;
+  background: var(--lab-bg);
+  line-height: 1.3;
+}
+.date span {
+  color: var(--lab-text-3);
+  font-size: 13px;
+}
+.date b {
+  font-size: 20px;
+  font-weight: 600;
+}
+.date.today {
+  background: var(--el-color-primary);
+  color: #fff;
+}
+.date.today span {
+  color: #fff;
+}
+.group {
+  margin-top: 16px;
+}
+.group-title {
+  margin: 0 0 2px;
+  color: var(--lab-text-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+.quiet {
+  margin: 0;
+  color: var(--lab-text-2);
+}
+@media (max-width: 1000px) {
+  .wb-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .splitter {
+    display: none;
+  }
 }
 @media (max-width: 768px) {
   .wb-head {
     flex-direction: column;
     align-items: flex-start;
   }
-  .grid {
-    grid-template-columns: 1fr;
+  .kind {
+    width: auto;
+  }
+  .row.more .main {
+    padding-left: 0;
   }
 }
 </style>

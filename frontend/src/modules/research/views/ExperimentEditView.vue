@@ -17,6 +17,8 @@ import StatusTag from '@/components/StatusTag.vue'
 import ParamsEditor from '@/modules/research/components/ParamsEditor.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -47,6 +49,8 @@ const errors = useFieldErrors(Object.keys(form))
 // No record yet only means "new" on the -new route; a failed load must not turn into a create form.
 const isNew = !route.params.id
 const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canReturn = computed(() => record.value?.status === 'submitted' && auth.isSupervisor)
 const readonlyHint = computed(() => {
   const r = record.value
@@ -81,6 +85,7 @@ function fill(r: Experiment) {
     anomalies: r.anomalies,
     dataset_ids: r.datasets.map((d) => d.id),
   })
+  markSaved()
 }
 
 async function load(id: number) {
@@ -162,64 +167,49 @@ if (route.params.id) load(Number(route.params.id))
   </el-result>
   <el-card v-else v-loading="loading" class="card">
     <template #header>
-      <div class="actions">
-        <el-page-header :content="record ? `${record.code} ${record.title}` : '新建实验记录'" @back="router.push({ name: 'experiments' })" />
-        <StatusTag v-if="record" :status="record.status" />
-        <span style="flex: 1" />
+      <PageHeader :back="{ name: 'experiments' }">
+        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建实验记录</template></template>
+        <template v-if="record" #tags><StatusTag :status="record.status" /></template>
         <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
         <el-button v-if="canReturn" type="warning" @click="returnToDraft">退回</el-button>
         <template v-if="editable">
           <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
           <el-button type="primary" :loading="saving" @click="submit">提交</el-button>
         </template>
-      </div>
+      </PageHeader>
     </template>
     <el-alert v-if="readonlyHint" :title="readonlyHint" type="info" :closable="false" class="notice" />
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" class="notice" />
-    <el-form :disabled="!editable" label-position="top">
-      <el-row :gutter="16">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="项目" :error="errors.fe('project_id')" required>
-            <el-select v-model="form.project_id" filterable placeholder="选择项目">
-              <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="实验名称" :error="errors.fe('title')" required>
-            <el-input v-model="form.title" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="实验日期" :error="errors.fe('date')" required>
-            <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="台账设备" :error="errors.fe('equipment_item_id')">
-            <el-select v-model="form.equipment_item_id" filterable clearable placeholder="从设备台账选择">
-              <el-option v-for="e in equipmentOptions" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="设备说明" :error="errors.fe('equipment')">
-            <el-input v-model="form.equipment" placeholder="台账外的设备、探头等" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="试件" :error="errors.fe('specimen')">
-            <el-input v-model="form.specimen" placeholder="台账外的试件" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :md="12">
-          <el-form-item label="台账试件" :error="errors.fe('specimen_item_ids')">
-            <el-select v-model="form.specimen_item_ids" multiple filterable placeholder="从试样与标准件中选择">
-              <el-option v-for="s in specimenOptions" :key="s.id" :label="`${s.code} ${s.name}`" :value="s.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-      </el-row>
+    <el-form class="form-page" :disabled="!editable" label-position="top">
+      <div class="form-grid">
+        <el-form-item class="span-2" label="项目" :error="errors.fe('project_id')" required>
+          <el-select v-model="form.project_id" filterable placeholder="选择项目">
+            <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="span-2" label="实验名称" :error="errors.fe('title')" required>
+          <el-input v-model="form.title" />
+        </el-form-item>
+        <el-form-item label="实验日期" :error="errors.fe('date')" required>
+          <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item label="台账设备" :error="errors.fe('equipment_item_id')">
+          <el-select v-model="form.equipment_item_id" filterable clearable placeholder="从设备台账选择">
+            <el-option v-for="e in equipmentOptions" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="设备说明" :error="errors.fe('equipment')">
+          <el-input v-model="form.equipment" placeholder="台账外的设备、探头等" />
+        </el-form-item>
+        <el-form-item label="试件" :error="errors.fe('specimen')">
+          <el-input v-model="form.specimen" placeholder="台账外的试件" />
+        </el-form-item>
+        <el-form-item class="span-2" label="台账试件" :error="errors.fe('specimen_item_ids')">
+          <el-select v-model="form.specimen_item_ids" multiple filterable placeholder="从试样与标准件中选择">
+            <el-option v-for="s in specimenOptions" :key="s.id" :label="`${s.code} ${s.name}`" :value="s.id" />
+          </el-select>
+        </el-form-item>
+      </div>
       <el-form-item label="实验参数" :error="errors.fe('params')">
         <ParamsEditor ref="paramsEditor" v-model="form.params" :disabled="!editable" />
       </el-form-item>

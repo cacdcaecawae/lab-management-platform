@@ -33,3 +33,36 @@ describe('PinnedDatasets', () => {
     expect(text).toContain('无版本（旧记录）')
   })
 })
+
+// DESIGN.md: pages use the shared skeleton. These read the page sources and fail on the hand-rolled versions.
+const pages = import.meta.glob<string>('/src/modules/**/*.vue', { query: '?raw', import: 'default', eager: true })
+const offenders = (re: RegExp) => Object.keys(pages).filter((path) => re.test(pages[path]))
+
+describe('pages use the shared skeleton (DESIGN.md)', () => {
+  it('a dialog with a form is a FormDialog; el-dialog only shows content', () => {
+    const withForm = Object.keys(pages).filter((path) =>
+      (pages[path].match(/<el-dialog\b[\s\S]*?<\/el-dialog>/g) ?? []).some((dialog) => /<el-form\b|<el-input\b/.test(dialog)),
+    )
+    expect(withForm).toEqual([])
+  })
+
+  it('forms are laid out with .form-grid, not el-row / el-col', () => {
+    expect(offenders(/<el-(row|col)\b/)).toEqual([])
+  })
+
+  it('list toolbars are PageToolbar and page headers are PageHeader', () => {
+    expect(offenders(/class="page-toolbar"/)).toEqual([])
+    expect(offenders(/<el-page-header\b/)).toEqual([])
+  })
+
+  it('new things are 新建, not 新增', () => {
+    expect(offenders(/[>'"`]新增/)).toEqual([])
+  })
+
+  it('every table says what is missing when empty (暂无 X), not the default 暂无数据', () => {
+    const bare = Object.keys(pages).filter((path) =>
+      (pages[path].match(/<el-table(?=[\s>])[^>]*>/g) ?? []).some((tag) => !/empty-text=/.test(tag)),
+    )
+    expect(bare).toEqual([])
+  })
+})

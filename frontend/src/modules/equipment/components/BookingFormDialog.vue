@@ -5,6 +5,7 @@ import type { Booking, BookingKind, Equipment, ProjectBrief } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { STATUS } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
+import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{
@@ -83,60 +84,43 @@ async function save() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="新建预约" width="min(520px, 95vw)">
-    <el-form label-position="top" @submit.prevent="save">
-      <el-form-item v-if="auth.isManager" label="类型" :error="errors.fe('kind')">
-        <el-radio-group v-model="form.kind">
-          <el-radio value="use">使用</el-radio>
-          <el-radio value="maintenance">维护（校准、维修占用）</el-radio>
-        </el-radio-group>
+  <FormDialog v-model="visible" title="新建预约" confirm-text="预约" :loading="saving" @submit="save">
+    <el-form-item v-if="auth.isManager" label="类型" :error="errors.fe('kind')">
+      <el-radio-group v-model="form.kind">
+        <el-radio value="use">使用</el-radio>
+        <el-radio value="maintenance">维护（校准、维修占用）</el-radio>
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item label="设备" :error="errors.fe('equipment_id')" required>
+      <el-select v-model="form.equipment_id" filterable placeholder="选择设备">
+        <el-option v-for="e in choices" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
+      </el-select>
+    </el-form-item>
+    <el-alert
+      v-if="unavailable"
+      :title="`${unavailable.code} 当前为“${STATUS[unavailable.status].label}”，暂不能预约使用`"
+      type="warning"
+      :closable="false"
+      class="form-alert"
+    />
+    <div class="form-grid">
+      <el-form-item label="开始" :error="errors.fe('start_at')" required>
+        <el-date-picker v-model="form.start" type="datetime" format="YYYY-MM-DD HH:mm" :clearable="false" @change="onStartChange" />
       </el-form-item>
-      <el-form-item label="设备" :error="errors.fe('equipment_id')" required>
-        <el-select v-model="form.equipment_id" filterable placeholder="选择设备">
-          <el-option v-for="e in choices" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
-        </el-select>
+      <el-form-item label="结束" :error="errors.fe('end_at')" required>
+        <el-date-picker v-model="form.end" type="datetime" format="YYYY-MM-DD HH:mm" :clearable="false" />
       </el-form-item>
-      <el-alert
-        v-if="unavailable"
-        :title="`${unavailable.code} 当前为“${STATUS[unavailable.status].label}”，暂不能预约使用`"
-        type="warning"
-        :closable="false"
-        class="form-alert"
-      />
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="开始" :error="errors.fe('start_at')" required>
-            <el-date-picker
-              v-model="form.start"
-              type="datetime"
-              format="YYYY-MM-DD HH:mm"
-              :clearable="false"
-              style="width: 100%"
-              @change="onStartChange"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="结束" :error="errors.fe('end_at')" required>
-            <el-date-picker v-model="form.end" type="datetime" format="YYYY-MM-DD HH:mm" :clearable="false" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="项目" :error="errors.fe('project_id')">
-        <el-select v-model="form.project_id" filterable clearable placeholder="可不选">
-          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="用途" :error="errors.fe('purpose')">
-        <el-input v-model="form.purpose" maxlength="200" placeholder="如 螺栓预紧力重复性测试" />
-      </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">预约</el-button>
-    </template>
-  </el-dialog>
+    </div>
+    <el-form-item label="项目" :error="errors.fe('project_id')">
+      <el-select v-model="form.project_id" filterable clearable placeholder="可不选">
+        <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+      </el-select>
+    </el-form-item>
+    <el-form-item label="用途" :error="errors.fe('purpose')">
+      <el-input v-model="form.purpose" maxlength="200" placeholder="如 螺栓预紧力重复性测试" />
+    </el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+  </FormDialog>
 </template>
 
 <style scoped>

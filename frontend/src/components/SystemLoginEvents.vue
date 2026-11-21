@@ -68,7 +68,7 @@ onMounted(() => refresh())
       </el-form-item>
       <el-form-item><el-button :loading="loading" type="primary" native-type="submit">查询</el-button></el-form-item>
     </el-form>
-    <el-table v-loading="loading" :data="results?.results ?? []">
+    <el-table empty-text="暂无登录记录" v-loading="loading" :data="results?.results ?? []">
       <el-table-column label="时间" min-width="180">
         <template #default="{ row }">{{ displayTime(row.at) }}</template>
       </el-table-column>

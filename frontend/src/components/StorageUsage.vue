@@ -45,13 +45,13 @@ onMounted(load)
       <p v-else-if="opsResult.disk.kind === 'non_local'">默认存储不是本地文件系统存储；不报告本机磁盘作为其容量。</p>
       <p v-else>当前上传存储的容量暂不可用。</p>
       <h3>按课题组</h3>
-      <el-table :data="opsResult.groups">
+      <el-table empty-text="暂无课题组" :data="opsResult.groups">
         <el-table-column prop="name" label="课题组" />
         <el-table-column label="已知大小"><template #default="{ row }">{{ bytes(row.known_bytes) }}</template></el-table-column>
         <el-table-column prop="unknown_files" label="大小未知的文件数" />
       </el-table>
       <h3>按模块</h3>
-      <el-table :data="moduleRows">
+      <el-table empty-text="暂无文件" :data="moduleRows">
         <el-table-column prop="group" label="课题组" />
         <el-table-column prop="source" label="模块" />
         <el-table-column label="已知大小"><template #default="{ row }">{{ bytes(row.known_bytes) }}</template></el-table-column>
@@ -59,7 +59,7 @@ onMounted(load)
       </el-table>
       <h3>近 12 个月上传且仍在账的已知大小（北京时间）</h3>
       <p>不含已删除、大小未知或上传时间未知的文件，不代表当时上传总量、净增长或磁盘变化。</p>
-      <el-table :data="monthRows">
+      <el-table empty-text="暂无文件" :data="monthRows">
         <el-table-column prop="group" label="课题组" />
         <el-table-column prop="month" label="月份" />
         <el-table-column label="账面大小"><template #default="{ row }">{{ bytes(row.bytes) }}</template></el-table-column>
@@ -72,13 +72,13 @@ onMounted(load)
     </template>
     <template v-if="groupResult">
       <h3>本组原始数据（按上传成员）</h3>
-      <el-table :data="groupResult.by_member">
+      <el-table empty-text="暂无文件" :data="groupResult.by_member">
         <el-table-column prop="label" label="成员" />
         <el-table-column label="已知大小"><template #default="{ row }">{{ bytes(row.known_bytes) }}</template></el-table-column>
         <el-table-column prop="unknown_files" label="大小未知的文件数" />
       </el-table>
       <h3>本组原始数据（按项目）</h3>
-      <el-table :data="groupResult.by_project">
+      <el-table empty-text="暂无文件" :data="groupResult.by_project">
         <el-table-column prop="label" label="项目" />
         <el-table-column label="已知大小"><template #default="{ row }">{{ bytes(row.known_bytes) }}</template></el-table-column>
         <el-table-column prop="unknown_files" label="大小未知的文件数" />

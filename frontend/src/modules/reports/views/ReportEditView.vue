@@ -14,6 +14,8 @@ import { VERDICT_LABELS, formatTime, mergeById, mondayOf, notMonday } from '@/ut
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -49,6 +51,8 @@ const errors = useFieldErrors(Object.keys(form))
 const isNew = !route.params.id
 const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew))
 const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew))
+// Ask before leaving with unsaved changes (fill() takes the snapshot).
+const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isSupervisor && !isOwner.value)
 const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)))
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
@@ -74,6 +78,7 @@ function fill(r: WeeklyReport) {
     dataset_ids: r.datasets.map((x) => x.id),
     run_ids: r.runs.map((x) => x.id),
   })
+  markSaved()
 }
 
 async function load(id: number) {
@@ -159,21 +164,16 @@ if (route.params.id) load(Number(route.params.id))
   <template v-else>
     <el-card v-loading="loading" class="card">
       <template #header>
-        <div class="actions">
-          <el-page-header
-            :content="record ? `${record.owner.name} · ${record.week_start} 这一周` : '写周报'"
-            @back="router.push({ name: 'reports' })"
-          />
-          <StatusTag v-if="record" :status="record.status" />
-          <span style="flex: 1" />
+        <PageHeader :back="{ name: 'reports' }" :title="record ? `${record.owner.name} · ${record.week_start} 这一周` : '写周报'">
+          <template v-if="record" #tags><StatusTag :status="record.status" /></template>
           <el-button v-if="record" @click="historyOpen = true">修改历史</el-button>
           <template v-if="editable">
-            <el-button :loading="saving" @click="saveDraft">保存</el-button>
+            <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
             <el-button type="primary" :loading="saving" @click="submit">
               {{ record?.status === 'needs_revision' ? '修改后重新提交' : '提交' }}
             </el-button>
           </template>
-        </div>
+        </PageHeader>
       </template>
 
       <el-alert
@@ -188,7 +188,7 @@ if (route.params.id) load(Number(route.params.id))
       </el-alert>
       <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" class="notice" />
 
-      <el-form v-if="editable" label-position="top">
+      <el-form v-if="editable" class="form-page" label-position="top">
         <el-form-item label="周一日期" :error="errors.fe('week_start')" required>
           <el-date-picker
             v-model="form.week_start"

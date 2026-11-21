@@ -1,59 +1,70 @@
 /*
- * Visual theme: neutral monochrome, thin borders instead of shadows, black primary actions,
- * monospace for codes and hashes. Element Plus is themed through its CSS variables; every
- * color variant it derives at build time (light-3..9, dark-2) is listed explicitly here.
+ * Visual theme (DESIGN.md): light grey ground, white cards with a faint shadow, one blue for primary actions,
+ * links and selection; three text colours, all at least 4.5:1 on white. Element Plus is themed through its CSS
+ * variables; every colour variant it derives at build time (light-3..9, dark-2) is listed explicitly here.
  */
 
 :root {
-  --lab-font: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
-  --lab-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
-  --lab-bg: #ffffff;
-  --lab-bg-subtle: #f9f9f9;
-  --lab-bg-hover: #f0f0f0;
-  --lab-bg-active: #e9e9e9;
-  --lab-border: #ececec;
-  --lab-text: #0d0d0d;
-  --lab-text-2: #5d5d5d;
-  --lab-text-3: #8f8f8f;
+  --lab-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --lab-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, 'Liberation Mono', monospace;
+  --lab-bg: #f2f3f5;
+  --lab-bg-card: #ffffff;
+  --lab-bg-subtle: #fafafc;
+  --lab-bg-hover: #e6e7eb;
+  --lab-selected-bg: #e1ecfb;
+  --lab-selected-fg: #0066cc;
+  --lab-link: #0066cc;
+  --lab-border: #e5e5ea;
+  --lab-text: #1d1d1f;
+  --lab-text-2: #3a3a3c;
+  --lab-text-3: #6e6e73;
   --lab-radius: 8px;
-  --lab-radius-lg: 12px;
+  --lab-radius-lg: 16px;
+  --lab-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.04);
+  /* One colour per module (DESIGN.md): its sidebar icon (white glyph on it, at least 3:1) and the dot on its tabs. */
+  --lab-mod-projects: #0f8b8d;
+  --lab-mod-research: #0071e3;
+  --lab-mod-reporting: #7c4dcc;
+  --lab-mod-lab: #d9730d;
+  --lab-mod-money: #2f9e44;
+  --lab-mod-library: #d6336c;
 
   --el-font-family: var(--lab-font);
   --el-font-size-base: 14px;
   --el-border-radius-base: 8px;
   --el-border-radius-small: 6px;
 
-  --el-color-primary: #0d0d0d;
-  --el-color-primary-light-3: #565656;
-  --el-color-primary-light-5: #868686;
-  --el-color-primary-light-7: #b6b6b6;
-  --el-color-primary-light-8: #dedede;
-  --el-color-primary-light-9: #f0f0f0;
-  --el-color-primary-dark-2: #000000;
+  --el-color-primary: #0071e3;
+  --el-color-primary-light-3: #4d9ceb;
+  --el-color-primary-light-5: #80b8f1;
+  --el-color-primary-light-7: #b3d4f7;
+  --el-color-primary-light-8: #cce3f9;
+  --el-color-primary-light-9: #e6f1fc;
+  --el-color-primary-dark-2: #005ab6;
 
-  --el-color-success: #15803d;
-  --el-color-success-light-3: #5ba677;
-  --el-color-success-light-5: #8ac09e;
-  --el-color-success-light-7: #b9d9c5;
-  --el-color-success-light-8: #d0e6d8;
-  --el-color-success-light-9: #ebf4ee;
-  --el-color-success-dark-2: #116631;
+  --el-color-success: #1f7a35;
+  --el-color-success-light-3: #62a272;
+  --el-color-success-light-5: #8fbd9a;
+  --el-color-success-light-7: #bcd7c2;
+  --el-color-success-light-8: #d2e4d7;
+  --el-color-success-light-9: #e9f2eb;
+  --el-color-success-dark-2: #19622a;
 
-  --el-color-warning: #b45309;
-  --el-color-warning-light-3: #cb8753;
-  --el-color-warning-light-5: #daa984;
-  --el-color-warning-light-7: #e9cbb5;
-  --el-color-warning-light-8: #f0ddce;
-  --el-color-warning-light-9: #fbf3ec;
-  --el-color-warning-dark-2: #904207;
+  --el-color-warning: #a34a00;
+  --el-color-warning-light-3: #bf804d;
+  --el-color-warning-light-5: #d1a580;
+  --el-color-warning-light-7: #e3c9b3;
+  --el-color-warning-light-8: #eddbcc;
+  --el-color-warning-light-9: #f6ede6;
+  --el-color-warning-dark-2: #823b00;
 
-  --el-color-danger: #c81e1e;
-  --el-color-danger-light-3: #d96161;
-  --el-color-danger-light-5: #e48f8f;
-  --el-color-danger-light-7: #efbcbc;
-  --el-color-danger-light-8: #f4d2d2;
-  --el-color-danger-light-9: #fcefef;
-  --el-color-danger-dark-2: #a01818;
+  --el-color-danger: #c4001a;
+  --el-color-danger-light-3: #d64d5f;
+  --el-color-danger-light-5: #e2808d;
+  --el-color-danger-light-7: #edb3ba;
+  --el-color-danger-light-8: #f3ccd1;
+  --el-color-danger-light-9: #f9e6e8;
+  --el-color-danger-dark-2: #9d0015;
   --el-color-error: var(--el-color-danger);
   --el-color-error-light-3: var(--el-color-danger-light-3);
   --el-color-error-light-5: var(--el-color-danger-light-5);
@@ -62,33 +73,34 @@
   --el-color-error-light-9: var(--el-color-danger-light-9);
   --el-color-error-dark-2: var(--el-color-danger-dark-2);
 
-  --el-color-info: #6b6b6b;
-  --el-color-info-light-3: #979797;
-  --el-color-info-light-5: #b5b5b5;
-  --el-color-info-light-7: #d2d2d2;
-  --el-color-info-light-8: #e3e3e3;
-  --el-color-info-light-9: #f3f3f3;
-  --el-color-info-dark-2: #565656;
+  --el-color-info: #6e6e73;
+  --el-color-info-light-3: #9a9a9d;
+  --el-color-info-light-5: #b7b7b9;
+  --el-color-info-light-7: #d3d3d5;
+  --el-color-info-light-8: #e2e2e3;
+  --el-color-info-light-9: #f0f0f1;
+  --el-color-info-dark-2: #58585c;
 
   --el-text-color-primary: var(--lab-text);
-  --el-text-color-regular: #2f2f2f;
-  --el-text-color-secondary: #6b6b6b;
-  --el-text-color-placeholder: #a3a3a3;
-  --el-text-color-disabled: #a3a3a3;
+  --el-text-color-regular: var(--lab-text-2);
+  --el-text-color-secondary: var(--lab-text-3);
+  --el-text-color-placeholder: var(--lab-text-3);
+  --el-text-color-disabled: #8e8e93;
 
-  --el-border-color: #e3e3e3;
+  --el-border-color: #c7c7cc;
   --el-border-color-light: var(--lab-border);
-  --el-border-color-lighter: #f0f0f0;
-  --el-border-color-extra-light: #f5f5f5;
-  --el-fill-color: #f3f3f3;
-  --el-fill-color-light: #f7f7f7;
-  --el-fill-color-lighter: #fafafa;
+  --el-border-color-lighter: #ececf0;
+  --el-border-color-extra-light: #f2f2f5;
+  --el-fill-color: #f2f2f7;
+  --el-fill-color-light: #f5f5f7;
+  --el-fill-color-lighter: #fafafc;
   --el-fill-color-blank: #ffffff;
-  --el-bg-color-page: #ffffff;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: var(--lab-bg);
 
   /* Read-only forms (submitted records) must stay readable, not faded. */
-  --el-disabled-bg-color: #fafafa;
-  --el-disabled-text-color: #4a4a4a;
+  --el-disabled-bg-color: var(--lab-bg-subtle);
+  --el-disabled-text-color: #48484a;
   --el-disabled-border-color: var(--lab-border);
 
   --el-box-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -107,65 +119,142 @@ body {
 }
 
 a {
-  color: var(--lab-text);
-  text-decoration: underline;
-  text-decoration-color: #c9c9c9;
-  text-underline-offset: 3px;
+  color: var(--lab-link);
+  text-decoration: none;
 }
 a:hover {
-  text-decoration-color: var(--lab-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 a:focus-visible {
-  outline: 2px solid var(--lab-text);
+  outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
 /* ---------- Element Plus components ---------- */
 
+/* Rounded "bubbles" (DESIGN.md): buttons, tags, segmented switches and page tabs are pills; inputs stay 8px. */
 .el-button {
+  border-radius: 999px;
   font-weight: 500;
 }
+/* Segmented switch (月 / 周 / 日, 本月 / 本年 …): a grey track, the chosen one a white pill on it. */
+.el-radio-group:has(> .el-radio-button) {
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--lab-bg-hover);
+}
+/* Element Plus sets these on each button, so they are overridden there; !important beats its first / last-child corners. */
+.el-radio-group > .el-radio-button {
+  --el-radio-button-checked-bg-color: var(--lab-bg-card);
+  --el-radio-button-checked-text-color: var(--lab-text);
+  --el-radio-button-checked-border-color: transparent;
+}
+.el-radio-group > .el-radio-button > .el-radio-button__inner {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent;
+  color: var(--lab-text-2);
+  box-shadow: none !important;
+}
+.el-radio-group > .el-radio-button.is-active > .el-radio-button__inner {
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14) !important;
+}
+/* Tabs inside a card are the same segmented switch, not an underlined row (!important beats Element Plus's
+   first / last tab padding). */
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header {
+  margin-bottom: 16px;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__nav-wrap::after,
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__active-bar {
+  display: none;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__nav {
+  float: none;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--lab-bg-hover);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item {
+  height: 32px;
+  padding: 0 16px !important;
+  border-radius: 999px;
+  color: var(--lab-text-2);
+  line-height: 32px;
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item:hover {
+  color: var(--lab-text);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item.is-active {
+  background: var(--lab-bg-card);
+  color: var(--lab-text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+.el-tabs--top:not(.el-tabs--card) > .el-tabs__header .el-tabs__item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
+}
 .el-button--primary {
-  --el-button-hover-bg-color: #2b2b2b;
-  --el-button-hover-border-color: #2b2b2b;
-  --el-button-active-bg-color: #000000;
-  --el-button-active-border-color: #000000;
+  --el-button-hover-bg-color: #0077ed;
+  --el-button-hover-border-color: #0077ed;
+  --el-button-active-bg-color: #0066cc;
+  --el-button-active-border-color: #0066cc;
 }
 
 .el-card {
-  --el-card-border-color: var(--lab-border);
+  --el-card-border-color: transparent; /* white on the grey ground is edge enough */
   --el-card-border-radius: var(--lab-radius-lg);
   --el-card-padding: 20px;
 }
 .el-card.is-always-shadow,
 .el-card.is-hover-shadow:hover {
-  box-shadow: none;
+  box-shadow: var(--lab-shadow-card);
 }
 .el-card__header {
+  border-bottom: 1px solid var(--lab-border); /* the card itself has no border, its header keeps the divider */
   padding: 14px 20px;
   font-size: 14px;
   font-weight: 600;
 }
 
+/* Off switches default to the input border grey, too light for the white prompt text on them. */
+.el-switch {
+  --el-switch-off-color: #8e8e93;
+}
+
+/* Checkboxes take --el-border-radius-small by default, which makes a 14px box look like a radio button. */
+.el-checkbox {
+  --el-checkbox-border-radius: 4px;
+}
+
 .el-table {
-  --el-table-header-bg-color: transparent;
-  --el-table-header-text-color: var(--el-text-color-secondary);
-  --el-table-border-color: var(--lab-border);
-  --el-table-row-hover-bg-color: #fafafa;
-  --el-table-text-color: var(--el-text-color-regular);
+  --el-table-header-bg-color: var(--lab-bg-subtle);
+  --el-table-header-text-color: var(--lab-text-2);
+  --el-table-border-color: #ececf0;
+  --el-table-row-hover-bg-color: var(--lab-bg);
+  --el-table-text-color: var(--lab-text);
 }
 .el-table th.el-table__cell {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
 .el-table .el-table__empty-text {
   color: var(--lab-text-3);
 }
 
 .el-tag {
+  --el-tag-font-size: 13px; /* Chinese text no smaller than 13px */
+  border-color: transparent; /* a tinted bubble, no outline */
   border-radius: 999px;
   font-weight: 500;
+}
+/* Avatars: the person's picture, or the first character of the name on the main blue. */
+.el-avatar {
+  --el-avatar-bg-color: var(--el-color-primary);
+  font-weight: 600;
 }
 /* Status chips: a dot in the tag's own color, so the state reads without relying on color alone. */
 .el-tag.status-tag::before {
@@ -178,10 +267,14 @@ a:focus-visible {
 }
 
 .el-descriptions__label.el-descriptions__cell.is-bordered-label {
-  background: #fafafa;
-  color: var(--el-text-color-secondary);
+  background: var(--lab-bg-subtle);
+  color: var(--lab-text-2);
   font-weight: 500;
   width: 120px;
+}
+
+.el-form-item__label {
+  color: var(--lab-text-2);
 }
 
 .el-alert {
@@ -202,7 +295,7 @@ a:focus-visible {
 }
 
 .el-dialog {
-  --el-dialog-border-radius: 14px;
+  --el-dialog-border-radius: 16px;
   --el-dialog-padding-primary: 20px;
 }
 .el-dialog__title {
@@ -222,7 +315,7 @@ a:focus-visible {
   color: var(--lab-text);
 }
 .el-page-header__back {
-  color: var(--el-text-color-secondary);
+  color: var(--lab-text-3);
 }
 
 .el-empty {
@@ -236,7 +329,7 @@ a:focus-visible {
 }
 
 .el-timeline {
-  --el-timeline-node-color: #d4d4d4;
+  --el-timeline-node-color: #c7c7cc;
   padding-left: 2px;
 }
 
@@ -247,22 +340,111 @@ a:focus-visible {
 
 /* ---------- Shared page styles ---------- */
 
+/* PageToolbar: filters wrap on the left, the buttons stay together at the top right. */
 .page-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 16px;
-  align-items: center;
 }
-.page-toolbar .grow {
+.page-toolbar:last-child {
+  margin-bottom: 0; /* nothing under it in the card */
+}
+.page-toolbar-filters {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* A yes / no filter ("只看我的") is a chip: an outlined pill, tinted with a check when on. The box is hidden but the
+   real checkbox stays, so keyboard and screen readers work as before. */
+.page-toolbar-filters .el-checkbox {
+  margin-right: 0;
+  padding: 0 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 999px;
+  background: var(--lab-bg-card);
+}
+.page-toolbar-filters .el-checkbox:hover {
+  border-color: var(--lab-text-3);
+}
+.page-toolbar-filters .el-checkbox__inner {
+  display: none;
+}
+.page-toolbar-filters .el-checkbox__label {
+  padding-left: 0;
+  color: var(--lab-text-2);
+}
+.page-toolbar-filters .el-checkbox.is-checked {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--lab-selected-bg);
+}
+.page-toolbar-filters .el-checkbox.is-checked .el-checkbox__label {
+  color: var(--lab-selected-fg);
+}
+.page-toolbar-filters .el-checkbox.is-checked .el-checkbox__label::before {
+  content: '✓';
+  margin-right: 6px;
+}
+.page-toolbar-filters .el-checkbox:has(:focus-visible) {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.page-toolbar-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .page-toolbar .el-input {
   width: 240px;
 }
 .page-toolbar .el-select {
-  width: 200px;
+  width: 180px;
 }
+.grow {
+  flex: 1;
+}
+
+/* PageHeader, in a card header: back + title + tags on the left, the page's buttons on the right. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.page-head-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Form grid: every row shares the same columns; long fields take a whole row. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  column-gap: 16px;
+}
+.form-grid > .span-all {
+  grid-column: 1 / -1;
+}
+.form-grid > .span-2 {
+  grid-column: span 2;
+}
+/* Forms that fill a page stay readable width; the card around them still fills the content area. */
+.form-page {
+  max-width: 960px;
+}
+.form-grid .el-date-editor.el-input,
+.form-grid .el-date-editor.el-input__wrapper,
+.form-grid .el-input-number {
+  width: 100%;
+}
+
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
@@ -279,13 +461,16 @@ a:focus-visible {
 .mono,
 .code {
   font-family: var(--lab-mono);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .mono {
   word-break: break-all;
 }
 .code {
   white-space: nowrap;
+}
+.muted {
+  color: var(--lab-text-3);
 }
 .actions {
   display: flex;
@@ -302,11 +487,17 @@ a:focus-visible {
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
-  background: radial-gradient(circle at 50% 0%, #f4f4f4 0%, #ffffff 60%);
+  background: var(--lab-bg);
 }
 .auth-panel {
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
+  padding: 32px;
+  box-sizing: border-box;
+  background: var(--lab-bg-card);
+  border: 1px solid var(--lab-border);
+  border-radius: var(--lab-radius-lg);
+  box-shadow: var(--lab-shadow-card);
 }
 .auth-panel h2 {
   margin: 16px 0 24px;
@@ -319,7 +510,7 @@ a:focus-visible {
 }
 .auth-sub {
   margin: 0 0 24px;
-  color: var(--el-text-color-secondary);
+  color: var(--lab-text-3);
 }
 .auth-logo {
   display: inline-grid;
@@ -327,7 +518,7 @@ a:focus-visible {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--lab-text);
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 17px;
 }
@@ -340,9 +531,16 @@ a:focus-visible {
 }
 
 @media (max-width: 768px) {
+  .page-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .page-toolbar .el-input,
   .page-toolbar .el-select {
     width: 100%;
+  }
+  .auth-panel {
+    padding: 24px 20px;
   }
 }
 

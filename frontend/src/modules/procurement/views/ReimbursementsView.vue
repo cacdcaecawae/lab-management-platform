@@ -21,6 +21,8 @@ import { showActionError, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 
 const auth = useAuthStore()
 const tab = ref<'records' | 'stats'>('records')
@@ -216,7 +218,7 @@ async function editFinanceEmail() {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-select v-model="filters.status" placeholder="全部状态" clearable aria-label="状态">
         <el-option v-for="(s, k) in REIMBURSEMENT_STATUS" :key="k" :label="s.label" :value="k" />
       </el-select>
@@ -230,13 +232,14 @@ async function editFinanceEmail() {
       <el-select v-if="auth.isSupervisor" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
-      <span class="grow" />
-      <el-button type="primary" @click="openDialog(null)">登记报销</el-button>
-    </div>
+      <template #actions>
+        <el-button type="primary" @click="openDialog(null)">登记报销</el-button>
+      </template>
+    </PageToolbar>
 
     <el-tabs v-model="tab">
       <el-tab-pane label="报销记录" name="records">
-        <el-table v-loading="loading" :data="items" empty-text="没有报销记录">
+        <el-table v-loading="loading" :data="items" empty-text="暂无报销记录">
           <el-table-column label="编号" min-width="120">
             <template #default="{ row }">
               <el-button link class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
@@ -295,15 +298,16 @@ async function editFinanceEmail() {
       </el-tab-pane>
 
       <el-tab-pane v-if="auth.isSupervisor" label="统计" name="stats">
-        <div class="page-toolbar">
+        <PageToolbar>
           <el-radio-group v-model="by">
             <el-radio-button v-for="(label, k) in BY_LABELS" :key="k" :value="k">按{{ label }}</el-radio-button>
           </el-radio-group>
-          <span class="grow" />
-          <el-button tag="a" :href="reimbursementsApi.exportUrl(statsQuery)">导出 Excel</el-button>
-          <el-button v-if="auth.isManager" @click="editFinanceEmail">财务邮箱</el-button>
-          <el-button v-if="auth.isManager" @click="remindFinance">发送财务提醒</el-button>
-        </div>
+          <template #actions>
+            <el-button tag="a" :href="reimbursementsApi.exportUrl(statsQuery)">导出 Excel</el-button>
+            <el-button v-if="auth.isManager" @click="editFinanceEmail">财务邮箱</el-button>
+            <el-button v-if="auth.isManager" @click="remindFinance">发送财务提醒</el-button>
+          </template>
+        </PageToolbar>
         <el-table v-loading="statsLoading" :data="stats?.rows ?? []" show-summary :summary-method="summary" empty-text="没有符合条件的报销">
           <el-table-column prop="label" :label="BY_LABELS[by]" min-width="160" />
           <el-table-column prop="count" label="笔数" min-width="80" align="right" />
@@ -315,89 +319,78 @@ async function editFinanceEmail() {
     </el-tabs>
   </el-card>
 
-  <el-dialog v-model="dialogOpen" :title="current ? `报销 ${current.code}` : '登记报销'" width="min(560px, 95vw)">
-    <template v-if="current">
-      <div class="state">
-        <StatusTag :status="current.status" :map="REIMBURSEMENT_STATUS" />
-        <span class="muted">{{ current.owner.name }}</span>
-        <span v-if="current.submitted_at" class="muted">交财务 {{ formatTime(current.submitted_at) }}</span>
-        <span v-if="current.paid_at" class="muted">到账 {{ formatTime(current.paid_at) }}</span>
-      </div>
-      <el-alert
-        v-if="current.status !== 'pending'"
-        type="info"
-        :closable="false"
-        class="notice"
-        title="已交财务的报销不能修改；需要修改请管理员先退回“待提交”。"
-      />
+  <FormDialog v-model="dialogOpen" :title="current ? `报销 ${current.code}` : '登记报销'" :readonly="!editable" :loading="saving" @submit="save">
+    <template #before>
+      <template v-if="current">
+        <div class="state">
+          <StatusTag :status="current.status" :map="REIMBURSEMENT_STATUS" />
+          <span class="muted">{{ current.owner.name }}</span>
+          <span v-if="current.submitted_at" class="muted">交财务 {{ formatTime(current.submitted_at) }}</span>
+          <span v-if="current.paid_at" class="muted">到账 {{ formatTime(current.paid_at) }}</span>
+        </div>
+        <el-alert
+          v-if="current.status !== 'pending'"
+          type="info"
+          :closable="false"
+          class="notice"
+          title="已交财务的报销不能修改；需要修改请管理员先退回“待提交”。"
+        />
+      </template>
     </template>
-    <el-form label-position="top" :disabled="!editable" @submit.prevent="save">
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="经费来源" :error="errors.fe('fund_id')" required>
-            <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
-              <el-option v-for="f in fundOptions" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <el-form-item label="类别" :error="errors.fe('category')" required>
-            <el-select v-model="form.category">
-              <el-option v-for="(label, k) in CATEGORY_LABELS" :key="k" :label="label" :value="k" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <el-form-item label="金额（元）" :error="errors.fe('amount')" required>
-            <el-input-number v-model="form.amount" :min="0.01" :precision="2" :step="0.01" :controls="false" class="amount-input" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="发生日期" :error="errors.fe('occurred_on')" required>
-            <el-date-picker v-model="form.occurred_on" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <el-form-item label="关联采购申请" :error="errors.fe('purchase_id')">
-            <el-select v-model="form.purchase_id" filterable clearable placeholder="可不选">
-              <el-option v-for="p in purchaseOptions" :key="p.id" :label="`${p.code} ${p.purpose}`" :value="p.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="说明" :error="errors.fe('description')">
-        <el-input v-model="form.description" maxlength="200" placeholder="如 耦合剂 3 瓶、会议差旅" />
+    <div class="form-grid">
+      <el-form-item label="经费来源" :error="errors.fe('fund_id')" required class="span-2">
+        <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
+          <el-option v-for="f in fundOptions" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
+        </el-select>
       </el-form-item>
-      <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
-    </el-form>
-    <template v-if="current">
-      <div class="section-title">发票和附件</div>
-      <AttachmentList
-        :remove="attachmentsApi.remove"
-        :attachments="current.attachments"
-        default-kind="invoice"
-        :upload="writer(current) && current.status === 'pending' ? (file, kind) => reimbursementsApi.upload(current!.id, file, kind) : undefined"
-        :can-delete="(a) => current!.status === 'pending' && (a.uploaded_by.id === auth.user?.id || auth.isManager)"
-        @changed="refreshCurrent"
-      />
+      <el-form-item label="类别" :error="errors.fe('category')" required>
+        <el-select v-model="form.category">
+          <el-option v-for="(label, k) in CATEGORY_LABELS" :key="k" :label="label" :value="k" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="金额（元）" :error="errors.fe('amount')" required>
+        <el-input-number v-model="form.amount" :min="0.01" :precision="2" :step="0.01" :controls="false" class="amount-input" />
+      </el-form-item>
+      <el-form-item label="发生日期" :error="errors.fe('occurred_on')" required>
+        <el-date-picker v-model="form.occurred_on" type="date" value-format="YYYY-MM-DD" />
+      </el-form-item>
+      <el-form-item label="关联采购申请" :error="errors.fe('purchase_id')">
+        <el-select v-model="form.purchase_id" filterable clearable placeholder="可不选">
+          <el-option v-for="p in purchaseOptions" :key="p.id" :label="`${p.code} ${p.purpose}`" :value="p.id" />
+        </el-select>
+      </el-form-item>
+    </div>
+    <el-form-item label="说明" :error="errors.fe('description')">
+      <el-input v-model="form.description" maxlength="200" placeholder="如 耦合剂 3 瓶、会议差旅" />
+    </el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    <template #after>
+      <template v-if="current">
+        <div class="section-title">发票和附件</div>
+        <AttachmentList
+          :remove="attachmentsApi.remove"
+          :attachments="current.attachments"
+          default-kind="invoice"
+          :upload="writer(current) && current.status === 'pending' ? (file, kind) => reimbursementsApi.upload(current!.id, file, kind) : undefined"
+          :can-delete="(a) => current!.status === 'pending' && (a.uploaded_by.id === auth.user?.id || auth.isManager)"
+          @changed="refreshCurrent"
+        />
+      </template>
     </template>
-    <template #footer>
-      <div class="footer">
-        <el-button v-if="current && editable" type="danger" text @click="remove(current)">删除报销</el-button>
-        <span class="grow" />
-        <el-button @click="dialogOpen = false">{{ editable ? '取消' : '关闭' }}</el-button>
-        <el-button v-if="editable" type="primary" :loading="saving" @click="save">保存</el-button>
-        <el-button
-          v-if="current && writer(current) && current.status === 'pending'"
-          type="primary"
-          :disabled="!hasInvoice(current)"
-          @click="advance(current, 'submitted', NEXT.pending.confirm)"
-        >
-          交财务
-        </el-button>
-      </div>
+    <template #extra>
+      <el-button v-if="current && editable" type="danger" text @click="remove(current)">删除报销</el-button>
     </template>
-  </el-dialog>
+    <template #actions>
+      <el-button
+        v-if="current && writer(current) && current.status === 'pending'"
+        type="primary"
+        :disabled="!hasInvoice(current)"
+        @click="advance(current, 'submitted', NEXT.pending.confirm)"
+      >
+        交财务
+      </el-button>
+    </template>
+  </FormDialog>
 
   <!-- always mounted: the drawer loads when it opens, and historyOf is set by then -->
   <HistoryDrawer
