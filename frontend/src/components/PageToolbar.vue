@@ -11,10 +11,15 @@ const root = useTemplateRef<HTMLElement>('root')
 const filters = useTemplateRef<HTMLElement>('filters')
 const open = ref(false)
 const foldable = ref(false)
+const lonely = ref(false) // nothing but folded filters: the 筛选 button is the whole row, so it gets its word
 const me = Symbol('PageToolbar')
 const toTopBar = computed(() => phone.value && topBarOwner.value === me && pageHeaders.value === 0)
 
-const check = () => (foldable.value = !!filters.value?.querySelector(':scope > .el-select, :scope > .el-checkbox, :scope > .el-date-editor'))
+const FOLDED = '.el-select, .el-checkbox, .el-date-editor'
+function check() {
+  foldable.value = !!filters.value?.querySelector(`:scope > :is(${FOLDED})`)
+  lonely.value = foldable.value && !filters.value?.querySelector(`:scope > :not(${FOLDED})`)
+}
 onMounted(() => {
   check()
   // not a toolbar inside a dialog or drawer, nor a second one further down the page
@@ -29,8 +34,18 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="page-toolbar" :class="{ 'filters-open': open }">
     <div ref="filters" class="page-toolbar-filters"><slot /></div>
+    <el-button
+      v-if="phone && lonely"
+      class="filters-toggle lonely"
+      :icon="Filter"
+      text
+      :aria-expanded="open"
+      @click="open = !open"
+    >
+      {{ open ? '收起筛选' : '筛选' }}
+    </el-button>
     <IconButton
-      v-if="phone && foldable"
+      v-else-if="phone && foldable"
       class="filters-toggle"
       :icon="Filter"
       :label="open ? '收起筛选' : '筛选'"

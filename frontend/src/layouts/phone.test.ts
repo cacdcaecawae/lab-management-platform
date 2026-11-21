@@ -57,4 +57,10 @@ it('folds the dropdown filters behind 筛选 on a phone', async () => {
   await toggle.trigger('click')
   expect(wrapper.classes()).toContain('filters-open')
   wrapper.unmount()
+
+  // nothing but dropdowns: the toggle is the whole row, so it says 筛选 in words
+  const only = mount(PageToolbar, { slots: { default: () => h('div', { class: 'el-select' }) }, global: { plugins: [ElementPlus] } })
+  await nextTick()
+  expect(only.find('.filters-toggle.lonely').text()).toBe('筛选')
+  only.unmount()
 })

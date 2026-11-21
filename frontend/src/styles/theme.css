@@ -171,9 +171,14 @@ a:focus-visible {
 .el-radio-group > .el-radio-button > .el-radio-button__inner {
   border: 0 !important;
   border-radius: 999px !important;
+  outline: 0; /* Element Plus 2.14 draws the button's border as an outline */
   background: transparent;
   color: var(--lab-text-2);
   box-shadow: none !important;
+}
+.el-radio-group > .el-radio-button > .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .el-radio-group > .el-radio-button.is-active > .el-radio-button__inner {
   font-weight: 600;
@@ -572,6 +577,18 @@ a:focus-visible {
     width: 100%;
   }
   .page-toolbar:not(.filters-open) .page-toolbar-filters > :is(.el-select, .el-checkbox, .el-date-editor) {
+    display: none;
+  }
+  /* only folded filters: "筛选" leads the row instead of sitting alone at its right end */
+  .page-toolbar .filters-toggle.lonely {
+    order: -1;
+    margin-left: -8px;
+    color: var(--lab-text-2);
+  }
+  .page-toolbar:has(.filters-toggle.lonely) .page-toolbar-filters {
+    flex-basis: 100%;
+  }
+  .page-toolbar:not(.filters-open):has(.filters-toggle.lonely) .page-toolbar-filters {
     display: none;
   }
   /* a toolbar that keeps its buttons (a second one on the page, one in a dialog): they go on their own line */
