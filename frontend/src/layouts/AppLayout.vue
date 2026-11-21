@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch, watchPostEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { Menu } from '@element-plus/icons-vue'
 import { useNotificationPolling } from '@/composables/useNotificationPolling'
@@ -12,6 +12,13 @@ const drawer = ref(false)
 useNotificationPolling()
 const { current, page } = useNav()
 const tabs = computed(() => (current.value && current.value.pages.length > 1 ? current.value.pages : []))
+// On a phone the tabs scroll sideways: bring the current one into view (the last tab would otherwise sit off-screen).
+const tabsNav = useTemplateRef<HTMLElement>('tabsNav')
+// Runs after each render that changes the page or brings the tabs in (they wait for the signed-in user).
+watchPostEffect(() => {
+  void page.value
+  tabsNav.value?.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+})
 // The workbench greets by name instead of repeating its title.
 const title = computed(() => (route.name === 'workbench' ? '' : String(route.meta.title ?? '')))
 
@@ -32,7 +39,7 @@ watch(
         <el-button class="menu-btn" :icon="Menu" text aria-label="打开菜单" @click="drawer = true" />
         <template v-if="tabs.length">
           <h1 class="sr-only">{{ title }}</h1>
-          <nav class="tabs" :aria-label="current!.label">
+          <nav ref="tabsNav" class="tabs" :aria-label="current!.label">
             <RouterLink
               v-for="p in tabs"
               :key="p.name"
