@@ -42,7 +42,7 @@ it('lists only modules and pages the role may open, and highlights the list page
 
 it('keeps the pages a user opens as tabs: lists and records, not the workbench or -new forms, at most ten', async () => {
   const { router } = await setup('manager')
-  const { trackTab, openedTabs, setTabTitle, closeTab } = await import('./nav')
+  const { trackTab, openedTabs, setTabTitle, closeTab, neighborTab, closeOtherTabs, closeAllTabs } = await import('./nav')
   router.addRoute({ path: '/equipment/new', name: 'equipment-new', component: page, meta: { menu: 'equipment' } })
   const visit = async (path: string) => {
     await router.push(path)
@@ -61,8 +61,14 @@ it('keeps the pages a user opens as tabs: lists and records, not the workbench o
   for (const id of [4, 5, 6, 7, 8, 9, 10, 11]) await visit(`/equipment/${id}`)
   expect(openedTabs()).toHaveLength(10)
   expect(openedTabs()[0]!.path).toBe('/equipment/3') // the oldest went
-  expect(closeTab('/equipment/5')).toBe('/equipment/6') // closing shows the tab after it,
-  expect(closeTab('/equipment/11')).toBe('/equipment/10') // or the one before the last
+  expect(neighborTab('/equipment/5')!.path).toBe('/equipment/6') // closing the one on screen shows the tab after it,
+  expect(neighborTab('/equipment/11')!.path).toBe('/equipment/10') // or the one before the last
+  closeTab('/equipment/5')
+  expect(openedTabs()).toHaveLength(9)
+  closeOtherTabs('/equipment/7')
+  expect(openedTabs().map((t) => t.path)).toEqual(['/equipment/7'])
+  closeAllTabs()
+  expect(openedTabs()).toEqual([])
   await router.push('/bookings')
   trackTab(2, router.currentRoute.value) // someone else signed in: none of the last person's tabs
   expect(openedTabs().map((t) => t.full)).toEqual(['/bookings'])

@@ -98,12 +98,22 @@ export function setTabTitle(path: string, title: string) {
   for (const t of opened.tabs) if (t.path === path && title) t.title = title
 }
 
-// Closes a tab and returns where to go if it was the one on screen: the tab after it, else the one before.
-export function closeTab(path: string): string | undefined {
+// Where to go when the tab on screen is closed: the tab after it, else the one before.
+export function neighborTab(path: string): OpenedTab | undefined {
   const i = opened.tabs.findIndex((t) => t.path === path)
-  if (i < 0) return undefined
-  opened.tabs.splice(i, 1)
-  return (opened.tabs[i] ?? opened.tabs[i - 1])?.full
+  return opened.tabs[i + 1] ?? opened.tabs[i - 1]
+}
+
+export function closeTab(path: string) {
+  opened.tabs = opened.tabs.filter((t) => t.path !== path)
+}
+
+export function closeOtherTabs(path: string) {
+  opened.tabs = opened.tabs.filter((t) => t.path === path)
+}
+
+export function closeAllTabs() {
+  opened.tabs = []
 }
 
 export function clearTabs() {

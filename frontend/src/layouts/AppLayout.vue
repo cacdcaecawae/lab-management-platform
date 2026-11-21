@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch, watchPostEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Close, Menu } from '@element-plus/icons-vue'
+import { ArrowDown, Close, Menu } from '@element-plus/icons-vue'
 import { useNotificationPolling } from '@/composables/useNotificationPolling'
 import { useAuthStore } from '@/stores/auth'
 import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
-import { closeTab, openedTabs, pageColor, trackTab, type OpenedTab } from './nav'
+import { closeAllTabs, closeOtherTabs, closeTab, neighborTab, openedTabs, pageColor, trackTab, type OpenedTab } from './nav'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,9 +22,20 @@ const dot = (t: OpenedTab) => {
   const r = router.resolve(t.full)
   return pageColor(String(r.meta.menu ?? r.name ?? ''))
 }
-function close(t: OpenedTab) {
-  const next = closeTab(t.path)
-  if (t.path === route.path) router.push(next ?? { name: 'workbench' })
+// Closing the page on screen leaves it first; if "有未保存的修改" keeps you there, its tab stays too.
+async function close(t: OpenedTab) {
+  if (t.path === route.path && (await router.push(neighborTab(t.path)?.full ?? { name: 'workbench' }))) return
+  closeTab(t.path)
+}
+async function closeAll() {
+  if (onTab.value && (await router.push({ name: 'workbench' }))) return
+  closeAllTabs()
+}
+// The ▾ menu at the right end: every open tab (handy once they no longer fit), then close others / close all.
+function onMenu(command: string) {
+  if (command === 'others') closeOtherTabs(route.path)
+  else if (command === 'all') void closeAll()
+  else router.push(command)
 }
 // On a phone the tabs scroll sideways: bring the current one into view (the last tab would otherwise sit off-screen).
 const tabsNav = useTemplateRef<HTMLElement>('tabsNav')
@@ -65,6 +76,18 @@ watch(
             </button>
           </span>
         </nav>
+        <el-dropdown v-if="tabs.length" trigger="click" placement="bottom-end" class="tabs-menu" @command="onMenu">
+          <button type="button" class="tabs-menu-btn" aria-label="全部标签"><el-icon><ArrowDown /></el-icon></button>
+          <template #dropdown>
+            <el-dropdown-menu class="tabs-menu-list">
+              <el-dropdown-item v-for="t in tabs" :key="t.path" :command="t.full" :class="{ current: t.path === route.path }">
+                <span class="dot" :style="{ background: dot(t) }" aria-hidden="true" />{{ t.title }}
+              </el-dropdown-item>
+              <el-dropdown-item command="others" divided :disabled="!onTab || tabs.length < 2">关闭其他标签</el-dropdown-item>
+              <el-dropdown-item command="all">关闭全部标签</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </header>
       <main class="main">
         <RoutePage />
@@ -228,6 +251,40 @@ watch(
 .tab-close:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 1px;
+}
+/* ▾ at the right end, level with the tabs; it does not scroll with them. */
+.tabs-menu {
+  flex: none;
+  align-self: flex-end;
+  margin: 0 0 4px 4px;
+}
+.tabs-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lab-text-2);
+  cursor: pointer;
+}
+.tabs-menu-btn:hover,
+.tabs-menu-btn:focus-visible {
+  background: var(--lab-bg-hover);
+  color: var(--lab-text);
+}
+.tabs-menu-btn:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.tabs-menu-list .dot {
+  margin-right: 8px;
+}
+/* :deep — the item's own element is rendered by Element Plus and carries no scope attribute */
+.tabs-menu-list :deep(.current) {
+  font-weight: 600;
 }
 .sr-only {
   position: absolute;
