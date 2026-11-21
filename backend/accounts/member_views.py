@@ -1,5 +1,6 @@
 import secrets
 
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
@@ -81,9 +82,12 @@ class MemberViewSet(
 
     @action(detail=False, methods=["post"])
     def reject(self, request):
-        # Never activated, so there is nothing of theirs to keep; the student number is free to apply again.
-        count, _ = self.chosen(request).delete()
-        return Response({"count": count})
+        with transaction.atomic():
+            # Locked before deleting: an approval by another manager lands first (the row no longer matches) or waits.
+            ids = list(self.chosen(request).select_for_update().values_list("pk", flat=True))
+            # Never activated, so there is nothing of theirs to keep; the student number is free to apply again.
+            User.objects.filter(pk__in=ids).delete()
+        return Response({"count": len(ids)})
 
     @action(detail=False, methods=["get", "post"])
     def signup(self, request):

@@ -82,11 +82,6 @@ class AccountSerializer(serializers.ModelSerializer):
     def get_group(self, user):
         return {"id": user.group_id, "name": user.group.name} if user.group_id else None
 
-    def update(self, user, validated_data):
-        if validated_data.get("is_active"):
-            validated_data["pending"] = False  # ops switching an applicant on is an approval
-        return super().update(user, validated_data)
-
 
 class AccountCreateSerializer(NewAccountMixin, AccountSerializer):
     group_id = serializers.PrimaryKeyRelatedField(source="group", queryset=ResearchGroup.objects.all(), write_only=True)

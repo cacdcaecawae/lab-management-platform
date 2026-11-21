@@ -1,8 +1,13 @@
 """Students register through their group's link and wait, inactive, until a manager of that group approves them."""
 
+import threading
+
 import pytest
+from django.db import IntegrityError, connection, transaction
+from django.db.models.deletion import Collector
 from rest_framework.test import APIClient
 
+from accounts.member_serializers import RegisterSerializer
 from accounts.models import User
 from accounts.views import PENDING_LIMIT
 from core.models import Notification
@@ -150,3 +155,87 @@ def test_ops_sees_applicants_and_switching_one_on_approves_it(api, ops, manager)
     assert api(ops).patch(f"/api/system/accounts/{applicant.pk}/", {"is_active": True}, format="json").status_code == 200
     applicant.refresh_from_db()
     assert (applicant.is_active, applicant.pending) == (True, False)
+
+
+def test_an_applicant_is_always_an_inactive_student(api, ops, manager):
+    code = open_link(api, manager)
+    register(code)
+    applicant = User.objects.get(username="s_new")
+    # Ops makes the applicant an advisor: it is no longer an application the group's managers may approve or delete.
+    assert api(ops).patch(f"/api/system/accounts/{applicant.pk}/", {"role": "advisor"}, format="json").status_code == 200
+    applicant.refresh_from_db()
+    assert (applicant.role, applicant.is_active, applicant.pending) == (User.Role.ADVISOR, False, False)
+    assert api(manager).get("/api/members/pending/").data == []
+    for decision in ("approve", "reject"):
+        assert api(manager).post(f"/api/members/{decision}/", {"ids": [applicant.pk]}, format="json").data == {"count": 0}
+    applicant.refresh_from_db()
+    assert not applicant.is_active
+    # Django admin saves through the model too: switching an applicant on approves it.
+    register(code, username="s_admin")
+    other = User.objects.get(username="s_admin")
+    other.is_active = True
+    other.save()
+    other.refresh_from_db()
+    assert not other.pending
+    # And the database refuses a pending account that is active or not a student.
+    for change in ({"is_active": True}, {"role": User.Role.MANAGER}):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            User.objects.filter(pk=applicant.pk).update(**{"pending": True, "role": User.Role.STUDENT, "is_active": False, **change})
+
+
+@pytest.mark.django_db(transaction=True)
+def test_approving_while_another_manager_rejects_never_deletes_an_approved_account(api, manager, monkeypatch):
+    register(open_link(api, manager))
+    applicant = User.objects.get(username="s_new")
+    client, approved, workers = api(manager), {}, []
+    original = Collector.delete
+
+    def approve():
+        try:
+            approved["count"] = client.post("/api/members/approve/", {"ids": [applicant.pk]}, format="json").data["count"]
+        finally:
+            connection.close()
+
+    def delete_after_an_approval(collector):
+        if workers or User not in collector.data:  # e.g. the session a login replaces
+            return original(collector)
+        # The rows to delete are already read; the other manager approves before they go.
+        workers.append(threading.Thread(target=approve))
+        workers[0].start()
+        workers[0].join(2)  # with the applicant locked, the approval waits for the rejection instead
+        return original(collector)
+
+    monkeypatch.setattr(Collector, "delete", delete_after_an_approval)
+    rejected = api(manager).post("/api/members/reject/", {"ids": [applicant.pk]}, format="json").data["count"]
+    workers[0].join(15)
+    assert not workers[0].is_alive()
+    kept = User.objects.filter(pk=applicant.pk, is_active=True, pending=False).exists()
+    assert (approved["count"], rejected, kept) in [(1, 0, True), (0, 1, False)]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_link_closed_during_a_registration_lets_nothing_in_after_it(api, manager, monkeypatch):
+    code = open_link(api, manager)
+    client, closed, workers, seen = api(manager), threading.Event(), [], {}
+    original = RegisterSerializer.is_valid
+
+    def close():
+        try:
+            client.post(SIGNUP, {"open": False}, format="json")
+            closed.set()
+        finally:
+            connection.close()
+
+    def is_valid_after_closing(serializer, **kwargs):
+        # The code was checked; the manager closes the link before the application is saved.
+        workers.append(threading.Thread(target=close))
+        workers[0].start()
+        workers[0].join(2)  # with the group locked by its code, closing waits for this registration
+        seen["closed_first"] = closed.is_set()
+        return original(serializer, **kwargs)
+
+    monkeypatch.setattr(RegisterSerializer, "is_valid", is_valid_after_closing)
+    r = register(code)
+    workers[0].join(15)
+    assert not workers[0].is_alive() and api(manager).get(SIGNUP).data == {"code": ""}
+    assert (r.status_code == 201) != seen["closed_first"], (r.status_code, seen)

@@ -93,14 +93,15 @@ class RegisterView(APIView):
 
     def post(self, request):
         code = request.data.get("code") if isinstance(request.data, dict) else None
-        # Checked before the form, so without a valid link nobody can probe which student numbers exist.
-        group = ResearchGroup.objects.filter(signup_code=code).first() if isinstance(code, str) and code else None
-        if group is None:
-            raise ValidationError({"code": "注册链接已失效，请向课题组管理员要新的链接"})
-        data = RegisterSerializer(data=request.data)
-        data.is_valid(raise_exception=True)
         with transaction.atomic():
-            ResearchGroup.objects.select_for_update().get(pk=group.pk)  # one application at a time per group, for the cap
+            # Locked by its code: closing or replacing the link waits for this application, or it no longer matches.
+            # One application at a time per group, for the cap. Checked before the form, so without a valid link
+            # nobody can probe which student numbers exist.
+            group = ResearchGroup.objects.select_for_update().filter(signup_code=code).first() if isinstance(code, str) and code else None
+            if group is None:
+                raise ValidationError({"code": "注册链接已失效，请向课题组管理员要新的链接"})
+            data = RegisterSerializer(data=request.data)
+            data.is_valid(raise_exception=True)
             if User.objects.filter(group=group, pending=True).count() >= PENDING_LIMIT:
                 raise Conflict("待审核的申请太多，请联系课题组管理员先处理", code="too_many_pending")
             user = data.save(group=group)

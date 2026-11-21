@@ -49,7 +49,10 @@ async function copy() {
   } catch {
     // Plain HTTP pages have no clipboard API: select the text and fall back to the old copy command.
     linkInput.value?.select()
-    document.execCommand('copy')
+    if (!document.execCommand('copy')) {
+      ElMessage.warning('浏览器不允许自动复制，链接已选中，请按 Ctrl+C 复制')
+      return
+    }
   }
   ElMessage.success('已复制，发到课题组的群里')
 }

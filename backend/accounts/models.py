@@ -38,6 +38,20 @@ class User(AbstractUser):
 
     class Meta:
         verbose_name = verbose_name_plural = "成员"
+        constraints = [
+            # Managers approve or delete pending accounts, so only an inactive student may be one.
+            models.CheckConstraint(
+                condition=models.Q(pending=False) | models.Q(is_active=False, role="student"), name="pending_is_inactive_student",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Switched on (系统管理, /admin/) or given another role by ops: no longer an application for the managers.
+        if self.pending and (self.is_active or self.role != self.Role.STUDENT):
+            self.pending = False
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = {*kwargs["update_fields"], "pending"}
+        super().save(*args, **kwargs)
 
     @property
     def is_supervisor(self):

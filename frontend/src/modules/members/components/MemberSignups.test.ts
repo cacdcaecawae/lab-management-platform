@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import MemberSignups from './MemberSignups.vue'
 import { membersApi } from '@/modules/members/api'
 
@@ -10,7 +10,7 @@ vi.mock('@/modules/members/api', () => ({
 vi.mock('@/utils/errors', () => ({ showError: vi.fn() }))
 vi.mock('element-plus', async (original) => ({
   ...(await original<typeof import('element-plus')>()),
-  ElMessage: { success: vi.fn() },
+  ElMessage: { success: vi.fn(), warning: vi.fn() },
   ElMessageBox: { confirm: vi.fn() },
 }))
 
@@ -53,6 +53,22 @@ describe('MemberSignups', () => {
     expect(ElMessageBox.confirm).toHaveBeenCalledOnce() // turning it off breaks links already sent
     expect(membersApi.setSignup).toHaveBeenCalledWith(false)
     expect(wrapper.find('input').exists()).toBe(false)
+  })
+
+  it('on a plain HTTP page says "copied" only when the fallback copy worked', async () => {
+    // jsdom, like a plain HTTP page, has no navigator.clipboard.
+    const execCommand = vi.fn(() => false)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    const wrapper = await show('abc123def456', [])
+    await button(wrapper, '复制链接').trigger('click')
+    await flushPromises()
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(ElMessage.warning).toHaveBeenCalledWith('浏览器不允许自动复制，链接已选中，请按 Ctrl+C 复制')
+    expect(ElMessage.success).not.toHaveBeenCalled()
+    execCommand.mockReturnValue(true)
+    await button(wrapper, '复制链接').trigger('click')
+    await flushPromises()
+    expect(ElMessage.success).toHaveBeenCalledWith('已复制，发到课题组的群里')
   })
 
   it('approves the selected applications without asking and tells the page', async () => {
