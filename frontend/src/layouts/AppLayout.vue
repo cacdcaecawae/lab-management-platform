@@ -111,30 +111,30 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A module's pages, like the tabs inside a card: the current one is darker with a blue bar under it. */
+/* A module's pages as pills; the current one is a white pill, like the current module in the sidebar. */
 .tabs {
-  align-self: stretch;
   display: flex;
   gap: 4px;
   min-width: 0;
+  padding: 2px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .tab {
   flex: none;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-bottom: 2px solid transparent;
+  padding: 6px 14px;
+  border-radius: 999px;
   color: var(--lab-text-2);
-  font-size: 15px;
   white-space: nowrap;
 }
 .tab:hover {
+  background: var(--lab-bg-hover);
   color: var(--lab-text);
+  text-decoration: none;
 }
 .tab.on {
-  border-bottom-color: var(--el-color-primary);
+  background: var(--lab-bg-card);
+  box-shadow: var(--lab-shadow-card);
   color: var(--lab-text);
   font-weight: 600;
 }

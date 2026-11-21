@@ -37,7 +37,7 @@ const { modules, current, target } = useNav()
 .app-menu .el-menu-item {
   padding: 0 10px !important;
   margin: 1px 0;
-  border-radius: var(--lab-radius);
+  border-radius: 10px;
   line-height: 36px;
 }
 .app-menu .el-menu-item.gap {

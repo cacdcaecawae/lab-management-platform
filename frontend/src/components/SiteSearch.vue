@@ -109,9 +109,9 @@ onBeforeUnmount(() => {
   gap: 8px;
   width: 100%;
   height: 32px;
-  padding: 0 8px 0 10px;
+  padding: 0 6px 0 12px;
   border: 1px solid var(--lab-border);
-  border-radius: var(--lab-radius);
+  border-radius: 999px;
   background: var(--lab-bg-card);
   color: var(--lab-text-3);
   font: inherit;
@@ -126,7 +126,7 @@ kbd {
   margin-left: auto;
   padding: 0 6px;
   border: 1px solid var(--lab-border);
-  border-radius: 4px;
+  border-radius: 999px;
   font-family: var(--lab-mono);
   font-size: 13px;
   line-height: 18px;

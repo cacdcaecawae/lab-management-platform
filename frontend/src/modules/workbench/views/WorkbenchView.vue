@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { ArrowRight, Plus } from '@element-plus/icons-vue'
 import { dashboardApi } from '@/modules/workbench/api'
 import type { Dashboard } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
@@ -53,7 +53,7 @@ const kinds = computed<Kind[]>(() => {
       {
         type: '待反馈周报', count: sv.pending_reviews.length, to: { name: 'reports' }, alert: true,
         rows: sv.pending_reviews.map((r) => ({
-          key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.owner.name} · ${r.week_start} 这一周`, status: r.status,
+          key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.owner.name} · ${r.week_start} 这一周`,
         })),
       },
       { type: '未交周报', count: sv.missing_reports.length, to: { name: 'reports' }, names: sv.missing_reports.map((u) => u.name), hint: `${sv.week_start} 这一周` },
@@ -70,7 +70,7 @@ const kinds = computed<Kind[]>(() => {
   s.push(
     {
       type: '周报需补充', count: my.reports_needing_revision.length, to: { name: 'reports' }, alert: true,
-      rows: my.reports_needing_revision.map((r) => ({ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周`, status: r.status })),
+      rows: my.reports_needing_revision.map((r) => ({ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周` })),
     },
     {
       type: '待登记使用', count: my.unreported_bookings.length, to: { name: 'bookings' },
@@ -109,7 +109,7 @@ const kinds = computed<Kind[]>(() => {
       },
       {
         type: '设备待检查', count: m.equipment_to_check.length, to: { name: 'equipment', query: { status: 'needs_check' } }, alert: true,
-        rows: m.equipment_to_check.map((e) => ({ key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name, status: e.status })),
+        rows: m.equipment_to_check.map((e) => ({ key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name })),
       },
       {
         type: '校准到期', count: m.calibration_due_count, to: { name: 'equipment', query: { calibration_within: '30' } },
@@ -150,27 +150,31 @@ const lines = computed<Line[]>(() =>
   }),
 )
 
-// The schedule: this week's report, bookings grouped by day, borrowed specimens. Empty groups are left out.
-const day = (d: string) => {
-  const w = new Date(`${d}T00:00:00`).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })
-  return d === todayStr ? `今天 · ${w}` : w
-}
-const agenda = computed(() => {
-  const d = data.value
-  if (!d) return []
-  const my = d.my
+// The schedule: bookings by day, each day with a tear-off date on the left; then this week's report and borrowed
+// specimens. Empty parts are left out.
+interface Day { key: string; month: string; day: number; weekday: string; today: boolean; rows: Row[] }
+const days = computed<Day[]>(() => {
+  const out: Day[] = []
+  for (const b of data.value?.my.upcoming_bookings ?? []) {
+    const p = formatPeriod(b.start_at, b.end_at) // "2026-11-23 09:00 – 11:00"
+    const key = p.slice(0, 10)
+    let d = out.find((x) => x.key === key)
+    if (!d) {
+      const date = new Date(`${key}T00:00:00`)
+      d = { key, month: `${date.getMonth() + 1}月`, day: date.getDate(), weekday: date.toLocaleDateString('zh-CN', { weekday: 'short' }), today: key === todayStr, rows: [] }
+      out.push(d)
+    }
+    d.rows.push({ key: b.id, to: { name: 'bookings', query: { booking: b.id } }, code: b.equipment.code, text: b.equipment.name, hint: p.slice(11) })
+  }
+  return out
+})
+const others = computed(() => {
+  const my = data.value?.my
+  if (!my) return []
   const groups: { title: string; rows: Row[] }[] = []
   if (my.current_week_report) {
     const r = my.current_week_report
     groups.push({ title: '本周周报', rows: [{ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周`, status: r.status }] })
-  }
-  for (const b of my.upcoming_bookings) {
-    const p = formatPeriod(b.start_at, b.end_at) // "2026-11-23 09:00 – 11:00"
-    const title = day(p.slice(0, 10))
-    const row = { key: b.id, to: { name: 'bookings', query: { booking: b.id } }, lead: p.slice(11), code: b.equipment.code, text: b.equipment.name }
-    const g = groups.find((x) => x.title === title)
-    if (g) g.rows.push(row)
-    else groups.push({ title, rows: [row] })
   }
   if (my.borrowed_specimens_count) {
     const rows: Row[] = my.borrowed_specimens.map((l) => ({
@@ -190,48 +194,72 @@ const agenda = computed(() => {
   <div v-loading="loading" class="wb">
     <header class="wb-head">
       <div>
-        <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}。</h1>
+        <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}</h1>
         <p class="sub">{{ today }}</p>
       </div>
-      <el-button v-if="!auth.isSupervisor" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
+      <el-button v-if="!auth.isSupervisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
     </header>
 
+    <!-- Left: things only you can move forward. Right: what is already booked or borrowed, to keep in mind. -->
     <div v-if="data" class="wb-cols">
-      <el-card class="card" header="要处理">
-        <ul v-if="lines.length" class="list">
+      <el-card class="card" header="需要你处理">
+        <ul v-if="lines.length" class="rows">
           <li v-for="r in lines" :key="r.key">
-            <span class="type" :class="{ alert: r.alert }">{{ r.more ? '' : r.type }}</span>
-            <RouterLink :to="r.to" class="text" :class="{ link: r.link }"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</RouterLink>
-            <StatusTag v-if="r.status" :status="r.status" />
-            <span v-if="r.hint" class="hint" :class="{ late: r.late }">{{ r.hint }}</span>
+            <RouterLink :to="r.to" class="row" :class="{ more: r.more }">
+              <el-tag v-if="!r.more" class="kind" :type="r.alert ? 'danger' : 'info'" disable-transitions>{{ r.type }}</el-tag>
+              <span class="main">
+                <span class="title" :class="{ link: r.link }"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</span>
+                <span v-if="r.hint" class="detail" :class="{ late: r.late }">{{ r.hint }}</span>
+              </span>
+              <StatusTag v-if="r.status" :status="r.status" />
+              <el-icon class="chev" aria-hidden="true"><ArrowRight /></el-icon>
+            </RouterLink>
           </li>
         </ul>
         <p v-else class="quiet">都处理完了。</p>
       </el-card>
 
-      <el-card class="card" header="我的日程">
-        <section v-for="g in agenda" :key="g.title" class="group">
+      <el-card class="card" header="接下来">
+        <div v-for="d in days" :key="d.key" class="day">
+          <div class="date" :class="{ today: d.today }">
+            <span>{{ d.today ? '今天' : d.month }}</span>
+            <b>{{ d.day }}</b>
+            <span>{{ d.weekday }}</span>
+          </div>
+          <ul class="rows">
+            <li v-for="r in d.rows" :key="r.key">
+              <RouterLink :to="r.to" class="row">
+                <span class="main">
+                  <span class="title"><span class="code">{{ r.code }}</span> {{ r.text }}</span>
+                  <span class="detail">{{ r.hint }}</span>
+                </span>
+              </RouterLink>
+            </li>
+          </ul>
+        </div>
+        <section v-for="g in others" :key="g.title" class="group">
           <h3 class="group-title">{{ g.title }}</h3>
-          <ul class="list">
+          <ul class="rows">
             <li v-for="r in g.rows" :key="r.key">
-              <span v-if="r.lead" class="lead">{{ r.lead }}</span>
-              <RouterLink :to="r.to" class="text"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</RouterLink>
-              <StatusTag v-if="r.status" :status="r.status" />
-              <span v-if="r.hint" class="hint">{{ r.hint }}</span>
-              <el-tag v-if="r.danger" type="danger" size="small" disable-transitions>{{ r.danger }}</el-tag>
+              <RouterLink :to="r.to" class="row">
+                <span class="main">
+                  <span class="title" :class="{ link: r.key === 'more' }"><span v-if="r.code" class="code">{{ r.code }}</span> {{ r.text }}</span>
+                  <span v-if="r.hint" class="detail">{{ r.hint }}</span>
+                </span>
+                <StatusTag v-if="r.status" :status="r.status" />
+                <el-tag v-if="r.danger" type="danger" disable-transitions>{{ r.danger }}</el-tag>
+              </RouterLink>
             </li>
           </ul>
         </section>
-        <p v-if="!agenda.length" class="quiet">近期没有预约。</p>
+        <p v-if="!days.length && !others.length" class="quiet">近期没有预约。</p>
       </el-card>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* A to-do list reads along a line: keep it narrow enough that the hint stays near its item (DESIGN.md). */
 .wb {
-  max-width: 1120px;
   min-height: 200px;
 }
 .wb-head {
@@ -243,79 +271,125 @@ const agenda = computed(() => {
 }
 .hello {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .sub {
   margin: 4px 0 0;
-  color: var(--lab-text-2);
-  font-size: 14px;
+  color: var(--lab-text-3);
 }
 .wb-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 16px;
   align-items: start;
 }
 .wb-cols > .card {
   margin-top: 0;
 }
-.list {
-  margin: 0;
+/* Rows are whole links: two lines (what, then the detail), a rounded highlight on hover, no rules between them. */
+.rows {
+  margin: 0 -10px;
   padding: 0;
   list-style: none;
 }
-.list li {
+.row {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 40px;
-  border-bottom: 1px solid var(--lab-border);
+  padding: 9px 10px;
+  border-radius: 12px;
+  color: var(--lab-text);
 }
-.list li:last-child {
-  border-bottom: none;
+.row:hover {
+  background: var(--lab-bg);
+  text-decoration: none;
 }
-.type {
+.kind {
   flex: none;
-  width: 6em;
-  color: var(--lab-text-2);
+  width: 92px;
+  justify-content: center;
 }
-.type.alert {
-  color: var(--el-color-danger);
-}
-.lead {
-  flex: none;
-  min-width: 8.5em;
-  color: var(--lab-text-2);
-  font-variant-numeric: tabular-nums;
-}
-.text {
+.main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--lab-text);
 }
-.text:hover,
-.text.link {
+.title.link {
   color: var(--lab-link);
 }
-.hint {
-  flex: none;
-  color: var(--lab-text-2);
+.row.more .main {
+  padding-left: 104px; /* under the titles, past the kind pills */
 }
-.hint.late {
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lab-text-3);
+  font-size: 13px;
+}
+.detail.late {
   color: var(--el-color-danger);
 }
-.group + .group {
+.chev {
+  flex: none;
+  color: var(--lab-text-3);
+}
+.day {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.day + .day {
+  margin-top: 10px;
+}
+.day .rows {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+}
+.date {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 52px;
+  padding: 6px 0;
+  border-radius: 12px;
+  background: var(--lab-bg);
+  line-height: 1.3;
+}
+.date span {
+  color: var(--lab-text-3);
+  font-size: 13px;
+}
+.date b {
+  font-size: 20px;
+  font-weight: 600;
+}
+.date.today {
+  background: var(--el-color-primary);
+  color: #fff;
+}
+.date.today span {
+  color: #fff;
+}
+.group {
   margin-top: 16px;
 }
 .group-title {
   margin: 0 0 2px;
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--lab-text-3);
+  font-size: 13px;
+  font-weight: 500;
 }
 .quiet {
   margin: 0;
@@ -331,10 +405,11 @@ const agenda = computed(() => {
     flex-direction: column;
     align-items: flex-start;
   }
-  .list li {
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    padding: 8px 0;
+  .kind {
+    width: auto;
+  }
+  .row.more .main {
+    padding-left: 0;
   }
 }
 </style>
