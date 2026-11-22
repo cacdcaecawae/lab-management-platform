@@ -25,7 +25,10 @@ it('sends the displayed ledger version and reloads without retrying a stale stoc
   useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
   const wrapper = mount(ConsumablesView, { global: { plugins: [ElementPlus, pinia] }, attachTo: document.body })
   await flushPromises()
-  await wrapper.findAll('button').filter((b) => b.text() === '盘点').at(-1)!.trigger('click')
+  // 盘点 sits in the row's "更多" menu
+  await wrapper.findAll('button').filter((b) => b.text() === '更多').at(-1)!.trigger('click')
+  await flushPromises()
+  ;(Array.from(document.querySelectorAll('.el-dropdown-menu__item')).find((i) => i.textContent?.trim() === '盘点') as HTMLElement).click()
   await flushPromises()
   const input = document.querySelector('.el-dialog input[role="spinbutton"]') as HTMLInputElement
   input.value = '8'

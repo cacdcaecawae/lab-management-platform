@@ -10,6 +10,9 @@ import { errorMessage } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { Clock, Edit, Printer } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -42,16 +45,13 @@ load()
   <template v-else-if="equipment">
     <el-card class="card">
       <template #header>
-        <div class="actions">
-          <el-page-header @back="router.push({ name: 'equipment' })">
-            <template #content><span class="code">{{ equipment.code }}</span> {{ equipment.name }}</template>
-          </el-page-header>
-          <span style="flex: 1" />
-          <el-button @click="historyOpen = true">修改历史</el-button>
-          <el-button v-if="auth.isManager" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })">打印标签</el-button>
-          <el-button v-if="auth.isManager" @click="editing = true">编辑设备</el-button>
+        <PageHeader :back="{ name: 'equipment' }">
+          <template #title><span class="code">{{ equipment.code }}</span> {{ equipment.name }}</template>
+          <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
+          <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })" />
+          <IconButton v-if="auth.isManager" :icon="Edit" label="编辑设备" @click="editing = true" />
           <el-button type="primary" @click="router.push({ name: 'bookings', query: { equipment: equipment.id } })">预约</el-button>
-        </div>
+        </PageHeader>
       </template>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="状态">
@@ -97,7 +97,7 @@ load()
     </el-card>
 
     <el-card class="card" header="最近使用记录">
-      <el-table :data="equipment.recent_usage" empty-text="还没有使用记录">
+      <el-table :data="equipment.recent_usage" empty-text="暂无使用记录">
         <el-table-column label="时间" min-width="170">
           <template #default="{ row }">{{ formatPeriod(row.start_at, row.end_at) }}</template>
         </el-table-column>

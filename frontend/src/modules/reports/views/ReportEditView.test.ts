@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { Me, WeeklyReport } from '@/api/types'
 import ReportEditView from './ReportEditView.vue'
@@ -55,8 +55,9 @@ async function mountAsSupervisor(reportStatus = 200) {
     ],
   })
   await router.push('/r/8')
+  await router.isReady()
   useAuthStore(pinia).user = { id: 1, name: '王老师', role: 'advisor', is_supervisor: true } as Me
-  const wrapper = mount(ReportEditView, { global: { plugins: [ElementPlus, pinia, router] } })
+  const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] } })
   await flushPromises()
   return { wrapper, fetchMock }
 }

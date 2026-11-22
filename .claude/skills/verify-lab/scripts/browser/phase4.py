@@ -55,7 +55,8 @@ def meetings(ui, stack):
     assert meeting.agenda.get().topic == topic
 
     ui.visit(student, "/")
-    row = ui.visible(student, By.XPATH, f"//li[a[normalize-space(.)='{content}']]")
+    # workbench row: kind tag, then the title, then the due date (red when late)
+    row = ui.visible(student, By.XPATH, f"//li[a[.//span[contains(@class,'title')][normalize-space(.)='{content}']]]")
     due_badge = row.find_element(By.CSS_SELECTOR, "span.late")
     assert due.isoformat() in due_badge.text
     ui.screenshot(student, "meetings-overdue-workbench")

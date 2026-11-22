@@ -1,17 +1,19 @@
 import hashlib
+from pathlib import Path
 
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.db import transaction
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from rest_framework import status
-from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from core.exceptions import Conflict
+from core.files import checked_upload, delete_name_on_commit, download
 from core.notifications import notify
 
 from .login_audit import record_attempt, record_throttle_minute, source_address
@@ -122,6 +124,52 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(MeSerializer(request.user).data)
+
+    def patch(self, request):
+        if request.user.must_change_password:
+            raise PermissionDenied(detail="请先修改初始密码", code="password_change_required")
+        data = MeSerializer(request.user, data=request.data, partial=True)
+        data.is_valid(raise_exception=True)
+        data.save()
+        return Response(data.data)
+
+
+AVATAR_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
+AVATAR_MAX_SIZE = 2 * 1024**2
+
+
+class AvatarView(APIView):
+    """The person's own picture. The page crops it to a 256px square JPEG before uploading, so no image library here;
+    only picture extensions are kept and they are served as pictures (nosniff), never as a page."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.avatar:
+            raise NotFound()
+        response = download(request.user.avatar, Path(request.user.avatar.name).name)
+        # avatar_url carries ?v=<uuid> which changes on every upload; cache privately to avoid refetching on every page.
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
+
+    def post(self, request):
+        if request.user.must_change_password:
+            raise PermissionDenied(detail="请先修改初始密码", code="password_change_required")
+        uploaded, name = checked_upload(request, AVATAR_MAX_SIZE, AVATAR_TYPES)
+        with transaction.atomic():
+            # Locked: two uploads at once replace one another instead of orphaning a file.
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            storage, old_name = user.avatar.storage, user.avatar.name
+            user.avatar.save(name, uploaded, save=False)
+            try:
+                with transaction.atomic():
+                    user.save(update_fields=["avatar"])
+                    if old_name:
+                        delete_name_on_commit(storage, old_name)
+            except Exception:
+                storage.delete(user.avatar.name)
+                raise
+        return Response(MeSerializer(user).data)
 
 
 class PasswordChangeView(APIView):

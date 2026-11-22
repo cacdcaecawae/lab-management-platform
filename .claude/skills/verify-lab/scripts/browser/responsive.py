@@ -49,9 +49,11 @@ def drawer_labels(session):
     )
     if not ready:
         return False
-    items = session.find_elements(By.CSS_SELECTOR, '.nav-drawer [role=menuitem]')
-    labels = [item.text.strip() for item in items if item.is_displayed()]
-    return labels if labels and all(labels) else False
+    items = [item for item in session.find_elements(By.CSS_SELECTOR, '.nav-drawer .el-menu-item') if item.is_displayed()]
+    if not items or not all(item.text.strip() for item in items):
+        return False
+    # Every page in the menu, including those inside closed groups (DESIGN.md: modules with several pages fold).
+    return [item.get_attribute('textContent').strip() for item in session.find_elements(By.CSS_SELECTOR, '.nav-drawer .el-menu-item')]
 
 
 def responsive(stack, helpers):
@@ -79,10 +81,26 @@ def responsive(stack, helpers):
         # Close without selecting the already-active route (its watcher would not fire).
         session.find_element(By.TAG_NAME, 'body').send_keys('\ue00c')
         WebDriverWait(session, 12).until(ec.invisibility_of_element_located((By.CSS_SELECTOR, '.nav-drawer')))
+        def measure(label, shot):
+            visible(session, By.CSS_SELECTOR, 'main')
+            WebDriverWait(session, 12).until(lambda s: not any(e.is_displayed() for e in s.find_elements(By.CSS_SELECTOR, '.el-loading-mask')))
+            # Wait for two animation frames after fonts/layout; do not mutate app state.
+            session.execute_async_script('const done=arguments[0]; document.fonts.ready.then(()=>requestAnimationFrame(()=>requestAnimationFrame(done)));')
+            metrics = session.execute_script(METRICS)
+            metrics.update(role=role, menu=label, url=session.current_url)
+            results.append(metrics)
+            screenshot(session, shot)
+            evidence('responsive-metrics', results)  # retain partial evidence on later failure
+            if metrics['clientWidth'] != 390 or metrics['innerHeight'] != 844 or metrics['horizontalOverflow'] > 1:
+                failures.append({'menu': label, 'role': role, 'metrics': metrics})
+
         for i, name in enumerate(names):
             visible(session, By.CSS_SELECTOR, menu_button).click()
             WebDriverWait(session, 12).until(drawer_labels)
-            item = visible(session, By.XPATH, f"//div[contains(@class,'nav-drawer')]//*[@role='menuitem'][normalize-space(.)='{name}']")
+            item = session.find_element(By.XPATH, f"//div[contains(@class,'nav-drawer')]//li[contains(@class,'el-menu-item')][normalize-space(.)='{name}']")
+            if not item.is_displayed():  # in a closed group: open it first
+                item.find_element(By.XPATH, "./ancestor::li[contains(@class,'el-sub-menu')]/div[contains(@class,'el-sub-menu__title')]").click()
+                WebDriverWait(session, 12).until(lambda s: item.is_displayed())
             item.click()
             WebDriverWait(session, 12).until(lambda s: any(
                 e.text.strip() == name or e.get_attribute('textContent').strip() == name
@@ -91,17 +109,8 @@ def responsive(stack, helpers):
             # The selected active route can leave the drawer open; dismiss via Escape.
             session.find_element(By.TAG_NAME, 'body').send_keys('\ue00c')
             WebDriverWait(session, 12).until(ec.invisibility_of_element_located((By.CSS_SELECTOR, '.nav-drawer')))
-            visible(session, By.CSS_SELECTOR, 'main')
-            WebDriverWait(session, 12).until(lambda s: not any(e.is_displayed() for e in s.find_elements(By.CSS_SELECTOR, '.el-loading-mask')))
-            # Wait for two animation frames after fonts/layout; do not mutate app state.
-            session.execute_async_script('const done=arguments[0]; document.fonts.ready.then(()=>requestAnimationFrame(()=>requestAnimationFrame(done)));')
-            metrics = session.execute_script(METRICS)
-            metrics.update(role=role, menu=name, url=session.current_url)
-            results.append(metrics)
-            screenshot(session, f'responsive-{role}-{i:02d}')
-            evidence('responsive-metrics', results)  # retain partial evidence on later failure
-            if metrics['clientWidth'] != 390 or metrics['innerHeight'] != 844 or metrics['horizontalOverflow'] > 1:
-                failures.append({'menu': name, 'role': role, 'metrics': metrics})
+            # Each page opened adds a tab to the shared strip, so later pages are also measured with a full strip.
+            measure(name, f'responsive-{role}-{i:02d}')
     evidence('responsive-summary', {'viewport': '390x844x3 mobile/touch', 'pages': len(results), 'failures': failures,
         'limitations': ['Synthetic seed only; no populated long tables/detail forms.', 'Chromium emulation is not physical mobile Safari/Chrome.', 'Screenshots require visual inspection for clipped controls even without root overflow.']})
     assert not failures, f'Responsive viewport/overflow failures: {[f["menu"] for f in failures]}'

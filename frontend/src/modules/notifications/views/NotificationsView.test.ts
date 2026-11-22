@@ -29,7 +29,7 @@ it('marks visible account notifications read and reloads the unread page', async
   await wrapper.get('input[type="checkbox"]').setValue(true)
   await flushPromises()
   expect(fetch.mock.calls.some(([url]) => url.includes('unread=1'))).toBe(true)
-  await wrapper.findAll('button').find((button) => button.text() === '全部标为已读')!.trigger('click')
+  await wrapper.findAll('button').find((button) => button.attributes('aria-label') === '全部标为已读')!.trigger('click')
   await flushPromises()
   expect(fetch).toHaveBeenCalledWith('/api/notifications/read-all/', expect.objectContaining({ method: 'POST' }))
   expect(wrapper.text()).toContain('暂无通知')

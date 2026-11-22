@@ -5,6 +5,8 @@ import { projectsApi } from '@/modules/projects/api'
 import type { MilestoneWrite, Project, ProjectMilestone, ProjectTask, TaskStatus, TaskWrite } from '@/api/types'
 import { errorMessage } from '@/utils/errors'
 import { toDateStr } from '@/utils/format'
+import FormDialog from '@/components/FormDialog.vue'
+import PageToolbar from '@/components/PageToolbar.vue'
 
 const props = defineProps<{ project: Project; sessionUserId?: number; canManage: boolean; tab: string }>()
 const cols = [{ key: 'todo', name: '待办' }, { key: 'doing', name: '进行中' }, { key: 'done', name: '完成' }] as const
@@ -175,10 +177,12 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
 <template>
   <el-alert v-if="error && tab !== 'progress'" :title="error" type="error" />
   <template v-if="tab === 'tasks'">
-    <div class="actions">
+    <PageToolbar>
       <el-checkbox v-model="mine">只看我的</el-checkbox>
-      <el-button v-if="canEdit" type="primary" :disabled="busy" @click="editTask(null)">新建任务</el-button>
-    </div>
+      <template #actions>
+        <el-button v-if="canEdit" type="primary" :disabled="busy" @click="editTask(null)">新建任务</el-button>
+      </template>
+    </PageToolbar>
     <div class="board">
       <section v-for="col in cols" :key="col.key" :data-status="col.key">
         <h3>{{ col.name }}</h3>
@@ -217,7 +221,11 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
   </template>
 
   <template v-if="tab === 'milestones'">
-    <el-button v-if="canManage" type="primary" :disabled="busy" @click="editMilestone(null)">新建里程碑</el-button>
+    <PageToolbar>
+      <template #actions>
+        <el-button v-if="canManage" type="primary" :disabled="busy" @click="editMilestone(null)">新建里程碑</el-button>
+      </template>
+    </PageToolbar>
     <el-empty v-if="!milestones.length" description="暂无里程碑" />
     <el-card v-for="item in milestones" :key="item.id" class="task" shadow="never">
       <strong>{{ item.title }}</strong>
@@ -229,11 +237,10 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
     <el-button v-if="moreMilestones" link @click="loadMilestones(false)">加载更多</el-button>
   </template>
 
-  <el-dialog v-model="taskDialog" :title="selectedTask ? '编辑任务' : '新建任务'" width="min(540px, 90vw)">
-    <el-form label-position="top" @submit.prevent="saveTask">
-      <el-alert v-if="formError" :title="formError" type="error" />
-      <el-form-item label="标题"><el-input v-model="taskForm.title" maxlength="200" /></el-form-item>
-      <el-form-item label="说明"><el-input v-model="taskForm.description" type="textarea" /></el-form-item>
+  <FormDialog v-model="taskDialog" :title="selectedTask ? '编辑任务' : '新建任务'" :loading="busy" :disabled="!taskForm.title.trim()" @submit="saveTask">
+    <el-form-item label="标题" required><el-input v-model="taskForm.title" maxlength="200" /></el-form-item>
+    <el-form-item label="说明"><el-input v-model="taskForm.description" type="textarea" :autosize="{ minRows: 2 }" /></el-form-item>
+    <div class="form-grid">
       <el-form-item label="负责人">
         <el-select v-model="taskForm.assignee_id" clearable :value-on-clear="null" placeholder="不分配">
           <el-option v-if="shownAssignee && !shownAssignee.current" :value="shownAssignee.id"
@@ -251,23 +258,22 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
         </el-select>
         <el-button v-if="moreMilestones" link @click="loadMilestones(false)">加载更多里程碑</el-button>
       </el-form-item>
-      <el-button type="primary" native-type="submit" :loading="busy" :disabled="!taskForm.title.trim()">保存</el-button>
-    </el-form>
-  </el-dialog>
+    </div>
+    <el-alert v-if="formError" :title="formError" type="error" :closable="false" />
+  </FormDialog>
 
-  <el-dialog v-model="milestoneDialog" :title="selectedMilestone ? '编辑里程碑' : '新建里程碑'" width="min(540px, 90vw)">
-    <el-form label-position="top" @submit.prevent="saveMilestone">
-      <el-alert v-if="formError" :title="formError" type="error" />
-      <el-form-item label="标题"><el-input v-model="milestoneForm.title" maxlength="200" /></el-form-item>
-      <el-form-item label="截止日期"><el-date-picker v-model="milestoneForm.due_date" type="date" value-format="YYYY-MM-DD" :value-on-clear="null" /></el-form-item>
-      <el-checkbox v-model="milestoneForm.done">标为完成</el-checkbox>
-      <el-button type="primary" native-type="submit" :loading="busy" :disabled="!milestoneForm.title.trim()">保存</el-button>
-    </el-form>
-  </el-dialog>
+  <FormDialog v-model="milestoneDialog" :title="selectedMilestone ? '编辑里程碑' : '新建里程碑'" size="sm" :loading="busy" :disabled="!milestoneForm.title.trim()" @submit="saveMilestone">
+    <el-form-item label="标题" required><el-input v-model="milestoneForm.title" maxlength="200" /></el-form-item>
+    <el-form-item label="截止日期"><el-date-picker v-model="milestoneForm.due_date" type="date" value-format="YYYY-MM-DD" :value-on-clear="null" /></el-form-item>
+    <el-form-item><el-checkbox v-model="milestoneForm.done">标为完成</el-checkbox></el-form-item>
+    <el-alert v-if="formError" :title="formError" type="error" :closable="false" />
+  </FormDialog>
 </template>
 
 <style scoped>
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 12px; }
+.board section { padding: 4px 12px 12px; border-radius: var(--lab-radius-lg); background: var(--lab-bg); }
+.board h3 { margin: 10px 0 4px; font-size: 15px; }
 .task { margin: 10px 0; overflow-wrap: anywhere; }
 .late { color: var(--el-color-danger); }
 </style>

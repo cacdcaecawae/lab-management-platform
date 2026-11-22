@@ -7,6 +7,7 @@ import type { DataFile, Dataset } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
+import PageHeader from '@/components/PageHeader.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -79,7 +80,9 @@ load()
   <template v-else-if="dataset">
     <el-card class="card">
       <template #header>
-        <el-page-header :content="`${dataset.code} ${dataset.name}`" @back="router.push({ name: 'datasets' })" />
+        <PageHeader :back="{ name: 'datasets' }">
+          <template #title><span class="code">{{ dataset.code }}</span> {{ dataset.name }}</template>
+        </PageHeader>
       </template>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="类型">{{ KIND_LABELS[dataset.kind] }}</el-descriptions-item>
@@ -131,7 +134,7 @@ load()
         <el-table-column label="文件名" min-width="180">
           <template #default="{ row }">
             {{ row.name }}
-            <el-tag v-if="versionFileIds && !versionFileIds.has(row.id)" size="small" type="warning" disable-transitions>提交后新增</el-tag>
+            <el-tag v-if="versionFileIds && !versionFileIds.has(row.id)" class="status-tag" type="warning" disable-transitions>提交后新增</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="大小" min-width="90">

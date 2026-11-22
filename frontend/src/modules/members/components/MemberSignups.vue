@@ -5,6 +5,9 @@ import { membersApi } from '@/modules/members/api'
 import type { PendingMember } from '@/api/types'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
+import PageToolbar from '@/components/PageToolbar.vue'
+import { CopyDocument, RefreshRight } from '@element-plus/icons-vue'
+import IconButton from '@/components/IconButton.vue'
 
 // For managers: the group's registration link and the applications waiting for approval.
 const emit = defineEmits<{ approved: [] }>()
@@ -78,7 +81,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
 
 <template>
   <el-card class="card">
-    <div class="page-toolbar">
+    <PageToolbar>
       <el-switch
         :model-value="!!code"
         active-text="允许学生用链接注册"
@@ -86,14 +89,23 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
         @change="(on) => setOpen(!!on, on ? '' : '关闭后，已经发出去的链接都会失效。确定关闭？')"
       />
       <template v-if="code">
-        <el-input ref="linkInput" :model-value="link" readonly aria-label="注册链接" class="grow" @focus="linkInput?.select()" />
-        <el-button @click="copy">复制链接</el-button>
-        <el-button @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')">换一个链接</el-button>
+        <!-- as wide as the link (monospace, so 1ch per character), the copy / regenerate icons right after it -->
+        <el-input
+          ref="linkInput"
+          :model-value="link"
+          readonly
+          aria-label="注册链接"
+          class="signup-link"
+          :style="{ width: `calc(${link.length}ch + 24px)` }"
+          @focus="linkInput?.select()"
+        />
+        <IconButton :icon="CopyDocument" label="复制链接" @click="copy" />
+        <IconButton :icon="RefreshRight" label="换一个链接" @click="setOpen(true, '换一个链接后，旧链接失效。确定更换？')" />
       </template>
-    </div>
+    </PageToolbar>
     <template v-if="pending.length">
       <h3>待审核（{{ pending.length }}）</h3>
-      <el-table :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
+      <el-table empty-text="暂无待审核的申请" :data="pending" @selection-change="(rows: PendingMember[]) => (selected = rows)">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="name" label="姓名" min-width="100" />
         <el-table-column prop="username" label="学号" min-width="120" />
@@ -102,7 +114,7 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
           <template #default="{ row }">{{ formatTime(row.date_joined) }}</template>
         </el-table-column>
       </el-table>
-      <div class="page-toolbar">
+      <PageToolbar>
         <el-button type="primary" :disabled="!selected.length" @click="decide(true, selected)">通过</el-button>
         <el-button
           type="danger"
@@ -112,7 +124,17 @@ async function decide(approve: boolean, rows: PendingMember[], ask = '') {
           拒绝
         </el-button>
         <el-button @click="decide(true, pending, `通过全部 ${pending.length} 个申请？请先核对学号和姓名。`)">全部通过</el-button>
-      </div>
+      </PageToolbar>
     </template>
   </el-card>
 </template>
+
+<style scoped>
+/* monospace on the box too, so the width's ch is the text's character width */
+.signup-link,
+.signup-link :deep(.el-input__inner) {
+  max-width: 100%;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-2);
+}
+</style>

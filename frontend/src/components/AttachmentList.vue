@@ -83,7 +83,7 @@ async function remove(a: FileItem) {
         <el-button v-if="canDelete(a)" link type="danger" @click="remove(a)">删除</el-button>
       </li>
     </ul>
-    <p v-else class="empty">还没有附件</p>
+    <p v-else class="empty">暂无附件</p>
     <div v-if="upload" class="add">
       <el-select v-if="withKinds" v-model="kind" class="kind" aria-label="附件类型">
         <el-option v-for="(label, k) in ATTACHMENT_KIND_LABELS" :key="k" :label="label" :value="k" />
@@ -118,7 +118,7 @@ async function remove(a: FileItem) {
 }
 .meta {
   color: var(--el-text-color-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .empty {
   margin: 0;

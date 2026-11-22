@@ -85,6 +85,9 @@ def test_batch_rules_permissions_and_returns(api, manager, student_a, group, oth
     assert student.post(txns, {"kind": "out", "quantity": 1, "batch_id": today_batch["id"]}).status_code == 201
     assert client.get(detail).data["batches"][1]["stock"] == 0
     assert student.post(txns, {"kind": "return", "quantity": 1, "batch_id": today_batch["id"]}).status_code == 201
+    # Already-expired batches with stock still on the shelf surface on the workbench and in expiring_within.
+    before_clear = client.get("/api/dashboard/").json()["manager"]["expiring_batches"]
+    assert [b["batch_no"] for b in before_clear] == ["expired", "today"]
     seen = client.get(detail).data["stock_version"]
     assert client.post(txns, {"kind": "adjust", "quantity": -1, "batch_id": expired_batch["id"], "stock_version_seen": seen}).status_code == 201
     dashboard = client.get("/api/dashboard/").json()["manager"]["expiring_batches"]

@@ -79,7 +79,7 @@ class ConsumableViewSet(
                 raise ValidationError({"expiring_within": ["须为 0 至 365 天"]})
             today = timezone.localdate()
             expiring = batches_with_balance().filter(
-                consumable_id=OuterRef("pk"), expires_on__range=(today, today + timedelta(days=int(days))), stock__gt=0,
+                consumable_id=OuterRef("pk"), expires_on__lte=today + timedelta(days=int(days)), stock__gt=0,
             )
             consumables = consumables.filter(tracks_batches=True).filter(Exists(expiring))
         return consumables

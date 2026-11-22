@@ -3,7 +3,7 @@ import re
 from django.db import transaction
 from django.db.models import Count, F, ProtectedError, Q, Sum
 from django.db.models.functions import TruncMonth
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.http import content_disposition_header
@@ -19,7 +19,7 @@ from accounts.models import User
 from core import mail
 from core.exceptions import Conflict, MailFailed
 from core.export import xlsx_bytes
-from core.files import delete_on_commit
+from core.files import delete_on_commit, download
 from core.history import serialize_history
 from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, scope_group, scope_private
 
@@ -318,7 +318,7 @@ class AttachmentViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
     @action(detail=True)
     def file(self, request, pk=None):
         attachment = self.get_object()
-        return FileResponse(attachment.file.open("rb"), filename=attachment.name)
+        return download(attachment.file, attachment.name)
 
     def destroy(self, request, *args, **kwargs):
         attachment = self.get_object()

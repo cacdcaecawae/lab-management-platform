@@ -50,6 +50,8 @@
   - Python 是 `/d/anaconda/conda/envs/lab-platform/python.exe`；
   - Git Bash 里调用 `docker` 时，带容器路径的参数（如 `-v x:/data`）要加 `MSYS_NO_PATHCONV=1`；
   - 用 Python 在 Windows 上写文本文件会写出 CRLF，要用 `write_bytes` 或事后转回 LF。
+  - 在 Windows 上 `npm install` 之后，`package-lock.json` 会丢掉 `@emnapi/*`，`infra/web.Dockerfile` 里的 `npm ci` 随即失败（第一期、第二期各出过一次）。重新生成：把 `package.json` 和锁文件复制到不提交的目录（如 `backend/var/lockgen`），**在 PowerShell 里**运行 `docker run --rm -v "<该目录的 Windows 路径>:/app" -w /app node:24-alpine npm install --package-lock-only --ignore-scripts`（Git Bash 会把路径转错），复制回来，确认 diff 只增不删，再跑 `docker build -f infra/web.Dockerfile .`。
+- **几个会话同时开发**：别的会话可能在你干活时往 main 提交或合并（2026-11-17 整文件覆盖 `docs/decisions.md`，丢了别人刚加的 D25–D27）。动手前和提交前看 `git log -3`、`git status`；改已有文件用局部编辑，不整文件重写；只 `git add` 具体文件，不用 `git add -A`。
 - **路由**：JS 字符串里的正则要写两个反斜杠，`'items/:id(\\d+)'`。只写一个时，`\d` 就是字母 d；点链接能进去，直接打开地址却是"页面不存在"。`router/router.test.ts` 会检查所有详情地址。
 - **浏览器自动化**：Element Plus 的 switch、checkbox 把真正的 input 藏起来了，chrome-devtools 的 `click`、`fill` 会超时。绕过办法见 `.claude/skills/verify-lab/features/specimens.md` 的 Gotchas。登录有限速：同一账号每分钟最多 5 次。
 - **N+1 测试**：列表接口多预取一个关联时，查询次数断言的上限要相应加 1；上限必须是常数，不能随行数变化。

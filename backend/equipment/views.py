@@ -4,7 +4,6 @@ from pathlib import Path
 
 from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef
-from django.http import FileResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import mixins, status, viewsets
@@ -16,6 +15,7 @@ from rest_framework.response import Response
 from accounts.models import User
 from core import mail
 from core.exceptions import Conflict
+from core.files import download
 from core.history import serialize_history
 from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
@@ -235,4 +235,4 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         report = getattr(self.get_object(), "report", None)
         if not (report and report.photo):
             raise NotFound()
-        return FileResponse(report.photo.open("rb"), filename=Path(report.photo.name).name)
+        return download(report.photo, Path(report.photo.name).name)

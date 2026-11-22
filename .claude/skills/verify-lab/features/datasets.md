@@ -12,7 +12,7 @@
 
 ## How to get to it (user POV)
 
-- 左侧菜单"原始数据" → 按钮"新建数据集"。
+- 左侧展开 "科研记录" → menuitem "原始数据" → 按钮"新建数据集"。
 - 数据集列表里点编号链接，进入详情页；详情页"文件"卡片右上角的"上传文件"按钮。
 - 文件表最后一列的"下载"链接。
 
@@ -25,8 +25,8 @@
 
 步骤：
 
-- **登录学生甲。** `new_page` 打开 `http://127.0.0.1:5273/login`，`isolatedContext` 为 `s_a`。在 textbox "学号 / 工号" 填 `s_a`，textbox "密码" 填 `Verify-2026!`，点 button "登录"。页面跳到工作台，右上角是 button "学生甲（验证课题组）"。
-- **新建数据集。** 点 menuitem "原始数据"，再点 button "新建数据集"，出现 dialog "新建数据集"。点 combobox "*项目"，按 `ArrowDown`、`Enter`，下拉框旁显示"导波螺栓松动"。在 textbox "*名称" 填 `验证-导波波形`，radio "原始数据" 保持选中，点 button "创建"。页面跳到 `/datasets/1`，显示"DS-2026-0001 验证-导波波形"，"文件"一栏为"0 个，共 0 B"。
+- **登录学生甲。** `new_page` 打开 `http://127.0.0.1:5273/login`，`isolatedContext` 为 `s_a`。在 textbox "学号 / 工号" 填 `s_a`，textbox "密码" 填 `Verify-2026!`，点 button "登录"。页面跳到工作台，左侧栏顶部是账号按钮（写着"学生甲"，下一行"验证课题组"）。
+- **新建数据集。** 在左侧展开 "科研记录"、点 menuitem "原始数据"，再点 button "新建数据集"，出现 dialog "新建数据集"。点 combobox "*项目"，按 `ArrowDown`、`Enter`，下拉框旁显示"导波螺栓松动"。在 textbox "*名称" 填 `验证-导波波形`，radio "原始数据" 保持选中，点 button "保存"。页面跳到 `/datasets/1`，显示"DS-2026-0001 验证-导波波形"，"文件"一栏为"0 个，共 0 B"。
 - **上传文件。** 对 button "上传文件" 用 `upload_file`，路径为 `<launch.sh 打印的上传目录>\wave_001.csv`。用 `wait_for` 等 "已入库"。文件表出现 `wave_001.csv`、`27 B`，SHA256 为 `8125f9baec3d332ae9f28085aa36435d705a6880239a93d7e67a57dda7d5caf6`（与 `SHA256SUMS` 一致）；"文件"变为"1 个，共 27 B"，"当前版本"不再是空数据集的 `e3b0c44298fc`。
 - **同名拒绝。** 再对 button "上传文件" 上传同一个 `wave_001.csv`。用 `wait_for` 等 "上传失败"。出现 alert "上传失败：已存在同名文件：wave_001.csv"；文件表仍只有一行，"文件"和"当前版本"不变。
 - **留证。** `take_screenshot`（`fullPage: true`）和 `take_snapshot` 各存一份到证据目录。

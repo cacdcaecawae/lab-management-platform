@@ -32,7 +32,7 @@ def check_specimen_filters(stack, *, browser, login, visit, visible, button, lab
 
     def create(session, code, kind=None, status=None):
         visit(session, "/specimens")
-        button(session, "新增试件").click()
+        button(session, "新建试件").click()
         label_input(session, "编号").send_keys(code)
         label_input(session, "名称").send_keys(f"合成试件 {code}")
         dialog = "//div[@role='dialog']"

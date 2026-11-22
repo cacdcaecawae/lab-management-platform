@@ -57,10 +57,13 @@
 | POST | `/api/auth/login/` | `{username, password}` → 200 `Me`；失败 403 `invalid_credentials`；待审核的账号且密码正确时 403 `pending_approval` |
 | POST | `/api/auth/logout/` | 204 |
 | GET | `/api/auth/me/` | 200 `Me`（未改初始密码也可访问） |
+| PATCH | `/api/auth/me/` | 个人信息：`{email?, phone?, wechat?, research_direction?}` → 200 `Me`；姓名、登录名、角色只读（发了也忽略），由管理员 / 运维改；邮箱格式不对 400；未改初始密码 403 `password_change_required` |
+| GET | `/api/auth/me/avatar/` | 本人头像图片（浏览器里直接显示，`nosniff`）；没有头像 404 |
+| POST | `/api/auth/me/avatar/` | `multipart`，字段 `file` → 200 `Me`；只收 JPG、PNG、WebP（否则 400），最大 2 MB（413）；替换的旧文件在提交后删除；未改初始密码 403 `password_change_required`。页面先在浏览器里裁成 256px 正方形 JPEG 再上传 |
 | POST | `/api/auth/password/` | `{old_password, new_password}` → 204；新密码按 Django 密码规则校验 |
 | POST | `/api/auth/register/` | 匿名，要 CSRF。`{code, username, name, email?, password}` → 201。`code` 是课题组注册链接里的码，在事务里按它锁住课题组后、先于其他字段核对（链接关闭或更换与在途申请不会交错），不对 400（`errors.code`），不会提示学号是否已存在；学号已存在 409；密码按 Django 规则校验。建成该组的学生账号，`is_active=false`、`pending=true`、`must_change_password=false`，并给本组管理员发站内通知。每组待审核超过 30 个时 409 `too_many_pending`；同一来源地址每小时 10 次，超过 429 |
 
-`Me = {id, username, name, role, is_supervisor, is_superuser, group: {id, name} | null, email, phone, research_direction, must_change_password}`（`is_superuser`：运维账号）
+`Me = {id, username, name, role, is_supervisor, is_superuser, group: {id, name} | null, email, phone, wechat, research_direction, must_change_password, avatar_url}`（`is_superuser`：运维账号；`avatar_url`：本人头像，每次上传都会变，没有头像为 `null`）
 
 `role`: `student` | `manager` | `advisor`
 
@@ -123,14 +126,14 @@
 ## 成员 `/api/members/`（Agent A）
 
 `Member`（本组成员可见的公开字段）：`{id, name, role, research_direction, is_active}`
-`MemberDetail`（本组管理员/导师可见，本人看自己也返回）：在 `Member` 基础上增加 `{username, email, phone, must_change_password}`
+`MemberDetail`（本组管理员/导师可见，本人看自己也返回）：在 `Member` 基础上增加 `{username, email, phone, wechat, must_change_password}`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/members/?search=&role=&is_active=` | 本组全员 | 只返回本组成员；`search` 匹配姓名、研究方向，管理员/导师另外匹配学号（学生看不到学号，也不能用搜索试探） |
 | GET | `/api/members/{id}/` | 本组全员 | 外组成员 404 |
-| POST | `/api/members/` | 管理员 | `{username, name, role, email?, phone?, research_direction?, password}` → 201 `MemberDetail`；`role` 只能是 `student`；用户名已存在 → 409 `conflict`；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
-| PATCH | `/api/members/{id}/` | 管理员 | 可改 `name, role, email, phone, research_direction, is_active`；不可改 `username`、课题组；管理员不能停用自己 |
+| POST | `/api/members/` | 管理员 | `{username, name, role, email?, phone?, wechat?, research_direction?, password}` → 201 `MemberDetail`；`role` 只能是 `student`；学号 / 工号已被任何账号使用 → 409 `conflict`（"这个学号 / 工号已经有账号在用"）；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
+| PATCH | `/api/members/{id}/` | 管理员 | 可改 `username, name, role, email, phone, wechat, research_direction, is_active`（本组学生和自己）；`username` 是登录名，用来改正注册时填错的学号，格式同新建，已被使用 → 409 `conflict`，改后用新登录名登录，记录不受影响；不可改课题组；管理员不能停用自己 |
 | POST | `/api/members/{id}/reset-password/` | 管理员 | `{password}` → 204，并置 `must_change_password=true` |
 | GET | `/api/members/signup/` | 管理员 | 本组注册链接的码 `{code}`，空串表示关闭 |
 | POST | `/api/members/signup/` | 管理员 | `{open: true}` 生成新码（旧码失效），`{open: false}` 关闭 → `{code}` |
@@ -517,8 +520,8 @@
 | GET / POST | `/api/system/groups/` | 课题组 `{id, name, finance_email, member_count, created_at}`（`member_count`：在籍成员）；名称重复 400 |
 | PATCH | `/api/system/groups/{id}/` | `{name?, finance_email?}`；不能删除 |
 | GET | `/api/system/accounts/?search=&group=&role=&is_active=` | 所有课题组的成员账号，分页，不含运维账号 |
-| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, email?, phone?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
-| PATCH | `/api/system/accounts/{id}/` | `{name?, role?, email?, phone?, research_direction?, is_active?}`；课题组和登录名创建后不能改；运维账号 404 |
+| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, email?, phone?, wechat?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
+| PATCH | `/api/system/accounts/{id}/` | `{username?, name?, role?, email?, phone?, wechat?, research_direction?, is_active?}`；`username`（登录名）可以改正，已被任何账号使用 → 409 `conflict`；课题组创建后不能改；运维账号 404 |
 | POST | `/api/system/accounts/{id}/reset-password/` | `{password}` → 204，对方下次登录需改密码 |
 
 `Account = {id, username, name, role, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
@@ -574,4 +577,4 @@
 
 仅本组管理员可 `POST /api/consumables/{id}/batch-mode/`，提交 `{tracks_batches,stock_version_seen,opening_batch?}`。非零库存启用时提供 `opening_batch:{batch_no,expires_on?}`，平台等额转拨而非增加库存；非零批次禁止关闭，错过版本返回 `409 stale_stock`。普通新增和元数据编辑不通过此接口，不改变模式。所有原有和新建耗材默认关闭。
 
-耗材响应增加 `tracks_batches`、`nearest_expiry` 和按有效期升序（无日期最后）的 `batches:[{id,batch_no,expires_on,stock,can_issue}]`。保留零库存批次以便退回。开启后，入库传 `batch_no` 和可选 `expires_on`；领用、退回、盘点传本耗材的 `batch_id`。有效期当天可领，过期不能领，但允许退回、管理员盘点及普通入库记录。盘点提交**所选批次**的有符号差额及耗材总账版本；历史流水可能含只读的 `allocation`、`batch_mode`，客户端不能提交。列表 `expiring_within` 接受 0–365（含今天，忽略过期或零库存批次）；管理员工作台返回本组最多 20 个 30 天内到期批次。
+耗材响应增加 `tracks_batches`、`nearest_expiry` 和按有效期升序（无日期最后）的 `batches:[{id,batch_no,expires_on,stock,can_issue}]`。保留零库存批次以便退回。开启后，入库传 `batch_no` 和可选 `expires_on`；领用、退回、盘点传本耗材的 `batch_id`。有效期当天可领，过期不能领，但允许退回、管理员盘点及普通入库记录。盘点提交**所选批次**的有符号差额及耗材总账版本；历史流水可能含只读的 `allocation`、`batch_mode`，客户端不能提交。列表 `expiring_within` 接受 0–365：有效期不晚于今天加这么多天、仍有库存的批次，含已过期的，忽略零库存批次；管理员工作台返回本组最多 20 个 30 天内到期或已过期、仍有库存的批次，按有效期升序。
