@@ -13,6 +13,7 @@ if [ $# -eq 0 ]; then
   restic snapshots --host lab
   exit 0
 fi
+need_site
 snap=$1
 shift
 db_only='' yes='' keep_stopped=''

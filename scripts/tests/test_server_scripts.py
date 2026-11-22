@@ -310,20 +310,21 @@ class ServerScripts(unittest.TestCase):
                         COMPOSE_PROJECT_NAME='lab')
         self.assertEqual(self.run_script('backup.sh').returncode, 0)
 
-    def test_without_a_site_here_only_restore_runs_on_the_defaults(self):
-        # Never started or removed with down: backing up or updating on the defaults could miss its NAS overlay;
-        # restoring onto an empty machine is how a new server starts.
+    def test_without_a_site_here_nothing_runs_on_the_defaults(self):
+        # Never started or removed with down: on the defaults a NAS site would be backed up, restored or restarted on
+        # the local volume. A new server is restored onto a site started first (README).
         shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
         self.env['SITE_FILES'] = ''
-        for script, args in [('backup.sh', []), ('update.sh', ['v0.2.0'])]:
+        for script, args in [('backup.sh', []), ('restore.sh', [A, '--yes']), ('update.sh', ['v0.2.0'])]:
             r = self.run_script(script, *args)
             self.assertNotEqual(r.returncode, 0)
             self.assertIn('没有找到这个目录正在运行的网站', r.stderr)
-        self.assertEqual(self.calls(), [])
-        r = self.run_script('restore.sh', A, '--db-only', '--yes')
-        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(any(set(c) & {'stop', 'up', 'pull', 'exec', 'dump', 'backup', 'restore'} for c in self.calls()))
+        self.assertEqual(self.run_script('restore.sh').returncode, 0)  # listing the snapshots changes nothing
         self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml'  # named by hand
         self.assertEqual(self.run_script('backup.sh').returncode, 0)
+        r = self.run_script('restore.sh', A, '--db-only', '--yes')
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_progress_for_the_web_page_only_when_the_agent_runs_the_update(self):
         status = self.root / 'status.json'

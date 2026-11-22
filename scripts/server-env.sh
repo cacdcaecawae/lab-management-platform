@@ -48,12 +48,13 @@ running_stack() {
   fi
   export COMPOSE_FILE=$files COMPOSE_PROJECT_NAME=${site##*|}
 }
-COMPOSE_FILE_GIVEN=${COMPOSE_FILE:-}
+COMPOSE_FILE_GIVEN=${COMPOSE_FILE:-} SITE_BACKEND=
 # Installing (install.sh, update-agent.sh --install) acts on no site: install.sh checks the project name itself.
 [[ ${LAB_INSTALL:-} == yes ]] || running_stack
 export COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml}
-# Backing up or updating needs the site's own files: without a site here (never started, or removed with down), only
-# a COMPOSE_FILE naming them will do, or a NAS site would be backed up or restarted on the local volume.
+# Backing up, restoring or updating needs the site's own files: without a site here (never started, or removed with
+# down), only a COMPOSE_FILE naming them will do, or a NAS site would be backed up, restored or restarted on the local
+# volume. A new server is restored onto a site started first (README), so it has one.
 need_site() {
   [[ -n $SITE_BACKEND || -n $COMPOSE_FILE_GIVEN ]] ||
     die "没有找到这个目录正在运行的网站（$PWD/infra 的 backend 容器），没有做任何操作。网站先 up 起来，或者用 COMPOSE_FILE 写明它的 Compose 文件"

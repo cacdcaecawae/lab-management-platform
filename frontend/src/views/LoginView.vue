@@ -53,7 +53,8 @@ onBeforeUnmount(() => bar?.disconnect())
   <div class="home">
     <header class="top" :class="{ scrolled }">
       <span class="brand"><img :src="icon" alt="" />Phase</span>
-      <button class="dark" type="button" :tabindex="scrolled ? 0 : -1" @click="sheet?.showModal()">登录</button>
+      <!-- inert while hidden: neither focus nor a screen reader should find a second, invisible 登录 -->
+      <button class="dark" type="button" :inert="!scrolled" @click="sheet?.showModal()">登录</button>
     </header>
 
     <main>
