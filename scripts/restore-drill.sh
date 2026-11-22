@@ -103,7 +103,7 @@ while IFS=$'\t' read -r kind path checksum; do
   checked=$((checked + 1))
 done < "$DRILL_DIR/includes"
 if [[ "$checked" == 0 ]]; then
-  summary="备份无这两类附件；未验证文件内容"
+  summary="备份里没有附件；未验证文件内容"
 else
   summary="附件校验：$checked 项"
 fi

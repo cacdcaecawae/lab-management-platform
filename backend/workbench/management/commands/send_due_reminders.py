@@ -90,7 +90,7 @@ class Command(BaseCommand):
         outcomes = {state: 0 for state in State.values}
         outcomes["skipped"] = 0
         for recipient, count, body in build_digests(today, origin):
-            subject = f"[课题组管理平台] 今日提醒（{count} 项）"
+            subject = f"[Phase] 今日提醒（{count} 项）"
             if dry_run:
                 state = ReminderDelivery.objects.filter(recipient=recipient, day=today).values_list("state", flat=True).first()
                 self.stdout.write(f"预览：账号 ID {recipient.pk}（{state or '未认领'}）\n{subject}\n{body}")

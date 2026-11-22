@@ -5,7 +5,7 @@ from workbench.storage import GroupStorageView, OpsStorageView
 from workbench.search import SearchView
 from workbench.views import DashboardView
 
-admin.site.site_header = admin.site.site_title = "课题组管理平台 后台"
+admin.site.site_header = admin.site.site_title = "Phase 后台"
 # Like the business API: the one-time password from the installer is changed in the web UI first.
 _admin_permission = admin.site.has_permission
 admin.site.has_permission = lambda request: _admin_permission(request) and not request.user.must_change_password

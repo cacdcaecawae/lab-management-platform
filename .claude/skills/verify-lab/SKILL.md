@@ -1,9 +1,9 @@
 ---
 name: verify-lab
-description: 在真实浏览器里驱动课题组管理平台（Vue 前端 + Django 后端），验证用户可见的行为。启动一套与日常开发隔离的实例（数据库 lab_verify、后端 :8100、前端 :5273、无头 Chrome :9222），按 features/ 里的功能清单操作页面，留下截图和数据库证据，最后清理。改了页面、接口行为或权限之后，或者需要证明某个流程在浏览器里真的走得通时使用。
+description: 在真实浏览器里驱动 Phase 课题组管理平台（Vue 前端 + Django 后端），验证用户可见的行为。启动一套与日常开发隔离的实例（数据库 lab_verify、后端 :8100、前端 :5273、无头 Chrome :9222），按 features/ 里的功能清单操作页面，留下截图和数据库证据，最后清理。改了页面、接口行为或权限之后，或者需要证明某个流程在浏览器里真的走得通时使用。
 ---
 
-# 在浏览器里验证课题组管理平台
+# 在浏览器里验证 Phase
 
 所有命令都在仓库根目录 `lab-management-platform/` 下用 Bash（Git Bash）运行。浏览器操作用 chrome-devtools MCP 工具（`new_page`、`take_snapshot`、`click`、`fill`、`press_key`、`upload_file`、`wait_for`、`take_screenshot`、`evaluate_script`），它固定连接 `127.0.0.1:9222`。
 
@@ -55,7 +55,7 @@ bash .claude/skills/verify-lab/scripts/doctor.sh
 ## 驱动
 
 1. 打开 [`features/README.md`](features/README.md)，找到要验证的功能，按对应文件的 "Driving it with chrome-devtools MCP" 一节操作。
-2. 每个账号用一个独立上下文：`new_page` 打开 `http://127.0.0.1:5273/login`，并传 `isolatedContext: "<账号>"`，这样多个账号可以同时登录、互不覆盖会话。
+2. 每个账号用一个独立上下文：`new_page` 打开 `http://127.0.0.1:5273/login`，并传 `isolatedContext: "<账号>"`，这样多个账号可以同时登录、互不覆盖会话。这个地址是首页：点首屏的 button "登录"，在 dialog "登录 Phase" 里填 textbox "学号 / 工号"、"密码"，再点里面的 button "登录"。打开带 `next` 的地址（例如 `/login?next=/datasets`）时登录弹窗直接打开，登录后到那一页。
 3. 每次操作前先 `take_snapshot` 拿 uid。uid 每次快照都会变，只用最新的。按无障碍名称（按钮文字、输入框标签、菜单项）定位，不按坐标。
 
 Element Plus 页面的几个特点：

@@ -22,6 +22,23 @@ with (root / 'calls').open('a') as f:
     f.write(json.dumps(args) + '\n')
 command = ' '.join(args)
 mode = os.environ.get('MODE', '')
+# server-env.sh looking up this checkout's backend. SITE_FILES: its Compose files, project lab; sites separated by ;,
+# each may end in |<project>. SITE_NAS: its /data mount. OTHER_DIRS: other directories using the project name.
+sites = [s if '|' in s else s + '|lab' for s in os.environ.get('SITE_FILES', '').split(';') if s]
+if args[:2] == ['ps', '-aq']:
+    wanted = {f'label=com.docker.compose.project.working_dir={root}/infra', 'label=com.docker.compose.service=backend',
+              'label=com.docker.compose.oneoff=False'}
+    if wanted <= set(args):
+        print('\n'.join(f'b4c7e2d{i}' for i in range(len(sites))))
+    sys.exit(1 if mode == 'ps-fails' else 0)
+if args[:1] == ['inspect']:
+    if mode == 'inspect-fails':
+        sys.exit(1)
+    print(os.environ.get('SITE_NAS', '') if '.Mounts' in args[2] else sites[int(args[-1][-1])])
+    sys.exit(0)
+if args[:2] == ['ps', '-a']:
+    print(os.environ.get('OTHER_DIRS', ''))
+    sys.exit(0)
 if 'record_ops_run' in args:
     sys.exit(1 if mode == 'record-fails' else 0)
 if 'restic backup' in command:
@@ -146,8 +163,10 @@ class ServerScripts(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
                         TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A}]))
         # Do not inherit an operator's target-stack overrides.
-        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS'):
+        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS',
+                    'SITE_NAS', 'OTHER_DIRS', 'LAB_NAS_ROOT'):
             self.env.pop(key, None)
+        self.env['SITE_FILES'] = f'{self.root}/infra/docker-compose.prod.yml'  # the site is installed and running
 
     def executable(self, name, text):
         path = self.root / 'bin' / name
@@ -158,8 +177,10 @@ class ServerScripts(unittest.TestCase):
         return subprocess.run(['bash', str(self.root / 'scripts' / name), *args],
                               env=dict(self.env, MODE=mode), text=True, capture_output=True, timeout=20)
 
-    def calls(self):
-        return [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()] if (self.root / 'calls').exists() else []
+    def calls(self, lookups=False):
+        # lookups: server-env.sh reading the running site's Compose labels, which changes nothing
+        calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()] if (self.root / 'calls').exists() else []
+        return [c for c in calls if lookups or (c[:2] not in (['ps', '-aq'], ['ps', '-a']) and c[:1] != ['inspect'])]
 
     def test_failed_start_cannot_succeed_from_old_healthy_endpoint(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='start-fails')
@@ -181,6 +202,7 @@ class ServerScripts(unittest.TestCase):
 
     def enable_tls(self):
         self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.https.yml'
+        self.env['SITE_FILES'] = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.https.yml'
         with (self.root / '.env').open('a') as f:
             f.write('HTTPS_DOMAIN=lab.synthetic.test\nDJANGO_ALLOWED_HOSTS=legacy.test\n')
 
@@ -206,7 +228,7 @@ class ServerScripts(unittest.TestCase):
         r = self.run_script('update.sh', 'v0.2.0')
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn('未停止网站', r.stderr)
-        self.assertFalse((self.root / 'calls').exists())
+        self.assertEqual(self.calls(), [])
         self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
 
     def test_redirect_is_never_a_healthy_response_or_legacy_fallback(self):
@@ -243,6 +265,66 @@ class ServerScripts(unittest.TestCase):
         # web stays up for the progress page; Nginx re-resolves backend once the release starts
         self.assertFalse(any(c[-2:] == ['stop', 'web'] or c[-3:] == ['stop', 'backend', 'web'] for c in calls))
         self.assertIn(['compose', '--env-file', '.env', 'restart', 'web'], calls)
+
+    def test_scripts_use_the_running_sites_compose_files(self):
+        # A cron line names no overlay; the site's backend was created with the NAS overlay.
+        site = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.nas.yml'
+        (self.root / 'scripts/probe.sh').write_text(
+            'source "$(dirname "$0")/server-env.sh"\necho "$COMPOSE_FILE|$COMPOSE_PROJECT_NAME"\n')
+        self.env['SITE_FILES'] = site
+        r = self.run_script('probe.sh')
+        self.assertEqual(r.stdout.strip(), site.replace(',', ':') + '|lab', r.stderr)
+        # The same files given (relative, as README writes them) are fine; fewer stop before anything else.
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.nas.yml'
+        self.assertEqual(self.run_script('probe.sh').returncode, 0)
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml'
+        r = self.run_script('probe.sh')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('不一致', r.stderr)
+        self.assertEqual({c[0] for c in self.calls(lookups=True)}, {'ps', 'inspect'})
+
+    def test_scripts_stop_when_the_site_is_unclear(self):
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        prod = f'{self.root}/infra/docker-compose.prod.yml'
+        cases = [
+            ('Docker not answering', {}, 'ps-fails', '查不到'),
+            ('labels unreadable', {}, 'inspect-fails', '读不出'),
+            ('two sites here', {'SITE_FILES': f'{prod}|lab;{prod}|trial'}, '', '两套网站'),
+            ('another project named', {'COMPOSE_PROJECT_NAME': 'trial'}, '', '不是 trial'),
+            # nothing here, and the project name is another checkout's site: its volumes would be used
+            ('name taken elsewhere', {'SITE_FILES': '', 'COMPOSE_PROJECT_NAME': 'infra', 'OTHER_DIRS': '/srv/lab/infra'},
+             '', '另一个目录（/srv/lab/infra）'),
+            ('default name taken elsewhere', {'SITE_FILES': '', 'OTHER_DIRS': f'{self.root}/infra\n/srv/lab/infra'},
+             '', '另一个目录（/srv/lab/infra）'),
+        ]
+        for name, env, mode, message in cases:
+            for script, args in [('backup.sh', []), ('restore.sh', [A, '--yes']), ('update.sh', ['v0.2.0'])]:
+                with self.subTest(name, script=script):
+                    r = subprocess.run(['bash', str(self.root / 'scripts' / script), *args], env=dict(self.env, MODE=mode, **env),
+                                       text=True, capture_output=True, timeout=20)
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertIn(message, r.stderr)
+        self.assertEqual(self.calls(), [])
+        # Two sites here, one named: that one.
+        self.env.update(SITE_FILES=f'{prod}|lab;{prod},{self.root}/infra/docker-compose.https.yml|trial',
+                        COMPOSE_PROJECT_NAME='lab')
+        self.assertEqual(self.run_script('backup.sh').returncode, 0)
+
+    def test_without_a_site_here_nothing_runs_on_the_defaults(self):
+        # Never started or removed with down: on the defaults a NAS site would be backed up, restored or restarted on
+        # the local volume. A new server is restored onto a site started first (README).
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        self.env['SITE_FILES'] = ''
+        for script, args in [('backup.sh', []), ('restore.sh', [A, '--yes']), ('update.sh', ['v0.2.0'])]:
+            r = self.run_script(script, *args)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn('没有找到这个目录正在运行的网站', r.stderr)
+        self.assertFalse(any(set(c) & {'stop', 'up', 'pull', 'exec', 'dump', 'backup', 'restore'} for c in self.calls()))
+        self.assertEqual(self.run_script('restore.sh').returncode, 0)  # listing the snapshots changes nothing
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml'  # named by hand
+        self.assertEqual(self.run_script('backup.sh').returncode, 0)
+        r = self.run_script('restore.sh', A, '--db-only', '--yes')
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_progress_for_the_web_page_only_when_the_agent_runs_the_update(self):
         status = self.root / 'status.json'
@@ -412,9 +494,33 @@ class ServerScripts(unittest.TestCase):
 
     def enable_nas(self, data):
         self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.nas.yml'
+        self.env['SITE_FILES'] = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.nas.yml'
+        self.env['SITE_NAS'] = str(data)
         data.mkdir(exist_ok=True)
         with (self.root / '.env').open('a') as f:
             f.write(f'LAB_NAS_ROOT={data}\n')
+
+    def test_backup_restore_and_update_use_the_nas_directory_the_site_serves(self):
+        # An old copy of the NAS disk keeps the storage id; a LAB_NAS_ROOT pointing at it must not be backed up or
+        # restored into.
+        shutil.copyfile(ROOT / 'scripts/backup.sh', self.root / 'scripts/backup.sh')
+        self.enable_nas(self.root / 'live-data')
+        (self.root / 'old-copy').mkdir()
+        for given in ('shell', 'env'):
+            if given == 'shell':
+                self.env['LAB_NAS_ROOT'] = str(self.root / 'old-copy')
+            else:
+                self.env.pop('LAB_NAS_ROOT')
+                with (self.root / '.env').open('a') as f:
+                    f.write(f'LAB_NAS_ROOT={self.root}/old-copy\n')
+            for script, args in [('backup.sh', []), ('restore.sh', [A, '--yes']), ('update.sh', ['v0.2.0'])]:
+                with self.subTest(given=given, script=script):
+                    r = self.run_script(script, *args)
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertIn('不是网站正在用的 NAS 目录', r.stderr)
+        self.assertEqual([c for c in self.calls() if 'record_ops_run' not in c], [])  # the failed backup is shown
+        self.env['SITE_NAS'] = str(self.root / 'old-copy')  # the site itself was moved there: then it is the one
+        self.assertEqual(self.run_script('backup.sh').returncode, 0)
 
     def test_nas_attach_and_repo_must_not_overlap(self):
         self.enable_nas(self.root / 'repo')
@@ -624,14 +730,19 @@ class UpdateAgent(unittest.TestCase):
             shutil.copyfile(ROOT / 'scripts' / name, self.root / 'scripts' / name)
         (self.root / '.env').write_text('APP_VERSION=v0.1.0\n')
         (self.root / 'scripts/update.sh').write_text(
+            '[ -z "${COMPOSE_FILE:-}${COMPOSE_PROJECT_NAME:-}" ] || exit 9  # the agent\'s own lookup may be stale\n'
+            'source "$(dirname "$0")/server-env.sh"; need_site; progress running 3\n'
             'printf "%s\\n" "$1" "$COMPOSE_FILE" "$COMPOSE_PROJECT_NAME" >>"$TEST_ROOT/updates"\n'
-            'source "$(dirname "$0")/server-env.sh"; progress running 3\n'
             '[ "$MODE" != update-fails ]\n')
+        # HTTPS was switched on after the install: Compose recreated backend with the overlay, web kept its labels.
         files = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.https.yml'
         self.executable('docker', '#!/bin/bash\n'
                         f'[ "$1 $MODE" != "ps no-site" ] || exit 0\n'
-                        f'[ "$1" != ps ] || {{ [[ "$*" == *"working_dir={self.root}/infra"* ]] && echo 3f2a9c1d; exit; }}\n'
-                        f'[ "$1 ${{@: -1}}" != "inspect 3f2a9c1d" ] || echo "{files}|infra"\n')
+                        f'if [ "$1" = ps ] && [[ "$*" == *"working_dir={self.root}/infra"* && "$*" == *oneoff=False* ]]; then\n'
+                        '  [[ "$*" == *service=backend* ]] && echo b4c7e2d1; [[ "$*" == *service=web* ]] && echo 3f2a9c1d; exit 0\n'
+                        'fi\n'
+                        f'[ "$1 ${{@: -1}}" != "inspect b4c7e2d1" ] || echo "{files}|infra"\n'
+                        f'[ "$1 ${{@: -1}}" != "inspect 3f2a9c1d" ] || echo "{self.root}/infra/docker-compose.prod.yml|infra"\n')
         # The first wait: the ops account clicks 立即更新 while junk is already lying in the request directory.
         self.executable('sleep', '#!/bin/bash\n: >"$TEST_ROOT/run/update/request/v0.2.0"\n')
         self.executable('crontab', '#!/bin/bash\n'

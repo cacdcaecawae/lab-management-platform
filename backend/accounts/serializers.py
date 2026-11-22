@@ -39,6 +39,15 @@ class MeSerializer(serializers.ModelSerializer):
         # Every upload gets a new storage name, so ?v= makes the browser fetch the new picture.
         return f"/api/auth/me/avatar/?v={Path(user.avatar.name).stem}" if user.avatar else None
 
+    def update(self, user, validated_data):
+        # Only the fields sent: the row was loaded when the request came in, and a picture uploaded meanwhile must
+        # survive (a full save would write the old picture's name back).
+        for field, value in validated_data.items():
+            setattr(user, field, value)
+        user.save(update_fields=list(validated_data))
+        user.refresh_from_db(fields=["avatar"])
+        return user
+
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()

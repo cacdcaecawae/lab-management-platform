@@ -514,7 +514,7 @@ a:focus-visible {
   gap: 8px;
 }
 
-/* Login and password pages */
+/* Registration and password pages (the home page with its sign-in sheet styles itself: DESIGN.md "首页") */
 .auth-page {
   display: flex;
   min-height: 100vh;
@@ -548,14 +548,9 @@ a:focus-visible {
   color: var(--lab-text-3);
 }
 .auth-logo {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 17px;
+  display: block;
+  width: 44px;
+  height: 44px;
 }
 .auth-alert {
   margin-bottom: 12px;
@@ -702,6 +697,34 @@ a:focus-visible {
   }
   .el-table .el-table__body td.el-table-column--selection {
     flex: none;
+  }
+  /* A table with check boxes keeps one line of its header: the select-all box, labelled (text inside its <label>) */
+  .el-table:has(th.el-table-column--selection) .el-table__header-wrapper {
+    display: block;
+    border-bottom: 1px solid var(--lab-border);
+  }
+  .el-table .el-table__header-wrapper :is(table, thead, tr) {
+    display: block;
+    width: 100% !important;
+  }
+  .el-table .el-table__header-wrapper :is(colgroup, th:not(.el-table-column--selection)) {
+    display: none;
+  }
+  .el-table .el-table__header-wrapper th.el-table-column--selection {
+    display: block;
+    width: auto !important;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+  }
+  .el-table .el-table__header-wrapper th.el-table-column--selection .cell {
+    padding: 0;
+  }
+  .el-table .el-table__header-wrapper th.el-table-column--selection .el-checkbox::after {
+    content: '全选本页';
+    margin-left: 8px;
+    color: var(--lab-text-2);
+    font-size: 13px;
   }
   /* the title: the first column (after the checkbox), a whole line, no label */
   .el-table .el-table__body td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {

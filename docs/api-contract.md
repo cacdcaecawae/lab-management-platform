@@ -225,7 +225,7 @@
 | PATCH | `/api/experiments/{id}/` | 本人，且为草稿 | 已提交时 409 `invalid_state` |
 | DELETE | `/api/experiments/{id}/` | 本人，且为草稿、未被周报引用 | |
 | POST | `/api/experiments/{id}/submit/` | 本人 | 草稿 → 已提交；校验必填：`title, date, project`；返回 `Experiment` |
-| POST | `/api/experiments/{id}/return/` | 本组管理员/导师 | `{reason}`（必填）→ 已提交 → 草稿；返回 `Experiment` |
+| POST | `/api/experiments/{id}/return/` | 本组管理员/导师 | `{reason}`（必填）→ 已提交 → 草稿；返回 `Experiment`。给本人发站内通知"实验记录被退回"，正文是记录名称和原因（处理记录同样，"数据处理记录被退回"） |
 | GET | `/api/experiments/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
 
 校验：`project_id` 必须是本组项目；`equipment_item_id`（可为 `null`）必须是本组台账里的设备；`specimen_item_ids` 必须是本组的台账试件（`SpecimenBrief = {id, code, name, status}`，不带缺陷参数）；`dataset_ids` 必须是**记录所有者本人**的数据集；`params` 必须是 JSON 对象。`equipment` 是自由文本的"设备说明"。

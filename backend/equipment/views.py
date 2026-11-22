@@ -57,7 +57,7 @@ def notify_managers(report):
     recipients = list(managers.values_list("email", flat=True))
     body = (
         f"{booking.user.display_name} 使用 {equipment.code} {equipment.name} 后登记了异常：\n\n"
-        f"{report.description}\n\n设备当前状态：{equipment.get_status_display()}。请登录课题组管理平台处理。"
+        f"{report.description}\n\n设备当前状态：{equipment.get_status_display()}。请登录 Phase 处理。"
     )
     mail.send_quietly(f"[设备异常] {equipment.code} {equipment.name}", body, recipients, "设备异常通知")
 

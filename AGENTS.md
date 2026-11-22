@@ -32,5 +32,5 @@
 - 生成决策看板（双击打开；`board.html` 不提交）：
 
   ```bash
-  node .claude/skills/write-notes-like-deepseek/scripts/build-board.ts --bundle .agents/notes board.html "课题组管理平台 决策看板"
+  node .claude/skills/write-notes-like-deepseek/scripts/build-board.ts --bundle .agents/notes board.html "Phase 决策看板"
   ```

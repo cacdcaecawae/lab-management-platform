@@ -26,7 +26,7 @@ def notify(purchase_id, comment=""):
     if role:
         reviewers = User.objects.filter(group_id=owner.group_id, role=role).exclude(pk=owner.pk)
         stage = "初审" if role == User.Role.MANAGER else "终审"
-        mail_users(reviewers, f"[采购待{stage}] {purchase.code}", f"{head}\n\n请登录课题组管理平台，在“我的审批”中处理。")
+        mail_users(reviewers, f"[采购待{stage}] {purchase.code}", f"{head}\n\n请登录 Phase，在“我的审批”中处理。")
         return
     subject, body = {
         S.DRAFT: ("退回修改", f"审批意见：{comment}\n\n请修改后重新提交。"),

@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { postAuthTarget } from '@/router/post-auth'
+import icon from '@/assets/phase-icon.png'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -32,7 +33,7 @@ async function submit() {
 <template>
   <div class="auth-page">
     <div class="auth-panel">
-      <span class="auth-logo" aria-hidden="true">课</span>
+      <img class="auth-logo" :src="icon" alt="" />
       <h2>修改密码</h2>
       <p v-if="auth.user?.must_change_password" class="auth-sub">首次登录，请先修改初始密码。</p>
       <el-form label-position="top" size="large" @submit.prevent="submit">

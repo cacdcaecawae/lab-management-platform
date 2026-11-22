@@ -7,8 +7,9 @@
 set -euo pipefail
 
 main() {
+  # --install only writes the crontab: no need to find the site (install.sh runs it right after starting one)
+  if [ "${1:-}" = --install ]; then LAB_INSTALL=yes source "$(dirname "$0")/server-env.sh"; install_cron; return; fi
   source "$(dirname "$0")/server-env.sh"
-  if [ "${1:-}" = --install ]; then install_cron; return; fi
   local state=$PWD/run/update file target='' beat=0
   exec 9>"$state/agent.lock"
   flock -n 9 || exit 0
@@ -32,26 +33,16 @@ main() {
 }
 
 update() {
-  local web config
   export LAB_UPDATE_STATUS=$PWD/run/update/status/status.json LAB_UPDATE_TARGET=$1 LAB_UPDATE_STARTED
   LAB_UPDATE_STARTED=$(date +%s)
   progress running 0
   echo "== $(date '+%F %T') 网页上请求更新到 $1"
-  # The Compose files and project the site was started with: an HTTPS or NAS overlay named in an operator's shell is
-  # not in cron's environment, and updating without it would bring the site back without HTTPS or the NAS.
-  web=$(docker ps -q --filter "label=com.docker.compose.project.working_dir=$PWD/infra" \
-    --filter label=com.docker.compose.service=web) || web=''
-  if [[ $web =~ ^[0-9a-f]+$ ]] &&
-    config=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$web") &&
-    [[ $config == ?*'|'?* ]]; then
-    export COMPOSE_FILE=${config%|*} COMPOSE_PROJECT_NAME=${config##*|}
-    COMPOSE_FILE=${COMPOSE_FILE//,/:}
-    if bash scripts/update.sh "$1"; then
-      progress done 3
-      exit 0
-    fi
-  else
-    echo "没有找到正在运行的网站（$PWD/infra 的 web 容器），没有更新" >&2
+  # update.sh reads the site's Compose files itself (server-env.sh), and stops when it finds no site or more than one:
+  # not this copy's, as ops may have switched an overlay on since it started.
+  unset COMPOSE_FILE COMPOSE_PROJECT_NAME
+  if bash scripts/update.sh "$1"; then
+    progress done 3
+    exit 0
   fi
   progress failed 0
   exit 1

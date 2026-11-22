@@ -64,9 +64,9 @@ class MailTestView(APIView):
         if not SiteSettings.load().mail_host:
             raise Conflict("请先填写并保存 SMTP 服务器", code="not_configured")
         to = data.validated_data["to"]
-        body = "这是课题组管理平台发出的测试邮件。收到这封邮件，说明邮件设置可以正常使用。"
+        body = "这是 Phase 发出的测试邮件。收到这封邮件，说明邮件设置可以正常使用。"
         try:
-            mail.send("[课题组管理平台] 测试邮件", body, [to], test=True)
+            mail.send("[Phase] 测试邮件", body, [to], test=True)
         except Exception as exc:
             raise MailFailed(f"发送失败：{mail.describe(exc)}") from exc
         return Response({"to": to})

@@ -29,7 +29,10 @@ watch(
 async function save() {
   saving.value = true
   try {
-    auth.user = await authApi.updateMe(form)
+    const me = await authApi.updateMe(form)
+    // only what was saved here: a picture changed meanwhile came back in its own answer, possibly earlier
+    const { email, phone, wechat, research_direction } = me
+    auth.user = { ...(auth.user ?? me), email, phone, wechat, research_direction }
     ElMessage.success('已保存')
     open.value = false
   } catch (e) {
