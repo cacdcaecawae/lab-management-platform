@@ -71,6 +71,17 @@ def test_github_failures_do_not_break_the_page(api, ops, github, settings, error
     assert (r.data["latest"], r.data["update_available"], r.data["error"]) == (None, False, message)
 
 
+def test_a_check_from_before_the_update_is_not_reused(api, ops, github, settings):
+    settings.APP_VERSION = "v0.2.9"
+    assert api(ops).get(URL).data["latest"] == "v0.3.0"
+    settings.APP_VERSION = "v0.3.1"  # updated since; GitHub now says so too
+    github.body = {"tag_name": "v0.3.1", "html_url": "https://github.com/x/y/releases/tag/v0.3.1"}
+    data = api(ops).get(URL).data
+    assert (data["latest"], github.calls) == ("v0.3.1", 2)
+    api(ops).get(URL)
+    assert github.calls == 2  # cached again
+
+
 def test_refresh_asks_github_again(api, ops, github):
     api(ops).get(URL)
     api(ops).get(URL, {"refresh": "1"})
