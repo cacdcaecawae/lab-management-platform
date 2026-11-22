@@ -126,6 +126,8 @@ class Install(unittest.TestCase):
         self.executable('git', GIT)
         self.executable('docker', '#!' + sys.executable + '\n' + DOCKER)
         self.executable('sleep', '#!/bin/bash\nexit 0\n')
+        self.executable('crontab', '#!/bin/bash\n'
+                        'if [ "$1" = -l ]; then cat "$TEST_ROOT/crontab" 2>/dev/null || exit 1; else cat >"$TEST_ROOT/crontab"; fi\n')
         # v0.11.0 is tagged but not released yet (its images may still be building, or the release failed).
         self.release('v0.10.0')
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
@@ -250,6 +252,10 @@ class Install(unittest.TestCase):
         r = self.install()
         self.assertEqual(r.returncode, 0, r.stderr)
         cron = re.search(r'^\s+30 2 \* \* \* (.+)$', r.stdout, re.M).group(1)
+        # installed, not only printed: the nightly backup and the agent behind 立即更新
+        crontab = (self.root / 'crontab').read_text().splitlines()
+        self.assertEqual([line.split(' cd ')[0] for line in crontab], ['30 2 * * *', '* * * * *'])
+        self.assertEqual(crontab[0], '30 2 * * * ' + cron)
         words = shlex.split(cron)
         self.assertEqual(words[:2], ['cd', str(self.dir)])
         self.assertEqual(words[-2:], [f'{self.dir}-backup.log', '2>&1'])

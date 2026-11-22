@@ -516,7 +516,8 @@
 | PUT | `/api/system/mail/` | 整张表单；`mail_password` 省略或为空表示不改。启用时必须有 `mail_host`；账号不是邮箱地址时必须有 `mail_from`（没启用时也一样，因为测试邮件会用它）；有账号时必须已有或同时提交授权码。保存后立即生效 |
 | GET | `/api/system/mail/history/` | `[HistoryEntry]`，不含授权码；改了授权码的那次 `reason` 为"修改了授权码" |
 | POST | `/api/system/mail/test/` | `{to}` → `{to}`。用已保存的设置发一封测试邮件，邮件没启用时也发。没填 SMTP 服务器 409 `not_configured`；SMTP 失败 502 `mail_failed`，`message` 是服务器给的原因加上要检查什么，如"发送失败：535 Error: authentication failed。账号或授权码不对……" |
-| GET | `/api/system/version/` | `{current, latest, url, error, checked_at, update_available}`。`current` 是正在运行的镜像版本（环境变量 `APP_VERSION`，从源码构建时为 `local`）；`latest`、`url` 是 GitHub 上最新的正式发布（`UPDATE_REPO`），还没有发布过或连不上 GitHub 时 `latest` 为 null，连不上时 `error` 说明原因。结果缓存 6 小时，失败时缓存 10 分钟。`update_available`：两者都是 `vX.Y.Z` 且最新的更大。不提供一键更新，更新在服务器上运行 `scripts/update.sh` |
+| GET | `/api/system/version/?refresh=1` | `{current, latest, url, error, checked_at, update_available, agent}`。`current` 是正在运行的镜像版本（环境变量 `APP_VERSION`，从源码构建时为 `local`）；`latest`、`url` 是 GitHub 上最新的正式发布（`UPDATE_REPO`），还没有发布过或连不上 GitHub 时 `latest` 为 null，连不上时 `error` 说明原因。结果缓存 1 小时，失败时缓存 10 分钟；带 `refresh=1` 时重新查。`update_available`：两者都是 `vX.Y.Z` 且最新的更大。`agent`：服务器上的 `scripts/update-agent.sh` 90 秒内报过到，页面才显示"立即更新" |
+| POST | `/api/system/update/` | `{target}` → 202 `{target, requested_at}`（秒）。`target` 必须就是 `latest` 且比 `current` 新，否则 409 `not_latest`；助手没在运行时 409 `no_agent`；上一个请求还没被接走时 409 `updating`。接口只在 `run/update/request/` 里放一个以版本号命名的空文件，更新由服务器上的助手运行 `scripts/update.sh`。进度在不需要登录的 `/update-status.json`（Nginx 提供的静态文件，更新时 backend 停着）：`{state: running\|done\|failed, step: 0–3, target, started}`，不含日志 |
 | GET / POST | `/api/system/groups/` | 课题组 `{id, name, finance_email, member_count, created_at}`（`member_count`：在籍成员）；名称重复 400 |
 | PATCH | `/api/system/groups/{id}/` | `{name?, finance_email?}`；不能删除 |
 | GET | `/api/system/accounts/?search=&group=&role=&is_active=` | 所有课题组的成员账号，分页，不含运维账号 |

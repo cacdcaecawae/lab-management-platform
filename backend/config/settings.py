@@ -150,6 +150,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 APP_VERSION = os.environ.get("APP_VERSION") or "local"
 # GitHub repository whose latest release 系统管理 → 版本 compares against (a fork sets its own).
 UPDATE_REPO = os.environ.get("UPDATE_REPO") or "cacdcaecawae/lab-management-platform"
+# run/update/ of the server's checkout, mounted by docker-compose.prod.yml: request/ (written here) and status/
+# (read-only here) are how 立即更新 talks to scripts/update-agent.sh. Missing outside that stack: no button.
+UPDATE_DIR = BASE_DIR / "var" / "update"
 
 # History change reasons (e.g. why a record was returned) can exceed the default 100 chars.
 SIMPLE_HISTORY_HISTORY_CHANGE_REASON_USE_TEXT_FIELD = True

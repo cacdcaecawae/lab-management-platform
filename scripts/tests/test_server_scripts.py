@@ -2,7 +2,9 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -237,7 +239,20 @@ class ServerScripts(unittest.TestCase):
         r = self.run_script('update.sh', 'v0.2.0')
         self.assertEqual(r.returncode, 0, r.stderr)
         calls = self.calls()
-        self.assertLess(calls.index(['compose', '--env-file', '.env', 'stop', 'backend', 'web']), calls.index(['backup.sh']))
+        self.assertLess(calls.index(['compose', '--env-file', '.env', 'stop', 'backend']), calls.index(['backup.sh']))
+        # web stays up for the progress page; Nginx re-resolves backend once the release starts
+        self.assertFalse(any(c[-2:] == ['stop', 'web'] or c[-3:] == ['stop', 'backend', 'web'] for c in calls))
+        self.assertIn(['compose', '--env-file', '.env', 'restart', 'web'], calls)
+
+    def test_progress_for_the_web_page_only_when_the_agent_runs_the_update(self):
+        status = self.root / 'status.json'
+        r = self.run_script('update.sh', 'v0.2.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(status.exists())
+        self.env.update(LAB_UPDATE_STATUS=str(status), LAB_UPDATE_TARGET='v0.3.0', LAB_UPDATE_STARTED='1000')
+        r = self.run_script('update.sh', 'v0.3.0')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(status.read_text()), {'state': 'running', 'step': 3, 'target': 'v0.3.0', 'started': 1000})
 
     def test_failed_backup_restarts_the_old_version_without_updating(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='backup-fails')
@@ -593,6 +608,95 @@ class ServerScripts(unittest.TestCase):
         self.assertTrue(any('stop' in c for c in self.calls()[self.calls().index(
             ['compose', '--env-file', '.env', 'up', '-d']) + 1:]))
         self.assertFalse(any('dump' in c or 'restore' in c for c in self.calls()))
+
+
+@unittest.skipUnless(shutil.which('flock'), 'update-agent.sh needs flock (util-linux)')
+class UpdateAgent(unittest.TestCase):
+    """scripts/update-agent.sh with doubles for docker, update.sh, sleep and crontab."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for d in ('scripts', 'bin', 'run/update/request', 'run/update/status'):
+            (self.root / d).mkdir(parents=True)
+        for name in ('update-agent.sh', 'server-env.sh'):
+            shutil.copyfile(ROOT / 'scripts' / name, self.root / 'scripts' / name)
+        (self.root / '.env').write_text('APP_VERSION=v0.1.0\n')
+        (self.root / 'scripts/update.sh').write_text(
+            'printf "%s\\n" "$1" "$COMPOSE_FILE" "$COMPOSE_PROJECT_NAME" >>"$TEST_ROOT/updates"\n'
+            'source "$(dirname "$0")/server-env.sh"; progress running 3\n'
+            '[ "$MODE" != update-fails ]\n')
+        files = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.https.yml'
+        self.executable('docker', '#!/bin/bash\n'
+                        f'[ "$1 $MODE" != "ps no-site" ] || exit 0\n'
+                        f'[ "$1" != ps ] || {{ [[ "$*" == *"working_dir={self.root}/infra"* ]] && echo 3f2a9c1d; exit; }}\n'
+                        f'[ "$1 ${{@: -1}}" != "inspect 3f2a9c1d" ] || echo "{files}|infra"\n')
+        # The first wait: the ops account clicks 立即更新 while junk is already lying in the request directory.
+        self.executable('sleep', '#!/bin/bash\n: >"$TEST_ROOT/run/update/request/v0.2.0"\n')
+        self.executable('crontab', '#!/bin/bash\n'
+                        'if [ "$1" = -l ]; then cat "$TEST_ROOT/crontab" 2>/dev/null || exit 1; else cat >"$TEST_ROOT/crontab"; fi\n')
+        self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'], TEST_ROOT=str(self.root))
+        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'MODE', 'LAB_UPDATE_STATUS'):
+            self.env.pop(key, None)
+
+    def executable(self, name, text):
+        path = self.root / 'bin' / name
+        path.write_text(text)
+        path.chmod(0o755)
+
+    def run_agent(self, *args, mode=''):
+        return subprocess.run(['bash', str(self.root / 'scripts/update-agent.sh'), *args],
+                              env=dict(self.env, MODE=mode), text=True, capture_output=True, timeout=20)
+
+    def status(self):
+        return json.loads((self.root / 'run/update/status/status.json').read_text())
+
+    def test_runs_only_a_release_name_with_the_running_sites_compose_files(self):
+        request = self.root / 'run/update/request'
+        secret = self.root / 'secret'
+        secret.write_text('not for the backend')
+        for junk in ('v0.2', 'v01.2.3', 'v0.3.0;reboot', 'v9.9.9.tmp'):
+            (request / junk).touch()
+        (request / 'v9.9.9').symlink_to(secret)  # a compromised backend points the agent elsewhere
+        (request / 'v8.8.8').mkdir()
+        r = self.run_agent()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        target, files, project = (self.root / 'updates').read_text().splitlines()
+        self.assertEqual(target, 'v0.2.0')
+        self.assertEqual(files, f'{self.root}/infra/docker-compose.prod.yml:{self.root}/infra/docker-compose.https.yml')
+        self.assertEqual(project, 'infra')
+        self.assertEqual(list(request.iterdir()), [])
+        self.assertEqual(secret.read_text(), 'not for the backend')
+        self.assertEqual({k: v for k, v in self.status().items() if k != 'started'},
+                         {'state': 'done', 'step': 3, 'target': 'v0.2.0'})
+        self.assertTrue((self.root / 'run/update/status/agent').read_text().strip().isdigit())
+        self.assertEqual(stat.S_IMODE((self.root / 'run/update').stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(request.stat().st_mode), 0o1777)  # the backend's uid may differ from ours
+
+    def test_failure_is_shown_on_the_page(self):
+        for mode, updates in [('update-fails', 1), ('no-site', 0)]:
+            with self.subTest(mode=mode):
+                (self.root / 'updates').unlink(missing_ok=True)
+                r = self.run_agent(mode=mode)
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertEqual(self.status()['state'], 'failed')
+                lines = (self.root / 'updates').read_text().splitlines() if updates else []
+                self.assertEqual(len(lines), 3 * updates)
+
+    def test_install_adds_backup_and_agent_to_crontab_once(self):
+        old = f"30 2 * * * cd '{self.root}' && PATH='/usr/bin:/bin' /bin/bash scripts/backup.sh >> '{self.root}-backup.log' 2>&1"
+        (self.root / 'crontab').write_text('# mine\n' + old + '\n')  # pasted by hand from the old install message
+        for _ in range(2):
+            r = self.run_agent('--install')
+            self.assertEqual(r.returncode, 0, r.stderr)
+        lines = (self.root / 'crontab').read_text().splitlines()
+        self.assertEqual(lines[:2], ['# mine', old])
+        self.assertEqual(len(lines), 3)
+        words = shlex.split(lines[2])
+        self.assertEqual(words[:7], ['*'] * 5 + ['cd', str(self.root)])
+        self.assertEqual(words[10:], ['scripts/update-agent.sh', '>>', 'run/update/update.log', '2>&1'])
+        self.assertIn('已经有了', r.stdout)
 
 
 if __name__ == '__main__':

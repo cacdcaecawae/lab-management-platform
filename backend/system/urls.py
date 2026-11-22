@@ -17,5 +17,6 @@ urlpatterns = [
     path("mail/test/", views.MailTestView.as_view()),
     path("storage-status/", StorageView.as_view()),
     path("version/", views.VersionView.as_view()),
+    path("update/", views.UpdateView.as_view()),
     *router.urls,
 ]

@@ -12,6 +12,14 @@ venv/
 # runtime data (uploaded files, db dumps, logs)
 backend/var/
 var/
+# one-click update (scripts/update-agent.sh): requests, progress, lock and log stay on the server
+/run/update/*
+!/run/update/request/
+!/run/update/status/
+/run/update/request/*
+/run/update/status/*
+!/run/update/request/.gitkeep
+!/run/update/status/.gitkeep
 *.log
 *.sqlite3
 *.dump

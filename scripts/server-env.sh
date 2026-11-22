@@ -18,6 +18,14 @@ record_ops_run() {
     echo "结果没能记到网站上，不影响这次任务本身" >&2
 }
 
+# Progress of an update started from 系统管理 → 版本: update-agent.sh sets LAB_UPDATE_STATUS. Nginx serves the file
+# without a login (the backend is stopped meanwhile), so it holds only a state, a step number and the target.
+progress() {
+  [ -n "${LAB_UPDATE_STATUS:-}" ] || return 0
+  printf '{"state":"%s","step":%s,"target":"%s","started":%s}\n' "$1" "$2" "$LAB_UPDATE_TARGET" "$LAB_UPDATE_STARTED" \
+    >"$LAB_UPDATE_STATUS.tmp" && mv -f -- "$LAB_UPDATE_STATUS.tmp" "$LAB_UPDATE_STATUS" || true
+}
+
 # Supported paths are absolute local bind mounts. Ensure the same values are used by shell
 # checks and Compose even if an interactive environment inherited a conflicting value.
 need_backup_settings() {

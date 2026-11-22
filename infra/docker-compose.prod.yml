@@ -53,6 +53,9 @@ services:
     volumes:
       - labdata:/data           # uploaded research files — back this up
       - static:/app/var/static
+      # 立即更新 in 系统管理 → 版本 leaves a request for scripts/update-agent.sh, which runs on the server and writes status/.
+      - ../run/update/request:/app/var/update/request
+      - ../run/update/status:/app/var/update/status:ro
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +73,7 @@ services:
       - "127.0.0.1:${ADMIN_PORT:-8091}:8081"
     volumes:
       - static:/srv/static:ro
+      - ../run/update/status:/srv/update-status:ro   # update progress, shown while backend is stopped
     depends_on:
       - backend
     restart: unless-stopped

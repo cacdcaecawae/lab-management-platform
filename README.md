@@ -26,8 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/cacdcaecawae/lab-management-platfor
 
   `--host` 让别的电脑用这个 IP 或域名访问，`--port` 改端口，`--dir` 改安装目录。已经 clone 了仓库的，在仓库里运行 `bash scripts/install.sh`，就装在这份仓库里；国内打不开 `raw.githubusercontent.com` 时也这样装。
 - 装好后是 HTTP，只在内网或 VPN 里用；放到公网前，先按下文"正式域名 HTTPS"配好证书。
-- 备份和网站在同一块硬盘上：换到第二块硬盘或 NAS 见下文"备份与恢复"；每天备份的定时任务，按安装结束时的提示加上。
-- 更新：在"系统管理 → 版本"看到新版本后，`cd lab-management-platform && bash scripts/update.sh <新版本号>`，见下文"服务器部署"。国内拉不动 ghcr.io 时，安装前先 `export IMAGE_PREFIX=<镜像仓库地址>`，以后更新也会用它；postgres、restic 来自 Docker Hub，拉不到时给 Docker 配置镜像加速。
+- 备份和网站在同一块硬盘上：换到第二块硬盘或 NAS 见下文"备份与恢复"。安装时已把每天备份和更新助手写进当前用户的 crontab（`crontab -l` 查看）。
+- 更新：在"系统管理 → 版本"点"立即更新"，或者 `cd lab-management-platform && bash scripts/update.sh <新版本号>`，见下文"服务器部署"。国内拉不动 ghcr.io 时，安装前先 `export IMAGE_PREFIX=<镜像仓库地址>`，以后更新也会用它；postgres、restic 来自 Docker Hub，拉不到时给 Docker 配置镜像加速。
 - Docker 上已经有 Compose 项目 `infra` 的数据卷或容器（同名的数据卷带不带标签都算，也可能属于别的应用，脚本不会动它们）、查不出有没有、目录已经装过、备份目录已存在、这台电脑的 Docker 上另一个安装正在进行（不论在哪个目录）时，脚本直接停下，不覆盖任何东西。安装被强行中断后，如果提示有另一个安装正在进行，确认没有在运行，再 `docker network rm lab-platform-install`。
 
 ## 本机试用（和服务器上同一套）
@@ -100,11 +100,13 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env up -d          #
 docker compose -f infra/docker-compose.prod.yml --env-file .env exec backend python manage.py createsuperuser
 ```
 
-更新：运维账号在"系统管理 → 版本"看到新版本后，在服务器上运行：
+更新：运维账号在"系统管理 → 版本"看到新版本后，点"立即更新"，页面会显示进度，完成后自动刷新。也可以在服务器上运行：
 
 ```bash
 cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版本号就更新到最新版本
 ```
+
+- "立即更新"由服务器上的更新助手 `scripts/update-agent.sh` 执行：当前用户的 crontab 每分钟启动它一次，它每 2 秒看一次网页上有没有更新请求，有就运行上面的 `update.sh`，用正在运行的网站的同一套 Compose 文件和项目名。容器不拿 Docker 的控制权。一键安装已经装好了它；v0.1.3 及更早装的站点，先用命令更新到带它的版本，再在安装目录运行一次 `bash scripts/update-agent.sh --install`（同时补上每天备份）。日志在安装目录的 `run/update/update.log`。助手没在运行时，页面显示命令。
 
 - 通过 SSH 运行时请在 `tmux` 或 `screen` 里运行：新版本开始启动后断线，脚本会被中断，网站可能停着。启动之前断线，脚本会恢复原版本。
 - 更新前先核对版本是有 Git 祖先关系的较新正式标签并检查 Compose、备份仓库和迁移记录，再拉取镜像、停站备份。不支持用更新命令直接降级。备份命令成功并返回快照编号后，脚本才切换部署文件。新版本启动前遇到错误或按 Ctrl-C，脚本会尝试恢复原版本。更新和回退都要等网站能访问（最多 3 分钟），并核对 backend、web 实际运行的镜像版本。
@@ -119,7 +121,7 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
   ```
 
   若确认新版尚未启动，切回原 Git 版本并改回 `.env` 中的版本，运行 `docker compose --env-file "$ENV_FILE" up -d`。如果新版可能已接收写入，先保持停站，暂停定时清理，在独立位置保存当前数据库导出和上传文件，并核对更新窗口内的新记录。在隔离环境确认恢复与补回写入的方案后，才切回选定版本；如确需回到更新前的数据库，使用 `bash scripts/restore.sh <日志中的快照编号> --db-only`。恢复会覆盖当前数据库。保存现场时请勿对唯一的更新前快照执行清理。
-- 没有一键更新按钮：网页只提示版本和命令，更新要在服务器上操作。
+- 更新时只停 backend（所有写入都经过它），web 留着显示进度页；页面上的保存会失败，不会写进数据库。
 
 备份与恢复：
 
