@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.history import serialize_history
+from core.notifications import notify
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
 from datasets.versions import pin_versions
 
@@ -16,8 +17,8 @@ from .serializers import ExperimentSerializer, ProcessingRunSerializer, ReturnSe
 
 class RecordViewSet(viewsets.ModelViewSet):
     """Shared behaviour of experiments and processing runs: private scope, the owner edits
-    drafts only, submit / return / history. Subclasses set queryset, serializer_class and
-    submit_errors()."""
+    drafts only, submit / return / history. Subclasses set queryset, serializer_class, label and page (for the
+    notification a return sends the owner) and submit_errors()."""
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]  # PUT is not in the contract
     filter_backends = [filters.SearchFilter]
@@ -102,8 +103,11 @@ class RecordViewSet(viewsets.ModelViewSet):
             obj.status = RecordStatus.DRAFT
             obj.submitted_at = None
             obj.data_versions = {}  # a draft follows the datasets' latest files; the next submit pins again
-            obj._change_reason = body.validated_data["reason"]
+            reason = body.validated_data["reason"]
+            obj._change_reason = reason
             obj.save()
+            notify(obj.owner.group_id, f"{self.label}被退回", f"{self.page}{obj.pk}",
+                   recipient_ids=[obj.owner_id], exclude_ids=[request.user.id], body=f"{obj.title}：{reason}")
         return Response(self.get_serializer(obj).data)
 
     @action(detail=True)
@@ -112,6 +116,7 @@ class RecordViewSet(viewsets.ModelViewSet):
 
 
 class ExperimentViewSet(RecordViewSet):
+    label, page = "实验记录", "/experiments/"  # the returned-record notification
     queryset = Experiment.objects.select_related("owner", "project", "equipment_item").prefetch_related(
         "datasets", "specimen_items"
     )
@@ -123,6 +128,7 @@ class ExperimentViewSet(RecordViewSet):
 
 
 class ProcessingRunViewSet(RecordViewSet):
+    label, page = "数据处理记录", "/runs/"
     queryset = ProcessingRun.objects.select_related(
         "owner", "project", "script_dataset", "output_dataset"
     ).prefetch_related("inputs")

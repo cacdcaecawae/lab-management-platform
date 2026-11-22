@@ -7,6 +7,7 @@ import SiteSearch from '@/components/SiteSearch.vue'
 import AccountCard from './AccountCard.vue'
 import AppMenu from './AppMenu.vue'
 import ProfileDialog from './ProfileDialog.vue'
+import { leavePage } from '@/composables/useUnsavedGuard'
 import { clearTabs } from './nav'
 
 // The sidebar (DESIGN.md): who is signed in, search, then the menu. Used by the desktop sidebar and the phone drawer.
@@ -22,6 +23,7 @@ function openProfile() {
 }
 
 async function logout() {
+  if (!(await leavePage())) return // an edit page with unsaved changes asks first
   await auth.logout()
   clearTabs() // the next person on this computer does not see what was open
   router.push({ name: 'login' })

@@ -128,15 +128,13 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 - `.env` 里设 `BACKUP_REPO`（另一块硬盘上已存在的绝对路径）和 `BACKUP_PASSWORD`。备份用 restic，在容器里运行，服务器不用另装；加密、增量、去重。**密码丢了备份就打不开**，要另外抄一份保存。 首次在已核实的空目录建仓时，请显式运行 `bash scripts/backup.sh --init`。常规备份不会自动创建仓库，读取配置失败直接退出。使用 NAS 时，在同一 `.env` 中填写实际挂载点 `BACKUP_MOUNTPOINT`（例如 `/mnt/nas`）；请勿并发卸载或更换挂载。
 
 - 配置 `BACKUP_MOUNTPOINT` 时，首次初始化（或接入已有仓库）后，在确认挂载目标确实是预期 NAS 仓库的情况下，交互运行 `bash scripts/backup.sh --repo-id`，把返回的完整 64 位小写仓库 ID 保存到**同一** `.env` 的 `BACKUP_REPO_ID`。不要从尚未核实的挂载或失败日志复制 ID。常规备份、恢复、更新遇到缺失或不同的 ID 都会在导库或停站前退出，即使另一个仓库使用同一密码。非挂载点部署可省略此项以保留原行为，也可以主动设定以固定仓库。已固定仓库 ID 时，`--init` 不会新建替代仓库。仓库迁移时，单独核对新仓库身份，再有意更新配置；不要让计划任务自动发现或覆盖 ID。
-- 每天备份一次。最近 14 天的备份全部保留（包括更新前和手动做的），更早的保留每天一份 30 天、每月一份 12 个月。在宿主机 `crontab -e` 加一行：
+- 每天备份一次。最近 14 天的备份全部保留（包括更新前和手动做的），更早的保留每天一份 30 天、每月一份 12 个月。一键安装已经写好了定时任务；手动安装的在安装目录运行一次 `bash scripts/update-agent.sh --install`，或者在宿主机 `crontab -e` 加一行：
 
   ```cron
-  # 按实际部署设置。仅基础安装时，COMPOSE_FILE 只填第一项。
-  COMPOSE_PROJECT_NAME=实际部署项目名
-  COMPOSE_FILE=infra/docker-compose.prod.yml:infra/docker-compose.https.yml:infra/docker-compose.nas.yml
-  ENV_FILE=.env
   30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
   ```
+
+- 备份、恢复、更新脚本用的 Compose 文件和项目名，以正在运行的网站后端容器为准：打开 HTTPS 或 NAS 以后，定时任务不用另写 `COMPOSE_FILE`。终端里导出了 `COMPOSE_FILE` 但和网站用的不一致时（比如少了 NAS 那份），脚本什么都不做就退出。
 
 - 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站，以单个 PostgreSQL 事务换上它。任一步换名失败都不提交；仅确认原库仍在且并非内部升级回退时，脚本才尝试启动原站。原来的数据库改名为 `before_restore_<时间和随机后缀>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
 - 服务器坏了、换新机器：要有两样东西，备份盘和一份 `.env`。所以平时就把 `.env` 另存一份到服务器以外（它含备份密码和密钥，像密码一样保管）。新机器上不要运行一键安装，它会生成新的密钥和新的备份仓库，打不开原来的备份。按下面的步骤做（版本号换成备份时运行的版本，"系统管理 → 版本"或更新日志里有）：
@@ -223,7 +221,7 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
 
    配置后由运维运行 `sudo certbot renew --cert-name "$domain" --dry-run --run-deploy-hooks` 验证挑战和重载；成功后再看实际 timer 日志，检查线上仍提供期望的证书。参见 [Certbot 续期与钩子文档](https://eff-certbot.readthedocs.io/en/stable/using.html)。
 
-HTTPS 启用后，**备份、恢复、更新、运维 Compose 和续期钩子始终带上同一套 `COMPOSE_FILE` 和项目名**；定时任务需要单独写明，不能依赖交互式 shell 的 export。先在已支持本配置的版本上开启 HTTPS，更新脚本在停站前拒绝缺少 HTTPS 配置的目标版本，自动回退只面向支持该覆盖文件的版本。要跨过第一个支持 HTTPS 的版本，须提前安排维护窗口，先备份，手工准备旧版兼容的 TLS 终止/恢复方案（或暂时关闭外部入口，仅在私网恢复），不要自动降级成公开 HTTP。此前在浏览器启用的 HSTS 仍会生效。
+HTTPS 启用后，**备份、恢复、更新、运维 Compose 和续期钩子始终带上同一套 `COMPOSE_FILE` 和项目名**。备份、恢复、更新脚本会自己按运行中的网站取；运维 Compose 命令和续期钩子的定时任务要单独写明，不能依赖交互式 shell 的 export。先在已支持本配置的版本上开启 HTTPS，更新脚本在停站前拒绝缺少 HTTPS 配置的目标版本，自动回退只面向支持该覆盖文件的版本。要跨过第一个支持 HTTPS 的版本，须提前安排维护窗口，先备份，手工准备旧版兼容的 TLS 终止/恢复方案（或暂时关闭外部入口，仅在私网恢复），不要自动降级成公开 HTTP。此前在浏览器启用的 HSTS 仍会生效。
 
 ### 每日提醒（可选）
 

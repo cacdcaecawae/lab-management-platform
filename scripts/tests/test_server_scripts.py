@@ -22,6 +22,14 @@ with (root / 'calls').open('a') as f:
     f.write(json.dumps(args) + '\n')
 command = ' '.join(args)
 mode = os.environ.get('MODE', '')
+if args[:2] == ['ps', '-aq']:  # server-env.sh looking up this checkout's running backend (SITE_FILES: its labels)
+    wanted = {'label=com.docker.compose.service=backend', 'label=com.docker.compose.oneoff=False'}
+    if os.environ.get('SITE_FILES') and wanted <= set(args):
+        print('b4c7e2d1')
+    sys.exit(0)
+if args[:1] == ['inspect']:
+    print(os.environ['SITE_FILES'] + '|lab')
+    sys.exit(0)
 if 'record_ops_run' in args:
     sys.exit(1 if mode == 'record-fails' else 0)
 if 'restic backup' in command:
@@ -146,7 +154,8 @@ class ServerScripts(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
                         TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A}]))
         # Do not inherit an operator's target-stack overrides.
-        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS'):
+        for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS',
+                    'SITE_FILES'):
             self.env.pop(key, None)
 
     def executable(self, name, text):
@@ -158,8 +167,10 @@ class ServerScripts(unittest.TestCase):
         return subprocess.run(['bash', str(self.root / 'scripts' / name), *args],
                               env=dict(self.env, MODE=mode), text=True, capture_output=True, timeout=20)
 
-    def calls(self):
-        return [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()] if (self.root / 'calls').exists() else []
+    def calls(self, lookups=False):
+        # lookups: server-env.sh reading the running site's Compose labels, which changes nothing
+        calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()] if (self.root / 'calls').exists() else []
+        return [c for c in calls if lookups or (c[:2] != ['ps', '-aq'] and c[:1] != ['inspect'])]
 
     def test_failed_start_cannot_succeed_from_old_healthy_endpoint(self):
         r = self.run_script('update.sh', 'v0.2.0', mode='start-fails')
@@ -206,7 +217,7 @@ class ServerScripts(unittest.TestCase):
         r = self.run_script('update.sh', 'v0.2.0')
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn('未停止网站', r.stderr)
-        self.assertFalse((self.root / 'calls').exists())
+        self.assertEqual(self.calls(), [])
         self.assertIn('APP_VERSION=v0.1.0', (self.root / '.env').read_text())
 
     def test_redirect_is_never_a_healthy_response_or_legacy_fallback(self):
@@ -243,6 +254,23 @@ class ServerScripts(unittest.TestCase):
         # web stays up for the progress page; Nginx re-resolves backend once the release starts
         self.assertFalse(any(c[-2:] == ['stop', 'web'] or c[-3:] == ['stop', 'backend', 'web'] for c in calls))
         self.assertIn(['compose', '--env-file', '.env', 'restart', 'web'], calls)
+
+    def test_scripts_use_the_running_sites_compose_files(self):
+        # A cron line names no overlay; the site's backend was created with the NAS overlay.
+        site = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.nas.yml'
+        (self.root / 'scripts/probe.sh').write_text(
+            'source "$(dirname "$0")/server-env.sh"\necho "$COMPOSE_FILE|$COMPOSE_PROJECT_NAME"\n')
+        self.env['SITE_FILES'] = site
+        r = self.run_script('probe.sh')
+        self.assertEqual(r.stdout.strip(), site.replace(',', ':') + '|lab', r.stderr)
+        # The same files given (relative, as README writes them) are fine; fewer stop before anything else.
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml:infra/docker-compose.nas.yml'
+        self.assertEqual(self.run_script('probe.sh').returncode, 0)
+        self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml'
+        r = self.run_script('probe.sh')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('不一致', r.stderr)
+        self.assertEqual({c[0] for c in self.calls(lookups=True)}, {'ps', 'inspect'})
 
     def test_progress_for_the_web_page_only_when_the_agent_runs_the_update(self):
         status = self.root / 'status.json'
@@ -627,11 +655,15 @@ class UpdateAgent(unittest.TestCase):
             'printf "%s\\n" "$1" "$COMPOSE_FILE" "$COMPOSE_PROJECT_NAME" >>"$TEST_ROOT/updates"\n'
             'source "$(dirname "$0")/server-env.sh"; progress running 3\n'
             '[ "$MODE" != update-fails ]\n')
+        # HTTPS was switched on after the install: Compose recreated backend with the overlay, web kept its labels.
         files = f'{self.root}/infra/docker-compose.prod.yml,{self.root}/infra/docker-compose.https.yml'
         self.executable('docker', '#!/bin/bash\n'
                         f'[ "$1 $MODE" != "ps no-site" ] || exit 0\n'
-                        f'[ "$1" != ps ] || {{ [[ "$*" == *"working_dir={self.root}/infra"* ]] && echo 3f2a9c1d; exit; }}\n'
-                        f'[ "$1 ${{@: -1}}" != "inspect 3f2a9c1d" ] || echo "{files}|infra"\n')
+                        f'if [ "$1" = ps ] && [[ "$*" == *"working_dir={self.root}/infra"* && "$*" == *oneoff=False* ]]; then\n'
+                        '  [[ "$*" == *service=backend* ]] && echo b4c7e2d1; [[ "$*" == *service=web* ]] && echo 3f2a9c1d; exit 0\n'
+                        'fi\n'
+                        f'[ "$1 ${{@: -1}}" != "inspect b4c7e2d1" ] || echo "{files}|infra"\n'
+                        f'[ "$1 ${{@: -1}}" != "inspect 3f2a9c1d" ] || echo "{self.root}/infra/docker-compose.prod.yml|infra"\n')
         # The first wait: the ops account clicks 立即更新 while junk is already lying in the request directory.
         self.executable('sleep', '#!/bin/bash\n: >"$TEST_ROOT/run/update/request/v0.2.0"\n')
         self.executable('crontab', '#!/bin/bash\n'

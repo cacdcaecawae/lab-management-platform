@@ -25,7 +25,9 @@ Status: implemented
   - `agent` 是心跳，每 30 秒写一次。backend 看到 90 秒内的心跳，页面才显示"立即更新"；否则照旧显示命令，并提示运行一次 `bash scripts/update-agent.sh --install`。
   - `status.json` 的内容是 `{state, step, target, started}`。更新期间 backend 停着，没法鉴权，所以由 Nginx 以 `/update-status.json` 直接提供，不需要登录。因此只放步骤号，不放日志、路径和快照号；用 `expires -1`，保留 server 级的安全头。日志写在宿主机的 `run/update/update.log`。
 - **权限**：助手启动时把 `run/update` 设为 700，挡住服务器上的其他用户；`request/` 设为 1777，因为 backend 容器是 uid 1000，宿主用户可能是 root 或别的 uid，粘滞位下目录属主仍能删除文件；`status/` 设为 755。
-- **Compose 文件**：以正在运行的 web 容器的 `com.docker.compose.project.config_files` 和 `project` 标签为准。cron 的环境里没有运维 shell 里导出的 HTTPS、NAS 覆盖文件，不这样取的话，更新后站点会丢掉 HTTPS 或 NAS。
+- **Compose 文件**：以正在运行的 backend 容器（不含一次性容器）的 `com.docker.compose.project.config_files` 和 `project` 标签为准，由 `scripts/server-env.sh` 的 `running_stack` 读取，备份、恢复、更新和助手都用它。cron 的环境里没有运维 shell 里导出的 HTTPS、NAS 覆盖文件，不这样取的话，更新后站点会丢掉 HTTPS 或 NAS，夜间备份会备到旧的本地卷。
+  - 读 backend 而不是 web：HTTPS、NAS 两份覆盖文件都改 backend，打开其中一份时 Compose 会重建 backend、换上新标签。web 只被 HTTPS 改，打开 NAS 时不重建，标签停在装机时。v0.1.4、v0.1.5 读的是 web，在 WSL 测试站上实测：打开 NAS 后，助手取到的只有基础文件，按它 `up -d` 会让后端的 `/data` 从 NAS 换回本地卷。
+  - 显式给了 `COMPOSE_FILE`、又和运行中的不一致时（相对路径按仓库根目录展开后比较），脚本在做任何事之前退出。
 - **`update.sh` 的改动**：
   - 停站备份时只停 backend。所有写入都经过 backend，数据安全上和原来停两个服务等价；web 留着显示进度。
   - 每次启动后执行 `restart web`。Nginx 在启动时解析 backend 的地址，backend 重启后地址可能变了。

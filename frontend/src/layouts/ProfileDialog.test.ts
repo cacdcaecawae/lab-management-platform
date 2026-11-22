@@ -80,6 +80,33 @@ it('changes the picture from the picture itself, without 保存', async () => {
   wrapper.unmount()
 })
 
+it('a picture changed while the details are saving stays', async () => {
+  // The details' answer was put together before the picture changed and arrives after it.
+  const { auth, wrapper } = setup()
+  let answerDetails = () => {}
+  vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+    if (init.body instanceof FormData) return Promise.resolve(new Response(JSON.stringify({ ...me, avatar_url: '/api/auth/me/avatar/?v=new' })))
+    const body = JSON.parse(init.body as string)
+    return new Promise((resolve) => (answerDetails = () => resolve(new Response(JSON.stringify({ ...me, ...body })))))
+  }))
+  await flushPromises()
+  const phone = document.querySelector('.el-dialog input[autocomplete="tel"], .el-dialog input[type="tel"]') as HTMLInputElement
+  phone.value = '13800000000'
+  phone.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+  ;(Array.from(document.querySelectorAll('.el-dialog button')).find((b) => b.textContent?.trim() === '保存') as HTMLButtonElement).click()
+  const input = document.querySelector('.el-dialog input[type="file"]') as HTMLInputElement
+  Object.defineProperty(input, 'files', { value: [new File(['png'], 'me.png', { type: 'image/png' })] })
+  input.dispatchEvent(new Event('change'))
+  await flushPromises()
+  expect(auth.user?.avatar_url).toBe('/api/auth/me/avatar/?v=new')
+  answerDetails()
+  await flushPromises()
+  expect(auth.user?.phone).toBe('13800000000')
+  expect(auth.user?.avatar_url).toBe('/api/auth/me/avatar/?v=new')
+  wrapper.unmount()
+})
+
 it('spells out a changed login name after an account is saved', () => {
   expect(renamedMessage('s_a', 's_a')).toBe('已保存')
   expect(renamedMessage(undefined, 's_a')).toBe('已保存') // a new account

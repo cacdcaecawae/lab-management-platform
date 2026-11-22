@@ -5,6 +5,7 @@ import datetime
 
 import pytest
 
+from core.models import Notification
 from projects.models import Project
 from reports.models import WeeklyReport
 
@@ -81,6 +82,16 @@ def test_supervisor_returns_with_reason_and_owner_can_edit_again(api, resource, 
     assert {"field": "status", "old": "submitted", "new": "draft"} in newest["changes"]
 
     assert api(student_a).patch(url(resource, record), {"title": "补充后"}, format="json").status_code == 200
+
+
+def test_owner_is_told_when_a_record_is_returned(api, resource, record, student_a, advisor):
+    submitted(resource, record, api(student_a))
+    api(advisor).post(url(resource, record, "return"), {"reason": "缺少试件编号"}, format="json")
+
+    note = Notification.objects.get(recipient=student_a)
+    assert note.link == f"/{resource}/{record.pk}"
+    assert note.title.endswith("被退回") and note.body == f"{record.title}：缺少试件编号"
+    assert not Notification.objects.exclude(recipient=student_a).exists()
 
 
 def test_return_requires_a_reason(api, resource, record, student_a, manager):

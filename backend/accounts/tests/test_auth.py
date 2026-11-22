@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from accounts.models import User
+from accounts.serializers import MeSerializer
 from conftest import PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
@@ -100,6 +101,20 @@ def test_person_updates_own_contact_details_only(api, student_a, group):
     fresh = make_user("s_new", group, must_change_password=True)
     r = api(fresh).patch("/api/auth/me/", {"phone": "1"}, format="json")
     assert r.status_code == 403 and r.data["code"] == "password_change_required"
+
+
+def test_saving_contact_details_keeps_a_picture_changed_meanwhile(api, student_a, monkeypatch):
+    # The PATCH starts from the user row loaded when it came in. A picture another request saves before this one
+    # writes (the person picked a picture, then clicked 保存 while it uploaded) must survive, and the answer shows it.
+    def picture_saved_meanwhile(self, attrs):
+        User.objects.filter(pk=student_a.pk).update(avatar="avatars/" + "a" * 32 + ".jpg")
+        return attrs
+
+    monkeypatch.setattr(MeSerializer, "validate", picture_saved_meanwhile)
+    r = api(student_a).patch("/api/auth/me/", {"phone": "13800000000"}, format="json")
+    student_a.refresh_from_db()
+    assert (student_a.phone, student_a.avatar.name) == ("13800000000", "avatars/" + "a" * 32 + ".jpg")
+    assert r.status_code == 200 and r.data["avatar_url"] == "/api/auth/me/avatar/?v=" + "a" * 32
 
 
 def test_person_changes_own_avatar(api, student_a, group, settings, django_capture_on_commit_callbacks):

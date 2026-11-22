@@ -52,7 +52,8 @@ const errors = useFieldErrors(Object.keys(form))
 const isNew = !route.params.id
 const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew))
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
-const { markSaved } = useUnsavedGuard(form, () => editable.value)
+// a parameter value without a name is not in form.params yet
+const { markSaved } = useUnsavedGuard(form, () => editable.value, () => paramsEditor.value?.validate() === false)
 const canReturn = computed(() => record.value?.status === 'submitted' && auth.isSupervisor)
 const readonlyHint = computed(() => {
   const r = record.value

@@ -3,6 +3,7 @@ import os
 import runpy
 from pathlib import Path
 import subprocess
+import sys
 
 import tempfile
 from types import SimpleNamespace
@@ -68,6 +69,13 @@ class RestoreDrillTests(unittest.TestCase):
         check({("app", "0001")}, disk)
         with self.assertRaisesRegex(ValueError, "does not know"):
             check({("app", "0003")}, disk)
+
+    def test_files_without_a_checksum_column_are_checked_by_size_or_presence(self):
+        script = str(ROOT / "scripts/restore-drill-verify.py")
+        for expected, ok in (("size:4", True), ("size:5", False), ("present", True), ("0" * 64, False)):
+            with self.subTest(expected=expected):
+                r = subprocess.run([sys.executable, script, "verify-file", "kind", expected], input=b"file", capture_output=True)
+                self.assertEqual(r.returncode == 0, ok, r.stderr)
 
     def test_restore_drill(self):
         for mode in ("ok", "missing", "corrupt", "cleanup", "collision", "right-id", "wrong-id", "missing-id", "missing-mount",

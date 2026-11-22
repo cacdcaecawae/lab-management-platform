@@ -33,7 +33,8 @@ async function upload() {
   }
   uploading.value = true
   try {
-    auth.user = await authApi.uploadAvatar(picture)
+    const { avatar_url } = await authApi.uploadAvatar(picture)
+    if (auth.user) auth.user = { ...auth.user, avatar_url } // only the picture: contact details may be saving meanwhile
     ElMessage.success('头像已更换')
   } catch (e) {
     showError(e)

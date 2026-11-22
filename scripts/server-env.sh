@@ -3,13 +3,39 @@
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 SCRIPTS=$PWD/scripts
 ENV_FILE=${ENV_FILE:-.env}
-export COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml}
 
 die() { echo "$*" >&2; exit 1; }
 [ -f "$ENV_FILE" ] || die "找不到 $ENV_FILE（模板见 infra/server.env.example）"
 
 dc() { docker compose --env-file "$ENV_FILE" "$@"; }
 envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1 | tr -d '\r'; }
+
+# The Compose files and project this checkout's site was started with, from its backend container's labels. A cron
+# line or a fresh shell names no HTTPS or NAS overlay, and fewer files back up the old local volume or restart the site
+# without them. backend, not web: both overlays change backend, so switching one on recreated (and relabelled) it,
+# while web keeps its install-time labels. A COMPOSE_FILE given that differs from the site's stops the script.
+running_stack() {
+  local id labels files given='' f list=() project=()
+  [[ -z ${COMPOSE_PROJECT_NAME:-} ]] || project=(--filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")
+  id=$(docker ps -aq --filter "label=com.docker.compose.project.working_dir=$PWD/infra" \
+    --filter label=com.docker.compose.service=backend --filter label=com.docker.compose.oneoff=False "${project[@]}" \
+    2>/dev/null | head -n 1) || id=''
+  [[ $id =~ ^[0-9a-f]+$ ]] &&
+    labels=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$id" 2>/dev/null) &&
+    [[ $labels == ?*'|'?* ]] || return 0
+  files=${labels%|*} files=${files//,/:}
+  if [[ -n ${COMPOSE_FILE:-} ]]; then
+    IFS=: read -r -a list <<<"$COMPOSE_FILE"
+    for f in "${list[@]}"; do [[ $f == /* ]] || f=$PWD/$f; given+=${given:+:}$f; done
+    [[ $given == "$files" ]] ||
+      die "COMPOSE_FILE 和正在运行的网站不一致，没有做任何操作。网站用的是 ${files//$PWD\//}；现在是 $COMPOSE_FILE"
+  fi
+  export COMPOSE_FILE=$files COMPOSE_PROJECT_NAME=${labels##*|}
+  SITE_RUNNING=yes
+}
+SITE_RUNNING=
+running_stack
+export COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml}
 restic() { dc --profile ops run --rm -T restic "$@"; }
 # Tell the site (系统管理 → 存储与备份) how a job ended. A one-off container, because update.sh backs up with backend
 # stopped; failing to record only warns, and a job that never records shows as overdue there.

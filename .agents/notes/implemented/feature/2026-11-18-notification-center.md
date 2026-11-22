@@ -28,6 +28,7 @@ Notification(recipient → User, group → ResearchGroup, audience_role, title �
 - 组会：被设为行动项负责人（新建或换人时）；
 - 周报：被要求补充、已阅；
 - 试件：管理员代为登记归还时通知借用人。
+- 实验记录、数据处理记录：被导师或管理员退回时通知本人，正文是记录名称和退回原因（2026-11-22 补上，首版验收时发现缺这一项）。
 
 **接口**：`/api/notifications/`，只返回自己的通知，放在新的 `notifications` 路由文件里，由 `core` 提供视图：
 
