@@ -89,7 +89,8 @@ describe('route guard', () => {
 })
 
 
-it.each(['https://other.example/', '//other.example/', '/\\other.example/', '/login?next=/equipment/1', '/password', '/unknown', ['/equipment/1']])(
+// '/': the workbench, where signing in goes anyway; the site's address opens the home page, not the sign-in sheet
+it.each(['https://other.example/', '//other.example/', '/\\other.example/', '/login?next=/equipment/1', '/password', '/unknown', ['/equipment/1'], '/'])(
   'does not accept a non-app or auth route as return target: %s',
   (candidate) => expect(postAuthTarget(router, candidate)).toBeUndefined(),
 )

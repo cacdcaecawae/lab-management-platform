@@ -94,9 +94,10 @@ def label_input(session, label, tag="input"):
 
 def submit_login(session, who, password):
     visit(session, "/login")
+    button(session, "登录", within="//main").click()  # the home page: its 登录 opens the sign-in sheet
     visible(session, By.CSS_SELECTOR, 'input[autocomplete=username]').send_keys(who)
     visible(session, By.CSS_SELECTOR, 'input[autocomplete=current-password]').send_keys(password)
-    button(session, "登录").click()
+    button(session, "登录", within="//dialog").click()
 
 
 def login(session, who, password=SEED_PASSWORD):

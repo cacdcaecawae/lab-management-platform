@@ -1,6 +1,6 @@
-# 课题组管理平台
+# Phase
 
-课题组内部使用的科研管理平台：成员与项目、实验记录、原始数据与处理记录、周报与反馈、设备预约与耗材、采购审批与报销统计、知识库、组会、成果归档，以及运维用的系统管理。设计文档见 `docs/`，技术决策见 `.agents/notes/`（写法见 `AGENTS.md`）。
+Phase 是课题组内部使用的科研管理平台：成员与项目、实验记录、原始数据与处理记录、周报与反馈、设备预约与耗材、采购审批与报销统计、知识库、组会、成果归档，以及运维用的系统管理。设计文档见 `docs/`，技术决策见 `.agents/notes/`（写法见 `AGENTS.md`）。
 
 技术栈：Vue 3 + TypeScript + Element Plus ｜ Django 5.2 LTS + DRF ｜ PostgreSQL ｜ Docker Compose。
 

@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { authApi } from '@/api/auth'
+import icon from '@/assets/phase-icon.png'
 
 // The code in the group's link decides which group the application goes to.
 const code = String(useRoute().query.code ?? '')
@@ -35,7 +36,7 @@ async function submit() {
 <template>
   <div class="auth-page">
     <div class="auth-panel">
-      <span class="auth-logo" aria-hidden="true">课</span>
+      <img class="auth-logo" :src="icon" alt="" />
       <h2>学生注册</h2>
       <template v-if="done">
         <p class="auth-sub">已提交，等待课题组管理员审核。审核通过后，用学号和刚才设的密码登录。</p>

@@ -1,4 +1,4 @@
-# 课题组管理平台浏览器验证清单
+# Phase 浏览器验证清单
 
 这里是在浏览器里验证用户可见行为的维护来源。驱动前先读本页，再按对应的功能文件操作。
 
@@ -34,7 +34,7 @@
 | [search.md](./search.md) | 分组搜索、角色范围、导航、窄屏 | 未走过：环境限制 Chromium 启动 |
 | [datasets.md](./datasets.md) | 新建数据集、上传、同名拒绝、下载与 SHA256、跨账号隔离 | 2026-11-17，代码 `d01c121`（界面改版后重走） |
 | [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 未走过（组件与 PostgreSQL 回归已通过；需隔离真实浏览器） |
-| [login.md](./login.md) | 登录、首次登录改密、退出 | 没按本文件的步骤走过；2026-11-17 在本机试用栈（`scripts/trial.ps1`，不是 verify-lab 实例）上走过 `login-ok`、`login-wrong`、`login-first-change`（运维、管理员、学生各一次），`login-logout` 未走 |
+| [login.md](./login.md) | 首页、登录弹窗、首次登录改密、退出 | 2026-11-22 首页改版时走过 `home`、`home-next`、`login-ok`、`login-wrong`（见 login.md 顶部）；改版前没按本文件的步骤走过；2026-11-17 在本机试用栈（`scripts/trial.ps1`，不是 verify-lab 实例）上走过 `login-ok`、`login-wrong`、`login-first-change`（运维、管理员、学生各一次），`login-logout` 未走 |
 | [experiments.md](./experiments.md) | 新建实验记录、提交锁定、导师退回、修改历史 | 未走过 |
 | [reports.md](./reports.md) | 写周报、提交、需补充、重新提交、已阅 | 未走过 |
 | [signup.md](./signup.md) | 学生用注册链接申请、待审核不能登录、管理员通过 / 拒绝 / 全部通过、换链接后旧链接失效 | 2026-11-20，基于 `c22694e` 的改动：全部子功能走通（`signup-hidden` 用学生丙的视角看）；"复制链接"没有读回剪贴板 |

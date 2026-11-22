@@ -514,7 +514,7 @@ a:focus-visible {
   gap: 8px;
 }
 
-/* Login and password pages */
+/* Registration and password pages (the home page with its sign-in sheet styles itself: DESIGN.md "首页") */
 .auth-page {
   display: flex;
   min-height: 100vh;
@@ -548,14 +548,9 @@ a:focus-visible {
   color: var(--lab-text-3);
 }
 .auth-logo {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 17px;
+  display: block;
+  width: 44px;
+  height: 44px;
 }
 .auth-alert {
   margin-bottom: 12px;
