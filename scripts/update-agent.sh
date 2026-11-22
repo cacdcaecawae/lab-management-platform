@@ -7,8 +7,9 @@
 set -euo pipefail
 
 main() {
+  # --install only writes the crontab: no need to find the site (install.sh runs it right after starting one)
+  if [ "${1:-}" = --install ]; then LAB_INSTALL=yes source "$(dirname "$0")/server-env.sh"; install_cron; return; fi
   source "$(dirname "$0")/server-env.sh"
-  if [ "${1:-}" = --install ]; then install_cron; return; fi
   local state=$PWD/run/update file target='' beat=0
   exec 9>"$state/agent.lock"
   flock -n 9 || exit 0
@@ -36,16 +37,12 @@ update() {
   LAB_UPDATE_STARTED=$(date +%s)
   progress running 0
   echo "== $(date '+%F %T') 网页上请求更新到 $1"
-  # Read the site's Compose files again (server-env.sh): ops may have switched an overlay on since this copy started.
+  # update.sh reads the site's Compose files itself (server-env.sh), and stops when it finds no site or more than one:
+  # not this copy's, as ops may have switched an overlay on since it started.
   unset COMPOSE_FILE COMPOSE_PROJECT_NAME
-  running_stack
-  if [[ -n $SITE_RUNNING ]]; then
-    if bash scripts/update.sh "$1"; then
-      progress done 3
-      exit 0
-    fi
-  else
-    echo "没有找到正在运行的网站（$PWD/infra 的 backend 容器），没有更新" >&2
+  if bash scripts/update.sh "$1"; then
+    progress done 3
+    exit 0
   fi
   progress failed 0
   exit 1

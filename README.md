@@ -134,7 +134,7 @@ cd /srv/lab-management-platform && bash scripts/update.sh v0.2.0   # 不写版�
   30 2 * * * cd /srv/lab-management-platform && bash scripts/backup.sh >> /var/log/lab-backup.log 2>&1
   ```
 
-- 备份、恢复、更新脚本用的 Compose 文件和项目名，以正在运行的网站后端容器为准：打开 HTTPS 或 NAS 以后，定时任务不用另写 `COMPOSE_FILE`。终端里导出了 `COMPOSE_FILE` 但和网站用的不一致时（比如少了 NAS 那份），脚本什么都不做就退出。
+- 备份、恢复、更新脚本用的 Compose 文件和项目名，以这个安装目录正在运行的网站后端容器为准：打开 HTTPS 或 NAS 以后，定时任务不用另写 `COMPOSE_FILE`。下面这些情况脚本什么都不做就退出：终端里导出的 `COMPOSE_FILE`、`COMPOSE_PROJECT_NAME` 和网站用的不一致（比如少了 NAS 那份）；`LAB_NAS_ROOT` 不是网站正在用的 NAS 目录；查不到 Docker；项目名是本机另一个目录的网站。目录里没有网站（没启动过，或者 `down` 掉了）时，备份和更新也不执行，除非用 `COMPOSE_FILE` 写明；恢复照常，新服务器就是从空机恢复。
 
 - 列出备份：`bash scripts/restore.sh`；恢复：`bash scripts/restore.sh <快照编号或 latest>`，同时恢复数据库和上传的文件，加 `--db-only` 只恢复数据库。数据库先恢复到一个新库（这一步网站照常运行，失败了什么都没变），再停止网站，以单个 PostgreSQL 事务换上它。任一步换名失败都不提交；仅确认原库仍在且并非内部升级回退时，脚本才尝试启动原站。原来的数据库改名为 `before_restore_<时间和随机后缀>`，等文件恢复完、网站能访问后才删除；中途失败（例如磁盘满了）它会留着，处理好原因后重新运行恢复即可。确认不再需要后删除：`docker compose -f infra/docker-compose.prod.yml --env-file .env exec db sh -c 'dropdb -U "$POSTGRES_USER" before_restore_<时间>'`。
 - 服务器坏了、换新机器：要有两样东西，备份盘和一份 `.env`。所以平时就把 `.env` 另存一份到服务器以外（它含备份密码和密钥，像密码一样保管）。新机器上不要运行一键安装，它会生成新的密钥和新的备份仓库，打不开原来的备份。按下面的步骤做（版本号换成备份时运行的版本，"系统管理 → 版本"或更新日志里有）：

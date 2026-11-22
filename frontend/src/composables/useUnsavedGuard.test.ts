@@ -62,15 +62,30 @@ it('logging out asks while the page can still save, then does not ask again on t
   let loggedIn = true
   const { form, router } = await setup(() => loggedIn)
   form.title = '改了'
-  expect(await leavePage()).toBe(false) // 留下
+  const logout = vi.fn(async () => void (loggedIn = false))
+  expect(await leavePage(logout)).toBe(false) // 留下
+  expect(logout).not.toHaveBeenCalled()
   confirm.mockResolvedValue('confirm' as never)
-  expect(await leavePage()).toBe(true) // 离开
+  expect(await leavePage(logout)).toBe(true) // 离开
   expect(confirm).toHaveBeenCalledTimes(2)
-  loggedIn = false
+  expect(logout).toHaveBeenCalledOnce()
   await router.push('/list')
   expect(router.currentRoute.value.path).toBe('/list')
   expect(confirm).toHaveBeenCalledTimes(2)
-  expect(await leavePage()).toBe(true) // no edit page on screen: nothing to ask
+  expect(await leavePage(logout)).toBe(true) // no edit page on screen: nothing to ask
+})
+
+it('keeps asking when logging out fails', async () => {
+  // still logged in on the same page: a change typed afterwards must not be lost without a question
+  const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+  const { form, router } = await setup()
+  form.title = '改了'
+  await expect(leavePage(() => Promise.reject(new Error('网络断了')))).rejects.toThrow('网络断了')
+  form.title = '又改了'
+  confirm.mockRejectedValue('cancel')
+  await router.push('/list')
+  expect(confirm).toHaveBeenCalledTimes(2)
+  expect(router.currentRoute.value.path).toBe('/edit')
 })
 
 it('does not ask after saving, or on a read-only record', async () => {

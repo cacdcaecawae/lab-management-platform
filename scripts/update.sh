@@ -7,6 +7,7 @@ set -euo pipefail
 main() {
   local file
   source "$(dirname "$0")/server-env.sh"
+  need_site
   git diff --quiet HEAD || die "仓库里有未提交的改动（git status 查看），处理后再更新"
   if [[ -n ${SSH_CONNECTION:-} && -z ${TMUX:-}${STY:-} ]]; then
     echo "提示：建议在 tmux 或 screen 里运行；SSH 断线时，新版本启动之后的步骤会被中断，网站可能停着" >&2

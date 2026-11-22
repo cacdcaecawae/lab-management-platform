@@ -6,9 +6,11 @@ type Page = { ask: () => true | Promise<boolean>; leave: () => void }
 const onScreen = new Set<Page>()
 
 // Logging out (SideNav): ask while the session can still save, because a logged-out page counts as read-only and
-// would no longer ask. After 离开 the page stops asking, so the way to the login page does not ask again.
-export async function leavePage() {
+// would no longer ask, then run `then`. Once it succeeds the pages stop asking, so the way to the login page does not
+// ask again; if it fails (still logged in) they keep asking, and its error reaches the caller.
+export async function leavePage(then: () => Promise<unknown>) {
   for (const page of onScreen) if (!(await page.ask())) return false
+  await then()
   for (const page of onScreen) page.leave()
   return true
 }

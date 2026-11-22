@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import SiteSearch from '@/components/SiteSearch.vue'
@@ -23,8 +24,13 @@ function openProfile() {
 }
 
 async function logout() {
-  if (!(await leavePage())) return // an edit page with unsaved changes asks first
-  await auth.logout()
+  try {
+    // an edit page with unsaved changes asks first, and keeps asking if logging out fails
+    if (!(await leavePage(() => auth.logout()))) return
+  } catch {
+    ElMessage.error('退出登录失败，仍处于登录状态')
+    return
+  }
   clearTabs() // the next person on this computer does not see what was open
   router.push({ name: 'login' })
 }

@@ -22,6 +22,7 @@ if [[ ${1:-} == --repo-id ]]; then
   read_backup_repository_id || die "无法读取指定备份仓库的身份，请核对路径、权限和密码"
   exit
 fi
+need_site
 tag=${1:-daily} step=检查备份仓库 snap=
 tmp=$(mktemp -d) log=$(mktemp)  # the log stays out of $tmp, which is backed up
 # Every run ends with one record on the site (系统管理 → 存储与备份); recording never changes the exit code.

@@ -28,6 +28,10 @@ Status: implemented
 - **Compose 文件**：以正在运行的 backend 容器（不含一次性容器）的 `com.docker.compose.project.config_files` 和 `project` 标签为准，由 `scripts/server-env.sh` 的 `running_stack` 读取，备份、恢复、更新和助手都用它。cron 的环境里没有运维 shell 里导出的 HTTPS、NAS 覆盖文件，不这样取的话，更新后站点会丢掉 HTTPS 或 NAS，夜间备份会备到旧的本地卷。
   - 读 backend 而不是 web：HTTPS、NAS 两份覆盖文件都改 backend，打开其中一份时 Compose 会重建 backend、换上新标签。web 只被 HTTPS 改，打开 NAS 时不重建，标签停在装机时。v0.1.4、v0.1.5 读的是 web，在 WSL 测试站上实测：打开 NAS 后，助手取到的只有基础文件，按它 `up -d` 会让后端的 `/data` 从 NAS 换回本地卷。
   - 显式给了 `COMPOSE_FILE`、又和运行中的不一致时（相对路径按仓库根目录展开后比较），脚本在做任何事之前退出。
+  - 认不准站点时也在做任何事之前退出，不退回默认配置：`docker ps`、`docker inspect` 失败；这个目录有两套网站而没用 `COMPOSE_PROJECT_NAME` 指定；指定的项目名不是这个目录的网站；这个目录没有网站时，要用的项目名（默认 infra）是另一个目录的网站。复核时实测：在测试站目录导出本机另一套网站的项目名 infra，旧逻辑查不到、退回基础配置，会对那套网站的数据卷操作。
+  - 这个目录没有网站（没启动过，或 `down` 掉了）时，备份和更新不执行，除非用 `COMPOSE_FILE` 写明；恢复照常，空机恢复就是这种情况。`install.sh` 和 `update-agent.sh --install` 不查站点，项目名由 `install.sh` 自己检查。
+  - 助手不再自己查一次再交给 `update.sh`（它查到的结果可能已经过时），清掉 `COMPOSE_FILE`、`COMPOSE_PROJECT_NAME` 后由 `update.sh` 自己查。
+  - NAS：Compose 文件对了，restic 挂的 `/data` 仍由当时的 `LAB_NAS_ROOT` 决定。备份、恢复、更新前核对它和运行中 backend 的 `/data` 实际挂载是同一个目录，不同就退出。原来只核对存储标识，旧盘副本标识相同，拦不住。
 - **`update.sh` 的改动**：
   - 停站备份时只停 backend。所有写入都经过 backend，数据安全上和原来停两个服务等价；web 留着显示进度。
   - 每次启动后执行 `restart web`。Nginx 在启动时解析 backend 的地址，backend 重启后地址可能变了。

@@ -127,7 +127,7 @@ main() {
   unset COMPOSE_PROJECT_NAME COMPOSE_PROFILES
   export ENV_FILE=.env COMPOSE_FILE=infra/docker-compose.prod.yml
   # shellcheck source=server-env.sh
-  source scripts/server-env.sh
+  LAB_INSTALL=yes source scripts/server-env.sh
   # Nothing of Compose project "infra" may exist yet: any volume this stack would use, by its real name (Compose
   # reuses one created by hand or moved back without labels), and any volume or container labelled with the
   # project ("infra" is a common directory name: another application's containers would be replaced).

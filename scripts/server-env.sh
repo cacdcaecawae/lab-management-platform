@@ -13,29 +13,51 @@ envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1 | tr -d '\r'; }
 # The Compose files and project this checkout's site was started with, from its backend container's labels. A cron
 # line or a fresh shell names no HTTPS or NAS overlay, and fewer files back up the old local volume or restart the site
 # without them. backend, not web: both overlays change backend, so switching one on recreated (and relabelled) it,
-# while web keeps its install-time labels. A COMPOSE_FILE given that differs from the site's stops the script.
+# while web keeps its install-time labels. Anything unclear stops the script before it touches anything: Docker not
+# answering, two sites here, a COMPOSE_PROJECT_NAME or COMPOSE_FILE other than the site's, or (no site here) a project
+# name another directory's site uses. SITE_BACKEND: the site's backend container, empty when none was found here.
 running_stack() {
-  local id labels files given='' f list=() project=()
-  [[ -z ${COMPOSE_PROJECT_NAME:-} ]] || project=(--filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")
-  id=$(docker ps -aq --filter "label=com.docker.compose.project.working_dir=$PWD/infra" \
-    --filter label=com.docker.compose.service=backend --filter label=com.docker.compose.oneoff=False "${project[@]}" \
-    2>/dev/null | head -n 1) || id=''
-  [[ $id =~ ^[0-9a-f]+$ ]] &&
-    labels=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$id" 2>/dev/null) &&
-    [[ $labels == ?*'|'?* ]] || return 0
-  files=${labels%|*} files=${files//,/:}
+  local ids id labels site='' other='' files given='' f list=() dirs
+  SITE_BACKEND=
+  ids=$(docker ps -aq --filter "label=com.docker.compose.project.working_dir=$PWD/infra" \
+    --filter label=com.docker.compose.service=backend --filter label=com.docker.compose.oneoff=False) ||
+    die "查不到这台电脑上 Docker 的容器，没有做任何操作"
+  for id in $ids; do
+    labels=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$id") &&
+      [[ $labels == ?*'|'?* ]] || die "读不出网站后端容器 $id 的 Compose 配置，没有做任何操作"
+    if [[ -n ${COMPOSE_PROJECT_NAME:-} && ${labels##*|} != "$COMPOSE_PROJECT_NAME" ]]; then other=${labels##*|}; continue; fi
+    [[ -z $site || $site == "$labels" ]] ||
+      die "这个目录有两套网站（Compose 项目 ${site##*|} 和 ${labels##*|}），用 COMPOSE_PROJECT_NAME 指定是哪一套，没有做任何操作"
+    site=$labels SITE_BACKEND=$id
+  done
+  if [[ -z $site ]]; then
+    [[ -z $other ]] || die "这个目录的网站是 Compose 项目 $other，不是 $COMPOSE_PROJECT_NAME，没有做任何操作"
+    # Compose names the project after the first file's directory, infra/, unless told otherwise.
+    dirs=$(docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-infra}" \
+      --format '{{.Label "com.docker.compose.project.working_dir"}}') || die "查不到这台电脑上 Docker 的容器，没有做任何操作"
+    dirs=$(grep -vxF -e "$PWD/infra" -e '' <<<"$dirs") &&
+      die "Compose 项目 ${COMPOSE_PROJECT_NAME:-infra} 是另一个目录（${dirs%%$'\n'*}）的网站，没有做任何操作"
+    return 0
+  fi
+  files=${site%|*} files=${files//,/:}
   if [[ -n ${COMPOSE_FILE:-} ]]; then
     IFS=: read -r -a list <<<"$COMPOSE_FILE"
     for f in "${list[@]}"; do [[ $f == /* ]] || f=$PWD/$f; given+=${given:+:}$f; done
     [[ $given == "$files" ]] ||
       die "COMPOSE_FILE 和正在运行的网站不一致，没有做任何操作。网站用的是 ${files//$PWD\//}；现在是 $COMPOSE_FILE"
   fi
-  export COMPOSE_FILE=$files COMPOSE_PROJECT_NAME=${labels##*|}
-  SITE_RUNNING=yes
+  export COMPOSE_FILE=$files COMPOSE_PROJECT_NAME=${site##*|}
 }
-SITE_RUNNING=
-running_stack
+COMPOSE_FILE_GIVEN=${COMPOSE_FILE:-}
+# Installing (install.sh, update-agent.sh --install) acts on no site: install.sh checks the project name itself.
+[[ ${LAB_INSTALL:-} == yes ]] || running_stack
 export COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml}
+# Backing up or updating needs the site's own files: without a site here (never started, or removed with down), only
+# a COMPOSE_FILE naming them will do, or a NAS site would be backed up or restarted on the local volume.
+need_site() {
+  [[ -n $SITE_BACKEND || -n $COMPOSE_FILE_GIVEN ]] ||
+    die "没有找到这个目录正在运行的网站（$PWD/infra 的 backend 容器），没有做任何操作。网站先 up 起来，或者用 COMPOSE_FILE 写明它的 Compose 文件"
+}
 restic() { dc --profile ops run --rm -T restic "$@"; }
 # Tell the site (系统管理 → 存储与备份) how a job ended. A one-off container, because update.sh backs up with backend
 # stopped; failing to record only warns, and a job that never records shows as overdue there.
@@ -89,13 +111,21 @@ nas_mode() {
 }
 
 check_nas_paths() {
-  local data repo
+  local data repo serving
   data=${LAB_NAS_ROOT:-$(envget LAB_NAS_ROOT)}
   repo=$BACKUP_REPO
   [[ "$data" == /* && "$repo" == /* ]] ||
     die "NAS 模式需要以绝对路径设置 LAB_NAS_ROOT 和 BACKUP_REPO"
   data=$(realpath -e -- "$data") && repo=$(realpath -e -- "$repo") ||
     die "无法确认主存储或备份目录"
+  # The directory restic would mount must be the one the site serves: a LAB_NAS_ROOT changed in .env or this shell
+  # since it started (an old copy of the disk keeps the same storage id) would back up or restore the wrong files.
+  if [[ -n $SITE_BACKEND ]]; then
+    serving=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' "$SITE_BACKEND") &&
+      serving=$(realpath -e -- "$serving") || die "无法确认网站正在用的 NAS 目录，没有做任何操作"
+    [[ $serving == "$data" ]] ||
+      die "LAB_NAS_ROOT（$data）不是网站正在用的 NAS 目录（$serving），没有做任何操作"
+  fi
   [[ "$data" != / && "$repo" != / && "$data/" != "$repo/"* && "$repo/" != "$data/"* ]] ||
     die "NAS 主存储和备份目录必须独立、不能相互嵌套"
 }
