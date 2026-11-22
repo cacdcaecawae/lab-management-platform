@@ -180,10 +180,9 @@ main() {
   printf 'from accounts.models import User\nUser.objects.create_superuser("ops", password="%s")\n' "$password" |
     dc exec -T backend python manage.py shell >/dev/null
 
-  # cron runs with PATH=/usr/bin:/bin: name docker's directory and this bash (4+, which the scripts need).
+  # Nightly backup, and the agent that runs 立即更新 from 系统管理 → 版本.
   local cron
-  cron="30 2 * * * cd $(sq "$dir") && PATH=$(sq "$(dirname "$(command -v docker)"):/usr/bin:/bin") $(sq "$BASH")"
-  cron+=" scripts/backup.sh >> $(sq "$dir-backup.log") 2>&1"
+  cron=$(bash "$dir/scripts/update-agent.sh" --install) || cron="定时任务没有装上，请运行：bash scripts/update-agent.sh --install"
   cat <<EOF
 
 安装完成：$version
@@ -194,10 +193,10 @@ main() {
   备份：      $backup
               它和网站在同一块硬盘上。有第二块硬盘或 NAS 后，按 README"备份与恢复"换过去。
               备份密码是 .env 里的 BACKUP_PASSWORD，另外抄一份保存，丢了备份就打不开。
-  每天备份：  crontab -e 加一行：
-              ${cron//%/\\%}
+  定时任务：  每天 2:30 备份；每分钟查看一次网页上的更新请求
+$(sed 's/^/            /' <<<"$cron")
   更新：      cd $(sq "$dir") && bash scripts/update.sh <新版本号>
-              新版本号看"系统管理 → 版本"，那里只列正式发布了的版本
+              也可以在"系统管理 → 版本"里点"立即更新"
 EOF
   if [ -n "$host" ]; then
     echo "  别的电脑打不开时，检查防火墙是否放行了 $port 端口。现在是 HTTP，只在内网用；公网要先配 HTTPS（README）。"

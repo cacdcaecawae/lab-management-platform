@@ -34,6 +34,12 @@
         proxy_hide_header Referrer-Policy;
     }
 
+    # Progress of an update started in 系统管理 → 版本 (scripts/update-agent.sh). Static: the backend is stopped meanwhile.
+    location = /update-status.json {
+        alias /srv/update-status/status.json;
+        expires -1;
+    }
+
     # 系统后台 is not on the public port: see nginx.admin.inc.
     location /admin/ {
         return 404;

@@ -3,6 +3,7 @@ endpoints still answer `no_group` to an ops account."""
 
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -80,9 +81,9 @@ def parse_version(tag):
     return tuple(map(int, match.groups())) if match else None
 
 
-def latest_release():
-    """The newest GitHub release, cached for 6 hours, or 10 minutes after a failure (the server may not reach GitHub)."""
-    release = cache.get(RELEASE_CACHE)
+def latest_release(refresh=False):
+    """The newest GitHub release, cached for an hour, or 10 minutes after a failure (the server may not reach GitHub)."""
+    release = None if refresh else cache.get(RELEASE_CACHE)
     if release is None:
         release = {"latest": None, "url": "", "error": "", "checked_at": timezone.localtime()}
         request = urllib.request.Request(
@@ -98,21 +99,49 @@ def latest_release():
                 release["error"] = f"GitHub 返回 {exc.code}"
         except (OSError, ValueError, KeyError, TypeError) as exc:
             release["error"] = f"连不上 GitHub：{getattr(exc, 'reason', exc)}"
-        cache.set(RELEASE_CACHE, release, 600 if release["error"] else 6 * 3600)
+        cache.set(RELEASE_CACHE, release, 600 if release["error"] else 3600)
     return release
 
 
+def agent_running():
+    """scripts/update-agent.sh marks itself alive every 30 seconds; cron restarts it within a minute after an update."""
+    try:
+        return time.time() - (settings.UPDATE_DIR / "status" / "agent").stat().st_mtime < 90
+    except OSError:
+        return False
+
+
 class VersionView(APIView):
-    """The running version and the latest release; updating is scripts/update.sh on the server, not a button."""
+    """The running version and the latest release; ?refresh=1 asks GitHub again."""
 
     permission_classes = [IsSuperuser]
 
     def get(self, request):
+        release = latest_release(refresh=request.query_params.get("refresh") == "1")
+        current, latest = parse_version(settings.APP_VERSION), parse_version(release["latest"])
+        update_available = bool(current and latest and latest > current)
+        return Response({"current": settings.APP_VERSION, **release, "update_available": update_available, "agent": agent_running()})
+
+
+class UpdateView(APIView):
+    """立即更新: asks scripts/update-agent.sh on the server to run update.sh. The request is an empty file named after the
+    release, which must be the newest one and newer than this; the agent and update.sh check it again."""
+
+    permission_classes = [IsSuperuser]
+
+    def post(self, request):
+        target = request.data.get("target")
         release = latest_release()
         current, latest = parse_version(settings.APP_VERSION), parse_version(release["latest"])
-        return Response(
-            {"current": settings.APP_VERSION, **release, "update_available": bool(current and latest and latest > current)}
-        )
+        if not (current and latest and latest > current) or target != release["latest"]:
+            raise Conflict("只能更新到最新的正式版本，请刷新页面后再试", code="not_latest")
+        if not agent_running():
+            raise Conflict("服务器上的更新助手没有运行，请在服务器上运行更新命令", code="no_agent")
+        try:
+            (settings.UPDATE_DIR / "request" / target).open("x").close()
+        except FileExistsError:
+            raise Conflict("已经在更新了", code="updating") from None
+        return Response({"target": target, "requested_at": time.time()}, status=202)
 
 
 class SystemGroupViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

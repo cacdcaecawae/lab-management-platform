@@ -45,6 +45,7 @@ main() {
   check_backup_repository
 
   echo "== 拉取 $target 的镜像（失败时什么都没改）"
+  progress running 1
   APP_VERSION=$target dc pull backend web
   previous=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
   migrations=$(applied_migrations) || die "停站前无法核对数据库迁移"
@@ -55,9 +56,11 @@ main() {
   trap 'exit 143' TERM
   trap 'exit 129' HUP  # an SSH session dropped before the new release starts: resume the old site
 
-  # Stopped from here on: a change saved after the backup would be lost if the rollback restores it.
+  # Stopped from here on: a change saved after the backup would be lost if the rollback restores it. Every write goes
+  # through backend; web stays up to show the progress page.
   echo "== 停止网站，更新前备份"
-  dc stop backend web
+  progress running 2
+  dc stop backend
   bash "$SCRIPTS/backup.sh" "before-$target" | tee "$log" || die "备份没有完成，没有更新"
   snap=$(sed -n 's/^snapshot \([0-9a-f]*\) saved$/\1/p' "$log")
   [[ "$snap" =~ ^[0-9a-f]+$ ]] || die "备份没有返回唯一快照编号，没有更新"
@@ -70,6 +73,7 @@ main() {
   export APP_VERSION="$target"
   # Once the target can run migrations, recovery must account for the database.
   echo "== 启动 $target 并检查网站"
+  progress running 3
   trap - EXIT INT TERM HUP
   if start_version; then
     echo "已更新到 $target。更新前的备份是快照 $snap"
@@ -78,7 +82,7 @@ main() {
 
   echo "== $target 验收失败，停止网站并核对迁移" >&2
   dc logs --tail 40 backend >&2 || true
-  dc stop backend web || die "无法停止失败的版本，不执行回退；更新前快照为 $snap"
+  dc stop backend || die "无法停止失败的版本，不执行回退；更新前快照为 $snap"
   recovery="网站保持停止，数据库与上传文件保留在现场。原版本 $current，当前部署 $target，更新前快照 $snap。请按 README 备份现场并核对更新期间的写入，再决定恢复。"
   after=$(applied_migrations) || die "无法核对数据库迁移。$recovery"
   if [ "$after" != "$migrations" ]; then
@@ -97,7 +101,8 @@ applied_migrations() {
 
 start_version() {
   local service image
-  dc up -d && healthy || return 1
+  # web kept running while backend restarted: Nginx resolved backend's address at its start.
+  dc up -d && dc restart web && healthy || return 1
   for service in backend web; do
     image=$(dc ps --format '{{.Image}}' "$service") || return 1
     [[ "$image" != *$'\n'* && "$image" == *"/$service:$APP_VERSION" ]] || return 1

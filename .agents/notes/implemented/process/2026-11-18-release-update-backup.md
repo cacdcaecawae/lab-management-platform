@@ -18,6 +18,8 @@ Status: implemented
 
 用户 2026-11-18 说"直接继续迭代"，以下几点按之前列出的建议做：镜像放 ghcr.io；只更新到打了标签的正式版本；网页只提示，不做一键更新；备份按手册保留。
 
+其中"网页只提示，不做一键更新"已由[网页一键更新](./2026-11-21-one-click-update.md)取代（2026-11-21，用户要求）：执行更新的是宿主机上的 `scripts/update-agent.sh`，它运行的仍是本篇的 `update.sh`，容器不拿 `docker.sock`。
+
 - **CI**（`.github/workflows/ci.yml`）：推送 `main` 和每个 PR，在 GitHub 上起 PostgreSQL 17，运行和本机一样的 `scripts/check.sh`。设备并发模型检查（要 Java 和 TLC）和浏览器验证不在里面。
 - **发版**（`.github/workflows/release.yml`）：推送 `vX.Y.Z` 标签后，先调用同一个 CI 工作流检查这条提交，通过后从同一条提交构建 `backend`、`web` 两个镜像，推到 `ghcr.io/<仓库>/backend:vX.Y.Z` 和 `web:vX.Y.Z`，再用 `gh release create --generate-notes` 生成发布说明。
 - **镜像怎么选**：`infra/docker-compose.prod.yml` 给两个服务加上 `image: ${IMAGE_PREFIX}/…:${APP_VERSION:-local}`，保留 `build`。
@@ -42,13 +44,13 @@ Status: implemented
   - 数据库先恢复到新库 `restoring`，成功后再和原库改名对调，所以中途失败不会动到原库。
   - 文件用 `restic restore <快照>:/data --delete` 恢复，快照之后新加的文件会被删掉。
 - **版本提示**（`GET /api/system/version/`，只有运维账号能看）：
-  - 后端用标准库 `urllib` 查 GitHub 的 `releases/latest`，存在数据库缓存里：成功缓存 6 小时，失败缓存 10 分钟。
+  - 后端用标准库 `urllib` 查 GitHub 的 `releases/latest`，存在数据库缓存里：成功缓存 1 小时（原为 6 小时，见[网页一键更新](./2026-11-21-one-click-update.md)），失败缓存 10 分钟。
   - 连不上 GitHub 时，页面显示原因，其他功能照常。
   - "系统管理"新增"版本"标签页，显示当前版本、最新版本（链接到发布说明）和更新命令；有新版本时标签名写"版本 · 有更新"。
 
 ## Alternatives considered
 
-- **网页里一键更新**（sub2api 的做法）：sub2api 是单个程序，可以替换自己的文件再退出；我们在容器里，网页要更新就得把 Docker 的控制权（`docker.sock`）交给后端容器，等于把整台服务器交给 Web 应用。更新前的备份、失败后的退回也要在网页里重做一遍。
+- **网页里一键更新**（sub2api 的做法）：sub2api 是单个程序，可以替换自己的文件再退出；我们在容器里，网页要更新就得把 Docker 的控制权（`docker.sock`）交给后端容器，等于把整台服务器交给 Web 应用。更新前的备份、失败后的退回也要在网页里重做一遍。后来改由宿主机上的助手执行，见[网页一键更新](./2026-11-21-one-click-update.md)。
 - **Watchtower 之类的自动更新容器**：省事，但不会先备份，也不会在数据库迁移失败后退回；而且会在任意时间更新，用户正在上传大文件也照样重启。
 - **镜像放 Docker Hub 或阿里云**：Docker Hub 匿名拉取有次数限制，还要另配账号和密钥；ghcr.io 用仓库自带的 `GITHUB_TOKEN` 就能推送。国内服务器拉不动时，把镜像同步到阿里云，再改 `IMAGE_PREFIX`。
 - **退回时总是恢复数据库**：最省事。但如果只是新版本起不来、数据库没动，就会白白丢掉备份之后写入的数据。所以只在迁移行数变了时才恢复。

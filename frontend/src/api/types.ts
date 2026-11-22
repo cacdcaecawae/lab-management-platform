@@ -738,6 +738,7 @@ export interface VersionInfo {
   error: string
   checked_at: string
   update_available: boolean
+  agent: boolean // scripts/update-agent.sh runs on the server: 立即更新 instead of the command
 }
 
 export interface MailSettings extends Omit<MailSettingsWrite, 'mail_password'> {
