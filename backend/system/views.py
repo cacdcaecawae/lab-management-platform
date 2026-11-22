@@ -84,6 +84,9 @@ def parse_version(tag):
 def latest_release(refresh=False):
     """The newest GitHub release, cached for an hour, or 10 minutes after a failure (the server may not reach GitHub)."""
     release = None if refresh else cache.get(RELEASE_CACHE)
+    cached, running = parse_version(release and release["latest"]), parse_version(settings.APP_VERSION)
+    if cached and running and cached < running:  # checked before this release was installed
+        release = None
     if release is None:
         release = {"latest": None, "url": "", "error": "", "checked_at": timezone.localtime()}
         request = urllib.request.Request(
