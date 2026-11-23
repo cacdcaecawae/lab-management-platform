@@ -20,9 +20,10 @@ from equipment.models import UsageReport
 from knowledge.models import DocVersion
 from meetings.models import MeetingFile
 from procurement.models import Attachment
+from specimens.models import SpecimenLoan
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-MODULES = ("raw", "knowledge", "meetings", "procurement", "achievements", "equipment")
+MODULES = ("raw", "knowledge", "meetings", "procurement", "achievements", "equipment", "specimens")
 
 
 def both():
@@ -85,6 +86,7 @@ def ops_summary():
             When(purchase__isnull=False, then=F("purchase__owner__group_id")), default=F("reimbursement__owner__group_id")
         ), "created_at", "size"),
         ("equipment", UsageReport.objects.exclude(photo=""), "booking__equipment__group_id", "photo_uploaded_at", "photo_size"),
+        ("specimens", SpecimenLoan.objects.exclude(return_photo=""), "specimen__group_id", "return_photo_uploaded_at", "return_photo_size"),
     )
     month_observations = defaultdict(int)
     for module, queryset, group, ts, size in sources:

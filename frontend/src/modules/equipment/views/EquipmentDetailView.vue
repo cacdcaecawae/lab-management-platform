@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { equipmentApi } from '../api'
 import { docsApi } from '@/modules/knowledge/api'
@@ -24,6 +24,7 @@ const editing = ref(false)
 const historyOpen = ref(false)
 
 const docs = ref<Doc[]>([])
+const latestPhotoUsage = computed(() => equipment.value?.recent_usage.find((u) => u.report?.photo_url) ?? null)
 
 async function load() {
   try {
@@ -67,6 +68,22 @@ load()
         <el-descriptions-item label="购置日期">{{ equipment.purchase_date }}</el-descriptions-item>
         <el-descriptions-item label="下次校准日期">{{ equipment.calibration_due }}</el-descriptions-item>
         <el-descriptions-item label="更新时间">{{ formatTime(equipment.updated_at) }}</el-descriptions-item>
+        <el-descriptions-item v-if="latestPhotoUsage?.report?.photo_url" label="最近使用实拍" :span="2">
+          <div class="photo-clue">
+            <el-image
+              class="clue-thumb"
+              :src="latestPhotoUsage.report.photo_url"
+              :preview-src-list="[latestPhotoUsage.report.photo_url]"
+              preview-teleported
+              fit="cover"
+              alt="最近使用实拍"
+            />
+            <div>
+              <div>{{ latestPhotoUsage.user.name }} · {{ formatTime(latestPhotoUsage.report.reported_at) }}</div>
+              <div v-if="latestPhotoUsage.report.description" class="muted">{{ latestPhotoUsage.report.description }}</div>
+            </div>
+          </div>
+        </el-descriptions-item>
         <el-descriptions-item label="采购申请" :span="2">
           <!-- the request is private to its applicant and supervisors: others see the code only -->
           <RouterLink v-if="equipment.purchase && auth.isSupervisor" class="code" :to="{ name: 'purchase-detail', params: { id: equipment.purchase.id } }">
@@ -116,7 +133,15 @@ load()
                 {{ CONDITION_LABELS[row.report.condition] }}
               </el-tag>
               <span v-if="row.report.description">{{ row.report.description }}</span>
-              <a v-if="row.report.photo_url" :href="row.report.photo_url" target="_blank" rel="noopener">照片</a>
+              <el-image
+                v-if="row.report.photo_url"
+                class="row-thumb"
+                :src="row.report.photo_url"
+                :preview-src-list="[row.report.photo_url]"
+                preview-teleported
+                fit="cover"
+                alt="使用照片"
+              />
             </div>
           </template>
         </el-table-column>
@@ -151,5 +176,26 @@ load()
   align-items: center;
   gap: 4px 10px;
   padding: 6px 0;
+}
+.photo-clue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.clue-thumb {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: var(--lab-radius);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
+}
+.row-thumb {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--el-border-radius-small);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
 }
 </style>

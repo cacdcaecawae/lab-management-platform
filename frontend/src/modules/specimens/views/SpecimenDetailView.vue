@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { specimensApi } from '../api'
 import { projectsApi } from '@/modules/projects/api'
 import type { Specimen, SpecimenLoan } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { DEFECT_KIND_LABELS, SPECIMEN_KIND_LABELS, formatTime, toDateStr } from '@/utils/format'
-import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
+import { ApiError } from '@/api/client'
+import { errorMessage, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PhotoPicker from '@/components/PhotoPicker.vue'
 import { Clock, Edit, Printer } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
 
@@ -72,25 +74,43 @@ async function borrow() {
   load()
 }
 
-async function giveBack() {
-  const loanIdSeen = loan.value?.id // capture before the asynchronous confirmation, not when it resolves
+const returning = ref(false)
+const returnLoanId = ref<number | null>(null)
+const returnForm = reactive({ return_location: '', note: '', photo: null as File | null })
+const returnErrors = useFieldErrors(['return_location', 'note', 'photo', 'loan_id_seen'])
+
+function openReturn() {
+  if (!loan.value) return
+  returnLoanId.value = loan.value.id
+  Object.assign(returnForm, { return_location: '', note: '', photo: null })
+  returnErrors.clear()
+  returning.value = true
+}
+
+async function submitReturn() {
+  const loanIdSeen = returnLoanId.value
   if (!loanIdSeen) return
-  let note = ''
+  saving.value = true
   try {
-    ;({ value: note } = await ElMessageBox.prompt('归还时试件的状况，例如"完好""表面有划痕"，可不填。', `归还 ${specimen.value!.code}`, {
-      inputPlaceholder: '归还说明',
-      inputValidator: (v) => (v ?? '').length <= 200 || '不超过 200 字',
-    }))
-  } catch {
-    return
-  }
-  try {
-    await specimensApi.giveBack(id, loanIdSeen, (note ?? '').trim())
+    await specimensApi.giveBack(id, loanIdSeen, {
+      note: returnForm.note.trim(),
+      return_location: returnForm.return_location.trim(),
+      photo: returnForm.photo,
+    })
+    returning.value = false
     ElMessage.success('已登记归还')
+    load()
   } catch (e) {
-    showError(e)
+    if (e instanceof ApiError && (e.body.code === 'stale_loan' || e.body.code === 'not_on_loan')) {
+      returning.value = false
+      ElMessage.warning(e.message)
+      load()
+    } else {
+      returnErrors.handle(e)
+    }
+  } finally {
+    saving.value = false
   }
-  load()
 }
 
 load()
@@ -108,7 +128,7 @@ load()
           <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" @click="router.push({ name: 'labels', query: { type: 'specimen', ids: String(specimen.id) } })" />
           <IconButton v-if="auth.isManager" :icon="Edit" label="编辑试件" @click="editing = true" />
-          <el-button v-if="canReturn" type="primary" @click="giveBack">登记归还</el-button>
+          <el-button v-if="canReturn" type="primary" @click="openReturn">登记归还</el-button>
           <el-button v-else-if="canBorrow" type="primary" @click="openBorrow">借用</el-button>
         </PageHeader>
       </template>
@@ -126,6 +146,25 @@ load()
         <el-descriptions-item label="尺寸">{{ specimen.dimensions }}</el-descriptions-item>
         <el-descriptions-item label="存放位置">{{ specimen.location }}</el-descriptions-item>
         <el-descriptions-item label="保管人">{{ specimen.custodian?.name }}</el-descriptions-item>
+        <el-descriptions-item v-if="specimen.latest_return_photo" label="最近放回实拍" :span="2">
+          <div class="photo-clue">
+            <el-image
+              class="clue-thumb"
+              :src="specimen.latest_return_photo.url"
+              :preview-src-list="[specimen.latest_return_photo.url]"
+              preview-teleported
+              fit="cover"
+              alt="最近放回实拍"
+            />
+            <div class="clue-meta">
+              <div v-if="specimen.latest_return_photo.location">{{ specimen.latest_return_photo.location }}</div>
+              <div class="muted">
+                {{ specimen.latest_return_photo.returned_by?.name || '成员' }} · {{ formatTime(specimen.latest_return_photo.returned_at) }}
+                <span v-if="specimen.latest_return_photo.note"> · {{ specimen.latest_return_photo.note }}</span>
+              </div>
+            </div>
+          </div>
+        </el-descriptions-item>
         <el-descriptions-item label="更新时间" :span="2">{{ formatTime(specimen.updated_at) }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2"><pre class="pre">{{ specimen.notes }}</pre></el-descriptions-item>
       </el-descriptions>
@@ -165,9 +204,24 @@ load()
             <span :class="{ overdue: overdue(row as SpecimenLoan) }">{{ row.due_date }}{{ overdue(row as SpecimenLoan) ? '（已逾期）' : '' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="归还" min-width="150">
+        <el-table-column label="归还" min-width="200">
           <template #default="{ row }">
-            <span v-if="row.returned_at">{{ formatTime(row.returned_at) }}<span v-if="row.return_note" class="muted"> · {{ row.return_note }}</span></span>
+            <div v-if="row.returned_at" class="return-cell">
+              <el-image
+                v-if="row.return_photo_url"
+                class="row-thumb"
+                :src="row.return_photo_url"
+                :preview-src-list="[row.return_photo_url]"
+                preview-teleported
+                fit="cover"
+                alt="归还照片"
+              />
+              <div>
+                <span>{{ formatTime(row.returned_at) }}</span>
+                <span v-if="row.return_location" class="muted"> · {{ row.return_location }}</span>
+                <span v-if="row.return_note" class="muted"> · {{ row.return_note }}</span>
+              </div>
+            </div>
             <span v-else class="muted">未归还</span>
           </template>
         </el-table-column>
@@ -188,6 +242,19 @@ load()
       <el-form-item label="预计归还日期" :error="borrowErrors.fe('due_date')">
         <el-date-picker v-model="borrowForm.due_date" type="date" value-format="YYYY-MM-DD" aria-label="预计归还日期" placeholder="可不填" />
       </el-form-item>
+      <el-alert v-for="msg in borrowErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    </FormDialog>
+    <FormDialog v-model="returning" :title="`归还 ${specimen.code}`" size="sm" confirm-text="登记归还" :loading="saving" @submit="submitReturn">
+      <el-form-item label="放回位置（可选）" :error="returnErrors.fe('return_location')">
+        <el-input v-model="returnForm.return_location" :placeholder="specimen.location ? `当前：${specimen.location}，换了位置再填` : '例如 A302 试块柜 2 层'" />
+      </el-form-item>
+      <el-form-item label="归还说明（可选）" :error="returnErrors.fe('note')">
+        <el-input v-model="returnForm.note" placeholder="例如 完好、表面有划痕" />
+      </el-form-item>
+      <el-form-item label="放回位置照片（可选）" :error="returnErrors.fe('photo')">
+        <PhotoPicker v-model="returnForm.photo" />
+      </el-form-item>
+      <el-alert v-for="msg in returnErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </FormDialog>
     <SpecimenFormDialog v-model="editing" :specimen="specimen" @saved="load" />
     <HistoryDrawer v-model="historyOpen" :load="() => specimensApi.history(id)" :labels="HISTORY_LABELS" :values="HISTORY_VALUES" />
@@ -203,5 +270,34 @@ load()
 }
 .grow {
   flex: 1;
+}
+.photo-clue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.clue-thumb {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: var(--lab-radius);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
+}
+.clue-meta {
+  min-width: 0;
+}
+.return-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row-thumb {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--el-border-radius-small);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
 }
 </style>

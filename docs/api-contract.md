@@ -337,10 +337,10 @@
 
 ## 试样与标准件 `/api/specimens/`
 
-`Specimen = {id, code, name, kind, material, dimensions, location, custodian: UserBrief | null, status, defects_public, defects: [Defect] | null, current_loan: Loan | null, notes, created_at, updated_at}`
-`kind`: `standard` 标准试块 | `reference` 对比试块 | `sample` 试样 | `other` 其他；`status`: `available` 可用 | `damaged` 损坏 | `retired` 停用。"借出"不是状态，看 `current_loan`。
+`Specimen = {id, code, name, kind, material, dimensions, location, custodian: UserBrief | null, status, defects_public, defects: [Defect] | null, current_loan: Loan | null, latest_return_photo?: {loan_id, url, location, note, returned_at, returned_by} | null, notes, created_at, updated_at}`
+`kind`: `standard` 标准试块 | `reference` 对比试块 | `sample` 试样 | `other` 其他；`status`: `available` 可用 | `damaged` 损坏 | `retired` 停用。"借出"不是状态，看 `current_loan`。`latest_return_photo` 仅详情/修改响应返回。
 `Defect = {id, kind, size_mm, depth_mm, position, note}`，`kind`: `fbh` 平底孔 | `sdh` 横通孔 | `notch` 刻槽 | `crack` 裂纹 | `delamination` 分层 | `other`；`size_mm`、`depth_mm` 是两位小数的字符串或 `null`
-`Loan = {id, borrower: UserBrief, project: {id,name} | null, purpose, due_date, borrowed_at, returned_at, returned_by: UserBrief | null, return_note}`
+`Loan = {id, borrower: UserBrief, project: {id,name} | null, purpose, due_date, borrowed_at, returned_at, returned_by: UserBrief | null, return_note, return_location, return_photo_url: string | null}`
 
 **缺陷参数可能是盲测的真值**：`defects_public` 为 `false` 时，学生拿到的 `defects` 是 `null`（不是空列表，也不给个数）；管理员和导师总能看到。搜索不匹配缺陷字段。修改历史只记"修改了缺陷参数"，不记数值。
 
@@ -353,7 +353,8 @@
 | GET | `/api/specimens/{id}/history/` | 本组全员 | `[HistoryEntry]` |
 | GET | `/api/specimens/{id}/loans/` | 本组全员 | 分页，最新在前 |
 | POST | `/api/specimens/{id}/borrow/` | 本组全员 | `{project_id?, purpose?, due_date?}` → 201 `Loan`，借用人是当前用户。状态不是"可用" → 409 `not_available`；已借出 → 409 `on_loan`（同一试件同时只有一条未归还的借用，数据库约束） |
-| POST | `/api/specimens/{id}/return/` | 借用人或管理员 | `{loan_id_seen, note?}` → `Loan`；`loan_id_seen` 为打开归还确认框时的借用 id（必填正整数）；当前借用不同 → 409 `stale_loan`，刷新后重新核对；没借出 → 409 `not_on_loan`；别人借的 → 403。旧客户端缺少该字段返回 400，前后端须同步更新 |
+| POST | `/api/specimens/{id}/return/` | 借用人或管理员 | JSON 或 `multipart/form-data`：`{loan_id_seen, note?, return_location?, photo?}` → `Loan`；`loan_id_seen` 为打开归还弹窗时的借用 id（必填正整数）；`photo` 可选（JPG/PNG/WebP，≤ 10 MB）；填了 `return_location` 时同步更新试件的 `location`；当前借用不同 → 409 `stale_loan`；没借出 → 409 `not_on_loan`；别人借的 → 403 |
+| GET | `/api/specimens/{id}/loans/{loan_id}/photo/` | 本组全员 | 内联返回该条归还照片；无照片或外组 → 404 |
 
 不提供删除；不再使用的改为"停用"。
 

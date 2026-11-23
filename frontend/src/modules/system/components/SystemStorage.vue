@@ -38,7 +38,7 @@ const spool = computed(() => {
 })
 
 const MODULES: Record<string, string> = {
-  raw: '原始数据', knowledge: '知识库', meetings: '组会', procurement: '采购及报销', achievements: '成果全文', equipment: '设备使用照片',
+  raw: '原始数据', knowledge: '知识库', meetings: '组会', procurement: '采购及报销', achievements: '成果全文', equipment: '设备使用照片', specimens: '试件归还照片',
 }
 const amount = (u?: Usage) => (u ? size(u.known_bytes) + (u.unknown_files ? `，另 ${u.unknown_files} 个大小未知` : '') : '—')
 // Only months in which something still kept was uploaded: twelve empty columns say nothing.

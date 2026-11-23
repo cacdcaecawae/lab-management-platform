@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
@@ -7,6 +9,9 @@ from core.permissions import is_supervisor, scope_group
 from projects.serializers import GroupMemberField, GroupProjectField, ProjectBriefSerializer
 
 from .models import Defect, Specimen, SpecimenLoan
+
+PHOTO_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
+PHOTO_MAX_SIZE = 10 * 1024**2
 
 
 class SpecimenBriefSerializer(serializers.ModelSerializer):
@@ -41,19 +46,34 @@ class LoanSerializer(serializers.ModelSerializer):
     project = ProjectBriefSerializer(read_only=True)
     project_id = GroupProjectField(source="project", write_only=True, required=False, allow_null=True)
     returned_by = UserBriefSerializer(read_only=True)
+    return_photo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = SpecimenLoan
         fields = [
             "id", "borrower", "project", "project_id", "purpose", "due_date", "borrowed_at", "returned_at", "returned_by",
-            "return_note",
+            "return_note", "return_location", "return_photo_url",
         ]
-        read_only_fields = ["borrowed_at", "returned_at", "return_note"]
+        read_only_fields = ["borrowed_at", "returned_at", "return_note", "return_location", "return_photo_url"]
+
+    def get_return_photo_url(self, loan):
+        return f"/api/specimens/{loan.specimen_id}/loans/{loan.pk}/photo/" if loan.return_photo else None
 
 
 class ReturnSerializer(serializers.Serializer):
     loan_id_seen = serializers.IntegerField(min_value=1)
     note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    return_location = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    photo = serializers.FileField(required=False, allow_null=True)
+
+    def validate_photo(self, photo):
+        if photo is None:
+            return None
+        if Path(photo.name).suffix.lower() not in PHOTO_TYPES:
+            raise serializers.ValidationError("照片只支持 JPG、PNG、WebP")
+        if photo.size > PHOTO_MAX_SIZE:
+            raise serializers.ValidationError("照片不能超过 10 MB")
+        return photo
 
 
 def defects_visible(user, specimen):
@@ -74,12 +94,13 @@ class SpecimenSerializer(serializers.ModelSerializer):
     custodian_id = GroupMemberField(source="custodian", write_only=True, required=False, allow_null=True)
     defects = DefectSerializer(many=True, required=False)
     current_loan = serializers.SerializerMethodField()
+    latest_return_photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Specimen
         fields = [
             "id", "code", "name", "kind", "material", "dimensions", "location", "custodian", "custodian_id", "status",
-            "defects_public", "defects", "current_loan", "notes", "created_at", "updated_at",
+            "defects_public", "defects", "current_loan", "latest_return_photo", "notes", "created_at", "updated_at",
         ]
 
     def get_current_loan(self, specimen):
@@ -89,6 +110,21 @@ class SpecimenSerializer(serializers.ModelSerializer):
             loans = specimen.loans.filter(returned_at__isnull=True).select_related("borrower", "project")
         loan = next(iter(loans), None)
         return LoanSerializer(loan).data if loan else None
+
+    def get_latest_return_photo(self, specimen):
+        # Only prefetched on detail/update views so list queries stay flat.
+        loans = getattr(specimen, "photo_loans", None)
+        if not loans:
+            return None
+        loan = loans[0]
+        return {
+            "loan_id": loan.pk,
+            "url": f"/api/specimens/{specimen.pk}/loans/{loan.pk}/photo/",
+            "location": loan.return_location,
+            "note": loan.return_note,
+            "returned_at": loan.returned_at,
+            "returned_by": UserBriefSerializer(loan.returned_by).data if loan.returned_by else None,
+        }
 
     def to_representation(self, specimen):
         data = super().to_representation(specimen)

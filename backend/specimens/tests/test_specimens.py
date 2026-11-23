@@ -189,3 +189,74 @@ def test_patch_omitted_defects_preserved_and_empty_list_clears(api, manager):
     assert Specimen.objects.get(pk=sid).defects.count() == 2
     assert api(manager).patch(url, {'defects': []}, format='json').status_code == 200
     assert Specimen.objects.get(pk=sid).defects.count() == 0
+
+
+def test_return_with_optional_photo_and_location(api, tmp_path, settings, student_a, student_b, manager, other_manager):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    sid = create(api, manager, location="A301 试块柜")['id']
+    url = f"{URL}{sid}/"
+    loan_id = api(student_a).post(f"{url}borrow/", {}, format="json").json()["id"]
+
+    bad_type = api(student_a).post(
+        f"{url}return/",
+        {"loan_id_seen": loan_id, "photo": SimpleUploadedFile("x.svg", b"<svg/>", content_type="image/svg+xml")},
+        format="multipart",
+    )
+    assert bad_type.status_code == 400 and "photo" in bad_type.json()["errors"]
+
+    too_big = SimpleUploadedFile("big.jpg", b"x" * (10 * 1024 * 1024 + 1), content_type="image/jpeg")
+    assert api(student_a).post(f"{url}return/", {"loan_id_seen": loan_id, "photo": too_big}, format="multipart").status_code == 400
+
+    photo = SimpleUploadedFile("shelf.jpg", b"\xff\xd8\xff\xe0fake-jpeg", content_type="image/jpeg")
+    r = api(student_a).post(
+        f"{url}return/",
+        {"loan_id_seen": loan_id, "note": "完好", "return_location": "A302 2号实验台", "photo": photo},
+        format="multipart",
+    )
+    assert r.status_code == 200, r.json()
+    data = r.json()
+    assert data["return_location"] == "A302 2号实验台"
+    assert data["return_photo_url"] == f"/api/specimens/{sid}/loans/{loan_id}/photo/"
+
+    detail = api(student_b).get(url).json()
+    assert detail["location"] == "A302 2号实验台"
+    assert detail["latest_return_photo"]["url"] == data["return_photo_url"]
+    assert detail["latest_return_photo"]["location"] == "A302 2号实验台"
+    assert detail["latest_return_photo"]["returned_by"]["id"] == student_a.id
+
+    img = api(student_b).get(data["return_photo_url"])
+    assert img.status_code == 200 and img["Content-Type"] == "image/jpeg"
+    assert "inline" in img["Content-Disposition"]
+    assert api(other_manager).get(data["return_photo_url"]).status_code == 404
+
+    loan = SpecimenLoan.objects.get(pk=loan_id)
+    assert loan.return_photo_size == len(b"\xff\xd8\xff\xe0fake-jpeg")
+    assert loan.return_photo_uploaded_at is not None
+
+
+def test_return_photo_cleaned_up_on_rollback(api, tmp_path, settings, student_a, manager, monkeypatch):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    sid = create(api, manager)["id"]
+    url = f"{URL}{sid}/"
+    loan_id = api(student_a).post(f"{url}borrow/", {}, format="json").json()["id"]
+
+    orig_save = Specimen.save
+
+    def boom(self, *args, **kwargs):
+        raise RuntimeError("boom after loan save")
+
+    monkeypatch.setattr(Specimen, "save", boom)
+    photo = SimpleUploadedFile("rollback.jpg", b"jpeg-bytes", content_type="image/jpeg")
+    with pytest.raises(RuntimeError, match="boom"):
+        api(student_a).post(
+            f"{url}return/",
+            {"loan_id_seen": loan_id, "return_location": "B101", "photo": photo},
+            format="multipart",
+        )
+    monkeypatch.setattr(Specimen, "save", orig_save)
+    assert list((tmp_path / "specimens").glob("*")) == []
+    assert SpecimenLoan.objects.get(pk=loan_id).returned_at is None
