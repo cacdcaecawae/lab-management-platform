@@ -46,7 +46,7 @@ def browser(stack):
     opts = webdriver.ChromeOptions()
     opts.binary_location = chrome
     for flag in (
-        "--headless=new", "--window-size=1440,1000", "--no-proxy-server",
+        "--headless=new", "--window-size=1440,1000", "--no-proxy-server", "--force-prefers-reduced-motion",
         "--disable-background-networking", "--disable-component-update", "--disable-sync",
         "--no-first-run", "--disable-default-apps",
         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",

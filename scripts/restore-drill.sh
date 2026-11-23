@@ -60,9 +60,11 @@ cleanup() {
   fi
   [[ "$id" =~ ^[0-9a-f]{64}$ ]] || id=
   # The one write to the live stack: a status line for 系统管理 → 存储与备份. It never changes the drill's result.
-  COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml} docker compose --env-file "$env_file" \
-    run --rm --no-deps -T backend python manage.py record_ops_run drill "$result" --snapshot "${id:0:8}" \
-    --detail "$summary" </dev/null >/dev/null 2>&1 || echo "演练结果没能记到网站上，不影响演练本身" >&2
+  (
+    source scripts/server-env.sh
+    [[ -n $SITE_BACKEND ]] || exit 1
+    docker exec "$SITE_BACKEND" python manage.py record_ops_run drill "$result" --snapshot "${id:0:8}" --detail "$summary"
+  ) </dev/null >/dev/null 2>&1 || echo "演练结果没能记到网站上，不影响演练本身" >&2
   exit "$rc"
 }
 trap cleanup EXIT

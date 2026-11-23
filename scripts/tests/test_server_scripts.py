@@ -37,7 +37,12 @@ if args[:1] == ['inspect']:
     print(os.environ.get('SITE_NAS', '') if '.Mounts' in args[2] else sites[int(args[-1][-1])])
     sys.exit(0)
 if args[:2] == ['ps', '-a']:
-    print(os.environ.get('OTHER_DIRS', ''))
+    if 'OTHER_PROJECT' not in os.environ or 'label=com.docker.compose.project=' + os.environ['OTHER_PROJECT'] in args:
+        print(os.environ.get('OTHER_DIRS', ''))
+    sys.exit(0)
+if args[-1] == 'config' and 'restic' not in args:
+    name = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines() if '=' in line)
+    print('name: ' + os.environ.get('COMPOSE_PROJECT_NAME', name.get('COMPOSE_PROJECT_NAME', 'infra')))
     sys.exit(0)
 if 'record_ops_run' in args:
     sys.exit(1 if mode == 'record-fails' else 0)
@@ -161,7 +166,7 @@ class ServerScripts(unittest.TestCase):
         self.executable('git', '#!/bin/bash\n[ "$1" != symbolic-ref ] || echo main\nexit 0\n')
         self.executable('sleep', '#!/bin/bash\nexit 0\n')
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
-                        TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A}]))
+                        TEST_ROOT=str(self.root), SNAPSHOT_JSON=json.dumps([{'id': A, 'time': '2026-11-22T10:00:00Z'}]))
         # Do not inherit an operator's target-stack overrides.
         for key in ('ENV_FILE', 'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'APP_VERSION', 'MODE', 'HTTPS_DOMAIN', 'DJANGO_ALLOWED_HOSTS',
                     'SITE_NAS', 'OTHER_DIRS', 'LAB_NAS_ROOT'):
@@ -304,11 +309,21 @@ class ServerScripts(unittest.TestCase):
                                        text=True, capture_output=True, timeout=20)
                     self.assertNotEqual(r.returncode, 0)
                     self.assertIn(message, r.stderr)
-        self.assertEqual(self.calls(), [])
+        self.assertTrue(all(c[-1] == 'config' for c in self.calls()))
         # Two sites here, one named: that one.
         self.env.update(SITE_FILES=f'{prod}|lab;{prod},{self.root}/infra/docker-compose.https.yml|trial',
                         COMPOSE_PROJECT_NAME='lab')
         self.assertEqual(self.run_script('backup.sh').returncode, 0)
+
+    def test_no_backend_checks_the_project_selected_by_the_env_file(self):
+        with (self.root / '.env').open('a') as config:
+            config.write('COMPOSE_PROJECT_NAME=another-site\n')
+        self.env.update(SITE_FILES='', COMPOSE_FILE='infra/docker-compose.prod.yml',
+                        OTHER_PROJECT='another-site', OTHER_DIRS='/srv/elsewhere/infra')
+        r = self.run_script('restore.sh', A, '--yes')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('another-site 是另一个目录', r.stderr)
+        self.assertFalse(any('run' in c or 'stop' in c for c in self.calls()))
 
     def test_without_a_site_here_nothing_runs_on_the_defaults(self):
         # Never started or removed with down: on the defaults a NAS site would be backed up, restored or restarted on
@@ -319,7 +334,7 @@ class ServerScripts(unittest.TestCase):
             r = self.run_script(script, *args)
             self.assertNotEqual(r.returncode, 0)
             self.assertIn('没有找到这个目录正在运行的网站', r.stderr)
-        self.assertFalse(any(set(c) & {'stop', 'up', 'pull', 'exec', 'dump', 'backup', 'restore'} for c in self.calls()))
+        self.assertFalse(any(set(c) & {'run', 'stop', 'up', 'pull', 'exec', 'dump', 'backup', 'restore'} for c in self.calls()))
         self.assertEqual(self.run_script('restore.sh').returncode, 0)  # listing the snapshots changes nothing
         self.env['COMPOSE_FILE'] = 'infra/docker-compose.prod.yml'  # named by hand
         self.assertEqual(self.run_script('backup.sh').returncode, 0)
@@ -437,12 +452,25 @@ class ServerScripts(unittest.TestCase):
         # Both compact and pretty restic JSON; fake id text within an escaped path must not match.
         for indent in (None, 2):
             with self.subTest(indent=indent):
-                self.env['SNAPSHOT_JSON'] = json.dumps([{'id': A, 'paths': ['a "id":"' + B + '"']}], indent=indent)
+                self.env['SNAPSHOT_JSON'] = json.dumps([{'id': A, 'time': '2026-11-22T10:00:00Z',
+                                                         'paths': ['a "id":"' + B + '"']}], indent=indent)
                 r = self.run_script('restore.sh', 'latest', '--yes')
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual((self.root / 'database_dump').read_text().strip(), 'database:' + A)
                 self.assertEqual((self.root / 'files_snapshot').read_text(), A)
                 self.assertNotIn('latest:/data', str(self.calls()))
+
+    def test_restore_identifies_target_before_confirmation_and_with_yes(self):
+        with (self.root / '.env').open('a') as config:
+            config.write('SITE_URL=https://example.test\n')
+        for flags in ([], ['--yes']):
+            r = subprocess.run(['bash', str(self.root / 'scripts/restore.sh'), A[:8], *flags],
+                               input='no\n', env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode == 0, bool(flags), r.stderr)
+            for item in (str(self.root), 'Compose 项目：lab', 'https://example.test', A, '2026-11-22T10:00:00Z'):
+                self.assertIn(item, r.stdout)
+            if not flags:
+                self.assertFalse(any('stop' in call for call in self.calls()))
 
     def test_invalid_selection_never_stops_site(self):
         for value in ('[]', '[{"id":"bad"}]', json.dumps([{'id': A}, {'id': B}])):
@@ -484,11 +512,12 @@ class ServerScripts(unittest.TestCase):
         self.assertFalse(any('stop' in c for c in calls))
         self.assertTrue('dropdb' in ' '.join(calls[-1]) and '"$NEW"' in ' '.join(calls[-1]))
 
-    def test_explicit_id_db_only_skips_resolution_and_files(self):
+    def test_explicit_id_db_only_reads_its_timestamp_and_skips_files(self):
         r = self.run_script('restore.sh', A, '--yes', '--db-only')
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((self.root / 'database_dump').read_text().strip(), 'database:' + A)
-        self.assertFalse(any('snapshots' in c or 'restore' in c for c in self.calls()))
+        self.assertEqual([c[-1] for c in self.calls() if 'snapshots' in c], [A])
+        self.assertFalse(any('restore' in c for c in self.calls()))
         self.assertFalse((self.root / 'files_snapshot').exists())
 
 

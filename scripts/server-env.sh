@@ -32,11 +32,15 @@ running_stack() {
   done
   if [[ -z $site ]]; then
     [[ -z $other ]] || die "这个目录的网站是 Compose 项目 $other，不是 $COMPOSE_PROJECT_NAME，没有做任何操作"
-    # Compose names the project after the first file's directory, infra/, unless told otherwise.
-    dirs=$(docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-infra}" \
+    # Compose also reads the project name from --env-file and the configuration's top-level name.
+    local project
+    project=$(COMPOSE_FILE=${COMPOSE_FILE:-infra/docker-compose.prod.yml} dc config | sed -nE 's/^name: "?([a-z0-9][a-z0-9_-]*)"?$/\1/p') &&
+      [[ $project =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "无法确定 Compose 项目，没有做任何操作"
+    export COMPOSE_PROJECT_NAME=$project
+    dirs=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
       --format '{{.Label "com.docker.compose.project.working_dir"}}') || die "查不到这台电脑上 Docker 的容器，没有做任何操作"
     dirs=$(grep -vxF -e "$PWD/infra" -e '' <<<"$dirs") &&
-      die "Compose 项目 ${COMPOSE_PROJECT_NAME:-infra} 是另一个目录（${dirs%%$'\n'*}）的网站，没有做任何操作"
+      die "Compose 项目 $project 是另一个目录（${dirs%%$'\n'*}）的网站，没有做任何操作"
     return 0
   fi
   files=${site%|*} files=${files//,/:}

@@ -16,13 +16,24 @@ import hashlib, json, os, pathlib, subprocess, sys
 args = sys.argv[1:]
 with open(os.environ["DOCKER_LOG"], "a") as log:
     print(" ".join(args), file=log)
+if args[:2] == ["ps", "-aq"]:
+    if os.environ["MODE"] != "no-site":
+        print("site-backend-id")
+    sys.exit(0)
+if args[0] == "inspect":
+    assert args[-1] == "site-backend-id"
+    print(str(pathlib.Path.cwd() / "infra/docker-compose.prod.yml") + "|custom-site")
+    sys.exit(0)
+if "record_ops_run" in args:
+    assert args[:2] == ["exec", "site-backend-id"]
+    sys.exit(int(os.environ.get("MODE") == "record-fails"))
+if args[-1] == "config" and args[1] == "--env-file":
+    print("name: infra")
+    sys.exit(0)
 if args[0] != "compose":
     if os.environ.get("MODE") == "collision":
         print("existing")
     sys.exit(0)
-if "record_ops_run" in args:  # the status line on the live stack, not the drill project
-    assert args[1:3] == ["--env-file", os.environ["ENV_FILE"]] and os.environ["COMPOSE_FILE"] == "infra/docker-compose.prod.yml"
-    sys.exit(int(os.environ.get("MODE") == "record-fails"))
 if os.environ.get("MODE") == "ok":
     assert os.environ["BACKUP_REPO"] == "/fixture-repository" and "BACKUP_PASSWORD" not in os.environ
 assert args[1] == "--project-name" and args[2].startswith("labdrill-")
@@ -79,7 +90,7 @@ class RestoreDrillTests(unittest.TestCase):
 
     def test_restore_drill(self):
         for mode in ("ok", "missing", "corrupt", "cleanup", "collision", "right-id", "wrong-id", "missing-id", "missing-mount",
-                     "record-fails"):
+                     "record-fails", "no-site"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 self.run_case(mode, Path(directory))
 
@@ -116,9 +127,12 @@ class RestoreDrillTests(unittest.TestCase):
         assert not list(tmp_path.glob("labdrill.*"))
         assert ("down --volumes --remove-orphans" in calls) == (mode != "collision")
         assert ("dump " in calls) == (mode not in ("collision", "wrong-id"))
-        passed = mode in ("ok", "right-id", "record-fails")
+        passed = mode in ("ok", "right-id", "record-fails", "no-site")
         assert (result.returncode == 0) == passed, (result.stdout, result.stderr)
         assert ("演练通过" in result.stdout) == passed
+        if mode == "no-site":
+            assert "record_ops_run" not in calls and "没能记到网站上" in result.stderr
+            return
         [record] = [line.split(" record_ops_run ")[1] for line in calls.splitlines() if "record_ops_run" in line]
         if passed:
             assert record == "drill ok --snapshot aaaaaaaa --detail 附件校验：1 项", record
