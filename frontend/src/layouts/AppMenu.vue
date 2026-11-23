@@ -2,11 +2,21 @@
 import { computed, useTemplateRef, watch } from 'vue'
 import type { MenuInstance } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
 import { useNotificationsStore } from '@/stores/notifications'
+import { useOpsStore } from '@/stores/ops'
 import { pinGroup, pinnedGroups, useNav } from './nav'
 
 const notifications = useNotificationsStore()
+const ops = useOpsStore()
+const auth = useAuthStore()
+watch(() => auth.isSuperuser, (yes) => yes && ops.load(), { immediate: true }) // the menu outlives a change of user
 const { modules, page, current } = useNav()
+// What needs ops goes on its menu item too: red when something must be fixed, blue when there is something to do.
+const mark = (name: string) =>
+  name === 'system-storage' && ops.storage?.attention ? { text: '需处理', kind: '' }
+  : name === 'system-version' && ops.version?.update_available ? { text: '有更新', kind: 'info' }
+  : null
 const menu = useTemplateRef<MenuInstance>('menu')
 
 // A module with several pages (for this role) is a group; its menu index is "g:<key>" so it never equals a page name.
@@ -41,7 +51,10 @@ const tint = (m: { key: string; color?: boolean }) => (m.color ? { '--c': `var(-
           </span>
           <span>{{ m.label }}</span>
         </template>
-        <el-menu-item v-for="p in m.pages" :key="p.name" :index="p.name" :route="{ name: p.name }">{{ p.label }}</el-menu-item>
+        <el-menu-item v-for="p in m.pages" :key="p.name" :index="p.name" :route="{ name: p.name }">
+          {{ p.label }}
+          <span v-if="mark(p.name)" class="badge" :class="mark(p.name)!.kind">{{ mark(p.name)!.text }}</span>
+        </el-menu-item>
       </el-sub-menu>
       <el-menu-item v-else :index="m.pages[0]!.name" :route="{ name: m.pages[0]!.name }" :class="{ gap: m.gap }">
         <span class="mod-icon" :class="{ colored: m.color }" :style="tint(m)">
@@ -50,6 +63,7 @@ const tint = (m: { key: string; color?: boolean }) => (m.color ? { '--c': `var(-
         <span>{{ m.label }}</span>
         <!-- counts that need someone go on the menu item (DESIGN.md), not in a pop-up -->
         <span v-if="m.key === 'notifications' && notifications.unread" class="badge">{{ notifications.unread > 99 ? '99+' : notifications.unread }}</span>
+        <span v-else-if="mark(m.pages[0]!.name)" class="badge" :class="mark(m.pages[0]!.name)!.kind">{{ mark(m.pages[0]!.name)!.text }}</span>
       </el-menu-item>
     </template>
   </el-menu>
@@ -141,5 +155,8 @@ const tint = (m: { key: string; color?: boolean }) => (m.color ? { '--c': `var(-
   line-height: 18px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.badge.info {
+  background: var(--el-color-primary);
 }
 </style>

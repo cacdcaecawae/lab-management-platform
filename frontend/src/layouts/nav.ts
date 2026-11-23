@@ -1,12 +1,19 @@
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, watch, type Component } from 'vue'
 import { useRoute, useRouter, type RouteLocationNormalizedLoaded } from 'vue-router'
-import { Bell, ChatDotRound, Collection, House, Memo, Monitor, Notebook, Setting, User, Wallet } from '@element-plus/icons-vue'
+import {
+  Bell, Box, ChatDotRound, Collection, House, Key, Memo, Message, Monitor, Notebook, OfficeBuilding, Promotion, Setting, User,
+  Wallet,
+} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 // DESIGN.md: the sidebar lists the modules; one with several pages is a group that opens and closes.
 // color: the module has its own colour (--lab-mod-<key> in theme.css) on its sidebar icon and on its pages' tabs.
 // gap: a little space above it.
-const MODULES = [
+type Module = {
+  key: string; label: string; icon: Component; color?: boolean; gap?: boolean
+  pages: { name: string; label: string; icon?: Component }[]
+}
+const MODULES: Module[] = [
   { key: 'workbench', label: '工作台', icon: House, pages: [{ name: 'workbench', label: '工作台' }] },
   { key: 'notifications', label: '通知', icon: Bell, pages: [{ name: 'notifications', label: '通知' }] },
   { key: 'projects', label: '项目', icon: Collection, color: true, gap: true, pages: [{ name: 'projects', label: '项目' }] },
@@ -51,7 +58,18 @@ const MODULES = [
     ],
   },
   { key: 'members', label: '成员', icon: User, gap: true, pages: [{ name: 'members', label: '成员' }] },
-  { key: 'system', label: '系统管理', icon: Setting, pages: [{ name: 'system', label: '系统管理' }] },
+  {
+    key: 'system', label: '系统管理', icon: Setting, gap: true,
+    // icon: the page's own, for the ops account whose sidebar is only these pages (useNav)
+    pages: [
+      { name: 'system-storage', label: '存储与备份', icon: Box },
+      { name: 'system-accounts', label: '账号', icon: User },
+      { name: 'system-groups', label: '课题组', icon: OfficeBuilding },
+      { name: 'system-mail', label: '邮件', icon: Message },
+      { name: 'system-version', label: '版本', icon: Promotion },
+      { name: 'system-logins', label: '登录记录', icon: Key },
+    ],
+  },
 ]
 
 // The colour of the module a page belongs to (for its tab); grey for the ones without (通知, 成员).
@@ -60,13 +78,13 @@ export function pageColor(page: string) {
   return m?.color ? `var(--lab-mod-${m.key})` : 'var(--lab-text-3)'
 }
 
-// Pages the user has opened (lists and records; not the workbench, the ops page or the -new forms) are closable tabs
+// Pages the user has opened (lists and records; not the workbench, the ops pages or the -new forms) are closable tabs
 // in the top bar, one strip shared by all modules (DESIGN.md). None at first. Kept for this browser tab only
 // (sessionStorage), and only for the user who opened them; the oldest goes past MAX_OPEN.
 export interface OpenedTab { path: string; full: string; title: string }
 const TABS_KEY = 'lab.tabs'
 const MAX_OPEN = 10
-const NOT_TABS = new Set(['workbench', 'system'])
+const notTab = (name: string) => name === 'workbench' || name.startsWith('system') || name.endsWith('-new')
 const restored = (() => {
   try {
     const v = JSON.parse(sessionStorage.getItem(TABS_KEY) ?? '') as { uid: number | null; tabs: OpenedTab[] }
@@ -84,7 +102,7 @@ export function trackTab(uid: number | undefined, r: RouteLocationNormalizedLoad
   if (uid == null) return
   if (opened.uid !== uid) Object.assign(opened, { uid, tabs: [] })
   const name = String(r.name ?? '')
-  if (!name || NOT_TABS.has(name) || name.endsWith('-new')) return
+  if (!name || notTab(name)) return
   const tab = opened.tabs.find((t) => t.path === r.path)
   if (tab) tab.full = r.fullPath
   else {
@@ -153,9 +171,13 @@ export function useNav() {
     return !!auth.user?.group && (!r.meta.supervisor || auth.isSupervisor) && (!r.meta.manager || auth.isManager)
   }
   // computed: the role is known only after login, and the layout outlives a logout / login as someone else
-  const modules = computed(() =>
-    MODULES.map((m) => ({ ...m, pages: m.pages.filter((p) => allowed(p.name)) })).filter((m) => m.pages.length),
-  )
+  const modules = computed(() => {
+    const shown = MODULES.map((m) => ({ ...m, pages: m.pages.filter((p) => allowed(p.name)) })).filter((m) => m.pages.length)
+    // Ops without a group sees only 系统管理: its pages are the whole sidebar, so each stands on its own, with its icon.
+    const only = shown.length === 1 ? shown[0]! : undefined
+    if (!only || only.pages.length < 2) return shown
+    return only.pages.map((p) => ({ ...only, key: p.name, label: p.label, icon: p.icon ?? only.icon, gap: false, pages: [p] }))
+  })
   // Detail pages highlight their list page (meta.menu).
   const page = computed(() => String(route.meta.menu ?? route.name))
   const current = computed(() => modules.value.find((m) => m.pages.some((p) => p.name === page.value)))

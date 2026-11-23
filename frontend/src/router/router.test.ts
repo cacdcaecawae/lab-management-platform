@@ -35,10 +35,10 @@ describe('route guard', () => {
     expect(router.currentRoute.value.name).toBe('password')
   })
 
-  it('takes the ops account to 系统管理 once the password is changed', async () => {
+  it('takes the ops account to 存储与备份 once the password is changed', async () => {
     me.mockResolvedValue({ ...ops, must_change_password: false })
     await router.push('/')
-    expect(router.currentRoute.value.name).toBe('system')
+    expect(router.currentRoute.value.name).toBe('system-storage')
   })
 
   const student: Me = {

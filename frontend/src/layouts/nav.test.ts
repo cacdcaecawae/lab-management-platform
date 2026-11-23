@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Me } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
+import { routes as systemRoutes } from '@/modules/system'
 import { useNav } from './nav'
 
 const page = { template: '<div />' }
@@ -15,12 +16,14 @@ const routes = [
   { path: '/bookings', name: 'bookings', component: page },
   { path: '/purchases', name: 'purchases', component: page },
   { path: '/funds', name: 'funds', component: page, meta: { manager: true } },
+  ...systemRoutes.map((r) => ({ ...r, path: `/${r.path}` })),
 ]
 
-async function setup(role: 'student' | 'manager') {
+async function setup(role: 'student' | 'manager' | 'ops', group: Me['group'] = { id: 1, name: '组' }) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useAuthStore().user = { role, is_supervisor: role === 'manager', is_superuser: false, group: { id: 1, name: '组' } } as Me
+  const ops = role === 'ops'
+  useAuthStore().user = { role: ops ? 'student' : role, is_supervisor: role === 'manager', is_superuser: ops, group } as Me
   const router = createRouter({ history: createMemoryHistory(), routes })
   let nav!: ReturnType<typeof useNav>
   mount(defineComponent({ setup: () => { nav = useNav() }, template: '<div />' }), { global: { plugins: [pinia, router] } })
@@ -40,6 +43,23 @@ it('lists only modules and pages the role may open, and highlights the list page
   expect(manager.nav.page.value).toBe('equipment')
 })
 
+it("gives ops 系统管理's pages as the sidebar itself, and a superuser with a group the usual 系统管理 group", async () => {
+  const ops = await setup('ops', null)
+  expect(ops.router.currentRoute.value.path).toBe('/') // nothing else here; the real guard sends ops to /system
+  expect(ops.nav.modules.value.map((m) => [m.label, m.pages.length])).toEqual([
+    ['存储与备份', 1], ['账号', 1], ['课题组', 1], ['邮件', 1], ['版本', 1], ['登录记录', 1],
+  ])
+  expect(new Set(ops.nav.modules.value.map((m) => m.icon)).size).toBe(6) // each its own icon
+  await ops.router.push('/system')
+  expect(ops.router.currentRoute.value.name).toBe('system-storage')
+  expect(ops.nav.current.value?.key).toBe('system-storage')
+
+  const both = await setup('ops')
+  const system = both.nav.modules.value.find((m) => m.key === 'system')!
+  expect(system.pages.map((p) => p.label)).toEqual(['存储与备份', '账号', '课题组', '邮件', '版本', '登录记录'])
+  expect(both.nav.modules.value.some((m) => m.key === 'lab')).toBe(true)
+})
+
 it('keeps the pages a user opens as tabs: lists and records, not the workbench or -new forms, at most ten', async () => {
   const { router } = await setup('manager')
   const { trackTab, openedTabs, setTabTitle, closeTab, neighborTab, closeOtherTabs, closeAllTabs } = await import('./nav')
@@ -54,6 +74,7 @@ it('keeps the pages a user opens as tabs: lists and records, not the workbench o
   await visit('/equipment/3')
   await visit('/equipment/3?tab=history') // same record: one tab, keeps the latest address
   await visit('/equipment/new')
+  await visit('/system/accounts') // 系统管理 has its sidebar, not tabs
   await visit('/purchases') // another module's page joins the same strip
   expect(openedTabs().map((t) => t.full)).toEqual(['/equipment', '/equipment/3?tab=history', '/purchases'])
   setTabTitle('/equipment/3', 'UT-003 测厚仪')

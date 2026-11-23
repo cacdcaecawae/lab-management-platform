@@ -8,7 +8,7 @@ import { systemApi } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
 
-// Loaded by SystemView, which also marks the tab when an update is available.
+// Shared with the sidebar (stores/ops), which marks 版本 when an update is available.
 const info = defineModel<VersionInfo>('info', { required: true })
 const checking = ref(false)
 
