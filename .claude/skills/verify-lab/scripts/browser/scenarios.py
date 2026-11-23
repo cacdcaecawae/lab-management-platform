@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import django
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -75,7 +76,9 @@ def button(session, text, within=""):
     selector = f"//button[normalize-space(.)='{text}' or @aria-label='{text}']"
     if within:
         selector = within + selector
-    return WebDriverWait(session, 12).until(ec.element_to_be_clickable((By.XPATH, selector)))
+    # a list that reloads can replace the button between finding it and checking it: look again
+    return WebDriverWait(session, 12, ignored_exceptions=(StaleElementReferenceException,)).until(
+        ec.element_to_be_clickable((By.XPATH, selector)))
 
 
 def account(session, name):
@@ -118,7 +121,7 @@ def option(session, label, value):
 
 
 def screenshot(session, name):
-    assert session.current_url.startswith(APP + "/") and "/login" not in session.current_url
+    assert session.current_url.startswith(APP + "/") and urlsplit(session.current_url).path != "/login"  # not /system/logins
     # Include a compact UTF-8 readback even if the runner lacks CJK fonts.
     (EVIDENCE / f"{name}.txt").write_text(session.find_element(By.TAG_NAME, "body").text + "\n", encoding="utf-8")
     if not session.save_screenshot(str(EVIDENCE / f"{name}.png")):
