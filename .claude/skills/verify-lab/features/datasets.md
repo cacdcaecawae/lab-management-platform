@@ -34,6 +34,7 @@
 - **第二视角。** 运行 `bash .claude/skills/verify-lab/scripts/query.sh 'from datasets.models import DataFile; print([(f.name, f.sha256, f.file.name) for f in DataFile.objects.all()])'`，只有一行 `wave_001.csv`，存储路径形如 `datasets/1/<32 位十六进制>`；`backend/var/verify/data/datasets/1/` 下只有一个文件。把输出和 `SHA256SUMS` 复制到证据目录。
 - **跨账号隔离。** `new_page` 打开登录页，`isolatedContext` 为 `s_b`，用 `s_b` / `Verify-2026!` 登录。`navigate_page` 到 `http://127.0.0.1:5273/datasets/1`，用 `wait_for` 等 "记录不存在或无权查看"，页面上有 button "返回数据列表"。再用 `evaluate_script` 请求 `/api/datasets/1/` 和 `/api/files/1/download/`，两者状态码都是 404。截图存证。
 
+- 导师用成员筛选定位数据集。在详情点“打包下载 ZIP”，核对文件名与内容；从已提交记录进入历史版本时核对 ZIP 中只有快照文件。查看“被引用处”，点链接核对记录；编辑本人数据集，只有空且无引用的数据集可以删除。
 - 在数据集详情的文件列表里点 CSV 文件的预览入口，切换“表格 / 原文”，核对表头、带引号的跨行单元格和截断提示。关闭弹窗后仍可单独下载原文件。
 
 ## Gotchas

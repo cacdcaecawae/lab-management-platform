@@ -12,7 +12,7 @@
 - `publish`：管理员编辑，打开 switch "缺陷参数对学生公开" 并改一个缺陷的位置，保存后标签变"学生可见"；学生刷新后看到缺陷表格。
 - `history`：button "修改历史" 里有"缺陷参数对学生公开：否 → 是"和"原因：修改了缺陷参数"，不出现缺陷的数值。
 - `experiment-link`：学生新建实验记录，combobox "台账试件" 选这件试件，"保存草稿"后标签"CSK-IA-01 CSK-IA 标准试块"保留。实验记录里只有编号、名称和状态，没有缺陷参数。
-- `stale-return`：管理员打开"登记归还"的提示框不关；学生甲归还、学生乙借走同一件；管理员再点 "确定"，提示"借用记录已变化，请刷新后重新核对"，页面自动刷新为"学生乙 借用中"，学生甲那条的归还说明不变。再点 "登记归还"、"确定"，提示"已登记归还"。2026-11-18 走过（准备数据和学生的操作用 `fetch` 调接口，管理员的操作在页面上点），证据 `2026-11-18-specimens-review/`。
+- `stale-return`：管理员打开"登记归还"的提示框不关；学生甲归还、学生乙借走同一件；管理员再点 "登记归还"，提示"借用记录已变化，请刷新后重新核对"，页面自动刷新为"学生乙 借用中"，学生甲那条的归还说明不变。重新打开归还弹窗再点 "登记归还"，提示"已登记归还"。2026-11-18 走过（准备数据和学生的操作用 `fetch` 调接口，管理员的操作在页面上点），证据 `2026-11-18-specimens-review/`。
 - `filters`（未走过，只有接口测试）：工具栏的"类别""状态"下拉框，checkbox "只看借出的""我借的"。
 - `isolation`（只有接口测试）：外组管理员请求详情、借用都是 404，列表为空；编号只在组内唯一。
 
@@ -31,7 +31,7 @@
 - **学生看不到。** 新的 isolatedContext 用 `s_a` 登录，直接打开 `/specimens/1`，`wait_for` "未公开"。`evaluate_script` 读 `/api/specimens/1/` 和 `/api/specimens/` 的 `defects`，都是 `null`。截图。
 - **借用。** 点 "借用"，combobox "项目" 用 ArrowDown、Enter 选"导波螺栓松动"，"用途"填一句，combobox "预计归还日期" 用 `fill` 填昨天的日期再按 Enter，点 dialog 里的 "借用"，`wait_for` "已登记借用"。截图。
 - **别人借不了。** 用 `s_b` 登录打开列表，`wait_for` "借用中"；打开详情，`evaluate_script` 读 `main` 里按钮的名字（文字或 `aria-label`，只有"修改历史"），并带 `X-CSRFToken` POST `borrow/`（409 `on_loan`）和携带当前 `loan_id_seen` 的 `return/`（403）。
-- **归还。** 回到 `s_a`，点 "登记归还"，提示框里 `fill` "完好"，点 "确定"，`wait_for` "已登记归还"。
+- **归还。** 回到 `s_a`，点 "登记归还"，在归还弹窗的“归还说明”填“完好”，点 "登记归还"，`wait_for` "已登记归还"。
 - **公开和历史。** `mgr` 刷新详情，点 "编辑试件"，改第 2 个缺陷的位置后保存。再点 "编辑试件"，打开 switch（见 Gotchas），点 "保存"，`wait_for` "学生可见"。点 "修改历史"，`wait_for` "修改了缺陷参数"。截图。`s_a` 刷新详情，缺陷表格出现。
 - **实验记录。** `s_a` 打开 `/experiments/new`，选项目、填名称，combobox "台账试件" 用 ArrowDown、Enter 选中，按 Escape 收起，点 "保存草稿"，`wait_for` "EX-"。截图。
 - **数据库。** 用 query.sh（加 `PYTHONIOENCODING=utf-8`）读 `Specimen.defects`、`SpecimenLoan`、`Experiment.specimen_items` 和 `Specimen.history` 的 `history_change_reason`。实验记录的编号 `code` 是属性，不能放进 `values_list`。

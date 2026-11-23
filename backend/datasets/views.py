@@ -1,10 +1,15 @@
+import os
+import shutil
+import tempfile
+import zipfile
+
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, ProtectedError, Sum
 from django.http import FileResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.filters import SearchFilter
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
@@ -16,6 +21,14 @@ from core.preview import preview_response
 
 from .models import DataFile, Dataset
 from .serializers import DataFileSerializer, DatasetSerializer
+
+DEFAULT_DATASET_ZIP_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
+
+
+class DatasetTooLargeForZip(APIException):
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = "数据集文件总大小超过打包上限，请逐个下载。"
+    default_code = "too_large_for_zip"
 
 
 def save_uploads(dataset, user, uploads, client_sha256):
@@ -118,22 +131,102 @@ class DatasetViewSet(viewsets.ModelViewSet):
         except ProtectedError:
             raise Conflict("数据集刚被引用，不能删除", code="invalid_state") from None
 
+    def _files_for_version(self, dataset, version_param):
+        # Not dataset.files: that reuses the version prefetch, which loads only name + sha256.
+        files = DataFile.objects.filter(dataset=dataset).select_related("uploaded_by")
+        if version_param:
+            # The file list of a version pinned by a submitted record.
+            snapshot = dataset.snapshots.filter(digest=version_param.strip().lower()).first()
+            if snapshot is None:
+                raise NotFound("没有这个版本")
+            files = files.filter(snapshots=snapshot)
+        return files
+
     @action(detail=True, methods=["get", "post"], parser_classes=[MultiPartParser])
     def files(self, request, pk=None):
         dataset = self.get_object()  # out of scope -> 404; POST by a non-owner -> 403
         if request.method == "GET":
-            # Not dataset.files: that reuses the version prefetch, which loads only name + sha256.
-            files = DataFile.objects.filter(dataset=dataset).select_related("uploaded_by")
-            if request.query_params.get("version"):
-                # The file list of a version pinned by a submitted record.
-                snapshot = dataset.snapshots.filter(digest=request.query_params["version"].strip().lower()).first()
-                if snapshot is None:
-                    raise NotFound("没有这个版本")
-                files = files.filter(snapshots=snapshot)
+            files = self._files_for_version(dataset, request.query_params.get("version"))
             return Response(DataFileSerializer(files, many=True).data)
         client_sha256 = request.data.get("sha256", "").strip().lower()
         created = save_uploads(dataset, request.user, request.FILES.getlist("file"), client_sha256)
         return Response(DataFileSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, url_path="download-zip")
+    def download_zip(self, request, pk=None):
+        dataset = self.get_object()
+        version_param = request.query_params.get("version")
+        files = list(self._files_for_version(dataset, version_param))
+        if not files:
+            raise Conflict("数据集里还没有文件。", code="empty_dataset")
+        max_bytes = getattr(settings, "DATASET_ZIP_MAX_BYTES", DEFAULT_DATASET_ZIP_MAX_BYTES)
+        if sum(f.size for f in files) > max_bytes:
+            limit_hint = f"（{max_bytes // (1024 * 1024)} MB）" if max_bytes >= 1024 * 1024 else ""
+            raise DatasetTooLargeForZip(f"数据集文件总大小超过打包上限{limit_hint}，请逐个下载。")
+
+        temp_dir = getattr(settings, "FILE_UPLOAD_TEMP_DIR", None)
+        buf = tempfile.SpooledTemporaryFile(
+            max_size=10 * 1024 * 1024,
+            dir=temp_dir if temp_dir and os.path.isdir(temp_dir) else None,
+        )
+        try:
+            with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+                for data_file in files:
+                    arcname = clean_file_name(data_file.name) or f"file-{data_file.pk}"
+                    with data_file.file.open("rb") as src, zf.open(arcname, "w") as dst:
+                        shutil.copyfileobj(src, dst, 64 * 1024)
+        except FileNotFoundError:
+            buf.close()
+            raise NotFound("数据集有文件已缺失，无法打包下载。") from None
+        except Exception:
+            buf.close()
+            raise
+        buf.seek(0)
+        version_tag = version_param.strip()[:12] if version_param else ""
+        filename = f"{dataset.code}-{version_tag}.zip" if version_tag else f"{dataset.code}.zip"
+        resp = FileResponse(buf, as_attachment=True, filename=filename, content_type="application/zip")
+        resp["Cache-Control"] = "private, no-store"
+        return resp
+
+    @action(detail=True)
+    def references(self, request, pk=None):
+        """Reverse references via Django reverse managers (keeps datasets independent of research/reports)."""
+        dataset = self.get_object()
+        experiments = [
+            {"id": e.id, "code": e.code, "title": e.title, "status": e.status}
+            for e in scope_private(
+                dataset.experiments.only("id", "title", "status", "created_at", "date", "owner_id"),
+                request.user,
+            ).order_by("-date", "-id")
+        ]
+        run_map = {}
+        for rel_name, role in (("used_by_runs", "input"), ("script_of_runs", "script"), ("produced_by_runs", "output")):
+            qs = scope_private(
+                getattr(dataset, rel_name).only("id", "title", "status", "created_at", "owner_id"),
+                request.user,
+            ).order_by("-created_at", "-id")
+            for run in qs:
+                entry = run_map.setdefault(
+                    run.id,
+                    {"id": run.id, "code": run.code, "title": run.title, "status": run.status, "roles": []},
+                )
+                entry["roles"].append(role)
+        runs = sorted(run_map.values(), key=lambda r: -r["id"])
+        reports = [
+            {
+                "id": r.id,
+                "week_start": r.week_start.isoformat(),
+                "status": r.status,
+                "owner": {"id": r.owner_id, "name": r.owner.name},
+            }
+            for r in scope_private(
+                dataset.weekly_reports.select_related("owner").only(
+                    "id", "week_start", "status", "owner_id", "owner__id", "owner__name"
+                ),
+                request.user,
+            ).order_by("-week_start", "-id")
+        ]
+        return Response({"experiments": experiments, "runs": runs, "reports": reports})
 
 
 class DataFileViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):

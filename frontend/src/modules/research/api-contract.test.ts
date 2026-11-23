@@ -28,6 +28,8 @@ describe.each([
     expect(lastCall()).toEqual({ url: `/api/${name}/`, method: 'POST', body: { title: 'T' } })
     await mod.update(4, { title: 'T2' })
     expect(lastCall()).toEqual({ url: `/api/${name}/4/`, method: 'PATCH', body: { title: 'T2' } })
+    await mod.remove(4)
+    expect(lastCall()).toMatchObject({ url: `/api/${name}/4/`, method: 'DELETE' })
     await mod.submit(4)
     expect(lastCall()).toMatchObject({ url: `/api/${name}/4/submit/`, method: 'POST' })
     await mod.returnToDraft(4, '缺少数据')

@@ -200,6 +200,8 @@
 | DELETE | `/api/datasets/{id}/` | 本人 | 仅当没有文件、且未被实验/处理记录/周报引用；否则 409 `invalid_state` |
 | GET | `/api/datasets/{id}/files/?version=` | 个人数据范围 | 不分页，按文件名排序；带 `version`（完整版本码）时只列该版本的文件，未知版本 404 |
 | POST | `/api/datasets/{id}/files/` | 本人 | `multipart/form-data`：一个或多个 `file` 字段；可选 `sha256`（仅单文件时，客户端算好的校验值）。→ 201 `[DataFile]` |
+| GET | `/api/datasets/{id}/download-zip/?version=` | 个人数据范围 | 整包下载 ZIP（支持可选 `version` 快照）；空数据集 409 `empty_dataset`，总大小超限（默认 200 MB）413 `too_large_for_zip`，底层文件缺失 404 |
+| GET | `/api/datasets/{id}/references/` | 个人数据范围 | 返回引用此数据集的可见记录：`{experiments: [ExperimentBrief], runs: [RunBrief & {roles}], reports: [{id, week_start, status, owner}]}` |
 | GET | `/api/files/{id}/` | 个人数据范围 | `DataFile` |
 | GET | `/api/files/{id}/download/` | 个人数据范围 | 流式下载，`Content-Disposition: attachment`（文件名用 RFC 5987 编码） |
 | GET | `/api/files/{id}/preview/?raw=1` | 个人数据范围 | 安全在线预览：文本/CSV/代码返回 JSON（最多前 256 KB / 200 行，自动识别 UTF-8 / GB18030）；白名单图片（不含 SVG）与 PDF 带 `?raw=1` 内联返回并附 `nosniff` / CSP / `Cache-Control: private`；不支持类型带 `?raw=1` 返回 415 |
@@ -256,7 +258,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/reports/?owner=&week_start=&status=` | 个人数据范围 | |
+| GET | `/api/reports/?owner=&week_start=&status=&search=` | 个人数据范围 | `search` 匹配学生姓名及周报四段正文 |
 | POST | `/api/reports/` | 登录成员 | `{week_start, goals, done, findings, next_plan, experiment_ids, dataset_ids, run_ids}`；`week_start` 必须是周一（400）；同人同周重复 → 409 `conflict` |
 | GET | `/api/reports/{id}/` | 个人数据范围 | |
 | PATCH | `/api/reports/{id}/` | 本人，状态为 `draft` 或 `needs_revision` | 否则 409 `invalid_state` |
@@ -265,6 +267,8 @@
 | POST | `/api/reports/{id}/feedback/` | 本组管理员/导师，且不是周报本人 | `{verdict, content}`；仅 `submitted` 状态可反馈；`needs_revision` 时 `content` 必填；状态随 `verdict` 变化；返回 `WeeklyReport` |
 | GET | `/api/reports/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
 | GET | `/api/reports/missing/?week_start=` | 本组管理员/导师 | 本组在籍学生中该周没有 `submitted`/`reviewed`/`needs_revision` 周报的人 → `[UserBrief]`；`week_start` 缺省为本周一 |
+| GET | `/api/reports/digest/?week_start=` | 本组管理员/导师 | 指定周（默认本周一）本组汇总：`{week_start, reports: [WeeklyReport], missing: [UserBrief]}`（不含草稿） |
+| GET | `/api/reports/digest/export/?week_start=` | 本组管理员/导师 | 导出指定周本组汇总 Markdown（`weekly-digest-<week_start>.md`，UTF-8，不含草稿） |
 
 校验：关联的实验、数据集、处理记录必须属于周报所有者本人。状态变化与反馈写入在同一事务中。
 

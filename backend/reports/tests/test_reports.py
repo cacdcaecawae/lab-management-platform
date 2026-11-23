@@ -260,3 +260,68 @@ def test_group_supervisors_can_read(api, student_a, manager, advisor):
         client = api(user)
         assert client.get(url(target)).data["id"] == target.id
         assert client.get(url(target, "history/")).status_code == 200
+
+
+# --- search / digest / export -------------------------------------------------------------------
+
+
+def test_list_search_filters_content_and_owner(api, student_a, student_b, manager):
+    a = report(student_a, goals="超声兰姆波标定", done="采集 5 MHz 数据", status=S.SUBMITTED)
+    b = report(student_b, findings="铝板衰减明显", next_plan="准备焊缝试件", status=S.SUBMITTED)
+    assert [x["id"] for x in api(manager).get(URL, {"search": "兰姆波"}).data["results"]] == [a.id]
+    assert [x["id"] for x in api(manager).get(URL, {"search": "焊缝"}).data["results"]] == [b.id]
+    assert [x["id"] for x in api(manager).get(URL, {"search": student_b.name}).data["results"]] == [b.id]
+    # Student search still respects private scope.
+    assert api(student_a).get(URL, {"search": "焊缝"}).data["results"] == []
+
+
+def test_digest_returns_handed_in_reports_and_missing(api, group, other_group, student_a, student_b, manager, other_manager):
+    student_c = make_user("s_c", group)
+    outsider = make_user("s_out", other_group)
+    r_a = report(student_a, goals="目标A", done="完成A", status=S.SUBMITTED)
+    report(student_b, goals="草稿不进汇总", status=S.DRAFT)
+    r_c = report(student_c, goals="目标C", status=S.REVIEWED)
+    report(outsider, goals="外组周报", status=S.SUBMITTED)
+
+    resp = api(manager).get(f"{URL}digest/", {"week_start": "2026-11-16"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week_start"] == "2026-11-16"
+    assert [r["id"] for r in body["reports"]] == [r_a.id, r_c.id]
+    assert body["missing"] == [{"id": student_b.id, "name": "s_b"}]
+
+    # Cross-group isolation
+    other = api(other_manager).get(f"{URL}digest/", {"week_start": "2026-11-16"}).json()
+    assert [r["owner"]["id"] for r in other["reports"]] == [outsider.id]
+    assert other["missing"] == []
+
+    # Validation and role checks
+    assert api(manager).get(f"{URL}digest/", {"week_start": "2026-11-18"}).status_code == 400
+    assert api(student_a).get(f"{URL}digest/", {"week_start": "2026-11-16"}).status_code == 403
+
+
+def test_digest_export_markdown(api, project, student_a, student_b, manager, other_manager):
+    exp = Experiment.objects.create(owner=student_a, project=project, title="重复性实验", date=MONDAY)
+    r_a = report(student_a, goals="目标A", done="完成3组采集", findings="信噪比提升", next_plan="写初稿", status=S.REVIEWED)
+    r_a.experiments.add(exp)
+    ReportFeedback.objects.create(report=r_a, author=manager, verdict=ReportFeedback.Verdict.REVIEWED, content="进展不错")
+    report(student_b, goals="草稿内容不应导出", status=S.DRAFT)
+
+    resp = api(manager).get(f"{URL}digest/export/", {"week_start": "2026-11-16"})
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/markdown")
+    assert "weekly-digest-2026-11-16.md" in resp["Content-Disposition"]
+    assert resp["Cache-Control"] == "private, no-store"
+    text = resp.content.decode("utf-8")
+    assert "2026-11-16" in text
+    assert "s_a" in text and "完成3组采集" in text and exp.code in text and "进展不错" in text
+    assert "未交：s_b" in text
+    assert "草稿内容不应导出" not in text
+
+    # Other group does not see group's reports
+    other_text = api(other_manager).get(f"{URL}digest/export/", {"week_start": "2026-11-16"}).content.decode("utf-8")
+    assert "完成3组采集" not in other_text
+
+    # Student 403, invalid date 400
+    assert api(student_a).get(f"{URL}digest/export/", {"week_start": "2026-11-16"}).status_code == 403
+    assert api(manager).get(f"{URL}digest/export/", {"week_start": "2026-11-18"}).status_code == 400

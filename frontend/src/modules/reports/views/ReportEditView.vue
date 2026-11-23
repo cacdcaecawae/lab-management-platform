@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { replaceSavedEditor } from '@/router/saved-editor'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError } from '@/api/client'
 import { datasetsApi } from '@/modules/datasets/api'
 import { experimentsApi, runsApi } from '@/modules/research/api'
@@ -10,7 +10,7 @@ import { reportsApi } from '@/modules/reports/api'
 import type { DatasetBrief, ExperimentBrief, ReportWrite, RunBrief, Verdict, WeeklyReport } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
-import { formatTime, mergeById, mondayOf, notMonday } from '@/utils/format'
+import { formatTime, mergeById, mondayOf, notMonday, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
@@ -34,7 +34,9 @@ const record = ref<WeeklyReport | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const loading = ref(false)
 const saving = ref(false)
+const carrying = ref(false)
 const historyOpen = ref(false)
+const nextPendingId = ref<number | null>(null)
 
 const weekFromQuery = typeof route.query.week_start === 'string' ? route.query.week_start : ''
 const form = reactive<ReportWrite>({
@@ -50,9 +52,10 @@ const form = reactive<ReportWrite>({
 const errors = useFieldErrors(Object.keys(form))
 
 // No record yet only means "new" on the -new route; a failed load must not turn into a create form.
-const isNew = !route.params.id
-const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew))
-const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew))
+const isNew = computed(() => !route.params.id)
+const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew.value))
+const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew.value))
+const canDelete = computed(() => record.value?.status === 'draft' && isOwner.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isSupervisor && !isOwner.value)
@@ -83,14 +86,56 @@ function fill(r: WeeklyReport) {
   markSaved()
 }
 
+let loadSeq = 0
 async function load(id: number) {
+  const mySeq = ++loadSeq
   loading.value = true
   try {
-    fill(await reportsApi.get(id))
+    const data = await reportsApi.get(id)
+    if (mySeq !== loadSeq) return
+    fill(data)
   } catch (e) {
-    loadError.value = errorMessage(e)
+    if (mySeq === loadSeq) loadError.value = errorMessage(e)
   } finally {
-    loading.value = false
+    if (mySeq === loadSeq) loading.value = false
+  }
+}
+
+async function carryLastPlan() {
+  const week = form.week_start
+  const previous = new Date(week + 'T12:00:00')
+  if (Number.isNaN(previous.getTime())) return
+  previous.setDate(previous.getDate() - 7)
+  carrying.value = true
+  try {
+    const page = await reportsApi.list({ owner: auth.user?.id, week_start: toDateStr(previous), page_size: 1 })
+    if (!isNew.value || form.week_start !== week) return
+    const detail = page.results[0]
+    if (!detail) {
+      ElMessage.info('上周没有周报')
+      return
+    }
+    if (!detail.next_plan.trim()) {
+      ElMessage.info(`上周（${detail.week_start}）周报没有填写下周计划`)
+      return
+    }
+    if (form.goals.trim()) {
+      try {
+        await ElMessageBox.confirm('当前「本周目标」已有内容，是否用上周的下周计划覆盖？', '带入上周计划', {
+          confirmButtonText: '覆盖',
+          cancelButtonText: '取消',
+        })
+      } catch {
+        return
+      }
+    }
+    if (!isNew.value || form.week_start !== week) return
+    form.goals = detail.next_plan
+    ElMessage.success(`已带入 ${detail.week_start} 周报的下周计划`)
+  } catch (e) {
+    showError(e)
+  } finally {
+    carrying.value = false
   }
 }
 
@@ -133,6 +178,30 @@ async function submit() {
   }
 }
 
+async function removeDraft() {
+  if (!record.value) return
+  try {
+    await ElMessageBox.confirm('确定删除这份草稿？删除后无法恢复。', '删除草稿', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    await reportsApi.remove(record.value.id)
+    markSaved()
+    ElMessage.success('草稿已删除')
+    await router.push({ name: 'reports' })
+  } catch (e) {
+    showError(e)
+  } finally {
+    saving.value = false
+  }
+}
+
 // ---- supervisor feedback ----
 const fb = reactive({ verdict: 'reviewed' as Verdict, content: '' })
 const fbErrors = useFieldErrors(['verdict', 'content'])
@@ -145,16 +214,42 @@ async function sendFeedback() {
   }
   sending.value = true
   try {
-    fill(await reportsApi.feedback(record.value!.id, fb))
+    const currentId = record.value!.id
+    fill(await reportsApi.feedback(currentId, fb))
     fb.content = ''
     fbErrors.clear()
     ElMessage.success('反馈已提交')
+    try {
+      const pending = await reportsApi.list({ status: 'submitted', page_size: 5 })
+      const next = pending.results.find((r) => r.id !== currentId && r.owner.id !== auth.user?.id)
+      nextPendingId.value = next ? next.id : null
+    } catch {
+      nextPendingId.value = null
+    }
   } catch (e) {
     fbErrors.handle(e)
   } finally {
     sending.value = false
   }
 }
+
+function goNextPending() {
+  if (!nextPendingId.value) return
+  void router.push({ name: 'report-edit', params: { id: nextPendingId.value } })
+}
+
+watch(
+  () => route.params.id,
+  (idParam) => {
+    if (!idParam) return
+    const num = Number(idParam)
+    if (record.value?.id !== num) {
+      loadError.value = ''
+      nextPendingId.value = null
+      load(num)
+    }
+  },
+)
 
 if (route.params.id) load(Number(route.params.id))
 </script>
@@ -169,7 +264,10 @@ if (route.params.id) load(Number(route.params.id))
         <PageHeader :back="{ name: 'reports' }" :title="record ? `${record.owner.name} · ${record.week_start} 这一周` : '写周报'">
           <template v-if="record" #tags><StatusTag :status="record.status" /></template>
           <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
+          <el-button v-if="nextPendingId" type="primary" @click="goNextPending">下一份待反馈</el-button>
           <template v-if="editable">
+            <el-button v-if="isNew" :loading="carrying" @click="carryLastPlan">带入上周计划</el-button>
+            <el-button v-if="canDelete" type="danger" plain :loading="saving" @click="removeDraft">删除草稿</el-button>
             <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
             <el-button type="primary" :loading="saving" @click="submit">
               {{ record?.status === 'needs_revision' ? '修改后重新提交' : '提交' }}
@@ -289,10 +387,8 @@ if (route.params.id) load(Number(route.params.id))
 .notice {
   margin-bottom: 16px;
 }
-.meta,
-.muted {
+.meta {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
 }
 .section h4 {
   margin: 20px 0 8px;

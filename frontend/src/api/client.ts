@@ -42,7 +42,7 @@ export function withQuery(path: string, query?: Query): string {
   return qs ? `${path}?${qs}` : path
 }
 
-async function request<T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, query?: Query, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   let payload: BodyInit | undefined
   if (body instanceof FormData) payload = body
@@ -51,7 +51,9 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
     payload = JSON.stringify(body)
   }
   if (method !== 'GET') headers['X-CSRFToken'] = csrfToken()
-  const res = await fetch(withQuery(path, query), { method, headers, body: payload, credentials: 'same-origin' })
+  const init: RequestInit = { method, headers, body: payload, credentials: 'same-origin' }
+  if (signal) init.signal = signal
+  const res = await fetch(withQuery(path, query), init)
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => null)
   if (!res.ok) {
@@ -70,7 +72,7 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
 }
 
 export const api = {
-  get: <T>(path: string, query?: Query) => request<T>('GET', path, undefined, query),
+  get: <T>(path: string, query?: Query, signal?: AbortSignal) => request<T>('GET', path, undefined, query, signal),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),

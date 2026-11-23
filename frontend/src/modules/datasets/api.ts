@@ -1,11 +1,16 @@
 import { api, ApiError, csrfToken, type ApiErrorBody, type Page } from '@/api/client'
-import type { DataFile, Dataset, DatasetWrite, ListQuery } from '@/api/types'
+import type { DataFile, Dataset, DatasetReferences, DatasetWrite, ListQuery } from '@/api/types'
 
 export const datasetsApi = {
   list: (q?: ListQuery) => api.get<Page<Dataset>>('/api/datasets/', q),
   get: (id: number) => api.get<Dataset>(`/api/datasets/${id}/`),
   create: (body: DatasetWrite) => api.post<Dataset>('/api/datasets/', body),
+  update: (id: number, body: Partial<Pick<DatasetWrite, 'name' | 'description'>>) => api.patch<Dataset>(`/api/datasets/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/datasets/${id}/`),
   files: (id: number, version?: string) => api.get<DataFile[]>(`/api/datasets/${id}/files/`, { version }),
+  references: (id: number) => api.get<DatasetReferences>(`/api/datasets/${id}/references/`),
+  downloadZipUrl: (id: number, version?: string) =>
+    version ? `/api/datasets/${id}/download-zip/?version=${encodeURIComponent(version)}` : `/api/datasets/${id}/download-zip/`,
   uploadFile,
 }
 

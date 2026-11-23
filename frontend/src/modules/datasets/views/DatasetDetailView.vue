@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Download, Edit } from '@element-plus/icons-vue'
 import { datasetsApi, uploadFile } from '@/modules/datasets/api'
-import type { DataFile, Dataset } from '@/api/types'
+import type { DataFile, Dataset, DatasetReferences } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
-import { errorMessage } from '@/utils/errors'
+import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import { previewKindOf } from '@/utils/preview'
-import PageHeader from '@/components/PageHeader.vue'
 import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import IconButton from '@/components/IconButton.vue'
+import FormDialog from '@/components/FormDialog.vue'
+import StatusTag from '@/components/StatusTag.vue'
+
+const RUN_ROLE_LABELS: Record<'input' | 'script' | 'output', string> = {
+  input: '输入',
+  script: '脚本',
+  output: '结果',
+}
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -18,8 +28,13 @@ const id = Number(route.params.id)
 
 const dataset = ref<Dataset | null>(null)
 const files = ref<DataFile[]>([])
+const refs = ref<DatasetReferences>({ experiments: [], runs: [], reports: [] })
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const isOwner = computed(() => dataset.value?.owner.id === auth.user?.id)
+const hasReferences = computed(
+  () => refs.value.experiments.length > 0 || refs.value.runs.length > 0 || refs.value.reports.length > 0,
+)
+const canDelete = computed(() => isOwner.value && dataset.value?.file_count === 0 && !hasReferences.value)
 // ?version=<code>: the file list a submitted record pinned; files uploaded later are marked.
 const version = typeof route.query.version === 'string' ? route.query.version : ''
 const versionFileIds = ref<Set<number> | null>(null)
@@ -33,10 +48,66 @@ function openPreview(row: DataFile) {
 
 async function load() {
   try {
-    ;[dataset.value, files.value] = await Promise.all([datasetsApi.get(id), datasetsApi.files(id)])
+    ;[dataset.value, files.value, refs.value] = await Promise.all([
+      datasetsApi.get(id),
+      datasetsApi.files(id),
+      datasetsApi.references(id),
+    ])
     if (version) versionFileIds.value = new Set((await datasetsApi.files(id, version)).map((f) => f.id))
   } catch (e) {
     loadError.value = errorMessage(e)
+  }
+}
+
+// ---- edit dataset metadata ----
+const editOpen = ref(false)
+const editForm = reactive({ name: '', description: '' })
+const editErrors = useFieldErrors(['name', 'description'])
+const savingEdit = ref(false)
+
+function openEdit() {
+  if (!dataset.value) return
+  editForm.name = dataset.value.name
+  editForm.description = dataset.value.description
+  editErrors.clear()
+  editOpen.value = true
+}
+
+async function saveEdit() {
+  savingEdit.value = true
+  try {
+    dataset.value = await datasetsApi.update(id, { name: editForm.name, description: editForm.description })
+    editOpen.value = false
+    ElMessage.success('已保存')
+  } catch (e) {
+    editErrors.handle(e)
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+// ---- delete empty unreferenced dataset ----
+const deleting = ref(false)
+async function removeDataset() {
+  if (!dataset.value) return
+  try {
+    await ElMessageBox.confirm(`确定删除空数据集「${dataset.value.name}」？删除后无法恢复。`, '删除数据集', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    await datasetsApi.remove(id)
+    ElMessage.success('数据集已删除')
+    await router.push({ name: 'datasets' })
+  } catch (e) {
+    showError(e)
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -91,6 +162,15 @@ load()
       <template #header>
         <PageHeader :back="{ name: 'datasets' }">
           <template #title><span class="code">{{ dataset.code }}</span> {{ dataset.name }}</template>
+          <IconButton
+            v-if="dataset.file_count > 0"
+            :icon="Download"
+            label="打包下载 ZIP"
+            tag="a"
+            :href="datasetsApi.downloadZipUrl(dataset.id, version || undefined)"
+          />
+          <IconButton v-if="isOwner" :icon="Edit" label="编辑数据集" @click="openEdit" />
+          <el-button v-if="canDelete" type="danger" plain :loading="deleting" @click="removeDataset">删除数据集</el-button>
         </PageHeader>
       </template>
       <el-descriptions :column="1" border>
@@ -108,7 +188,7 @@ load()
       <template #header>
         <div class="actions">
           <span>文件</span>
-          <span style="flex: 1" />
+          <span class="grow" />
           <template v-if="isOwner">
             <input ref="picker" type="file" multiple hidden @change="onPick" />
             <el-button type="primary" :loading="uploading" @click="picker?.click()">上传文件</el-button>
@@ -168,6 +248,56 @@ load()
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-card class="card" header="被引用处">
+      <div v-if="!hasReferences" class="muted">暂无实验记录、数据处理记录或周报引用该数据集。</div>
+      <div v-else class="refs">
+        <section v-if="refs.experiments.length" class="ref-group">
+          <div class="ref-title">实验记录（{{ refs.experiments.length }}）</div>
+          <div class="ref-list">
+            <div v-for="e in refs.experiments" :key="e.id" class="actions">
+              <RouterLink :to="{ name: 'experiment-edit', params: { id: e.id } }">
+                <span class="code">{{ e.code }}</span> {{ e.title }}
+              </RouterLink>
+              <StatusTag :status="e.status" />
+            </div>
+          </div>
+        </section>
+        <section v-if="refs.runs.length" class="ref-group">
+          <div class="ref-title">数据处理记录（{{ refs.runs.length }}）</div>
+          <div class="ref-list">
+            <div v-for="r in refs.runs" :key="r.id" class="actions">
+              <RouterLink :to="{ name: 'run-edit', params: { id: r.id } }">
+                <span class="code">{{ r.code }}</span> {{ r.title }}
+              </RouterLink>
+              <el-tag v-for="role in r.roles" :key="role" size="small" type="info" disable-transitions>{{ RUN_ROLE_LABELS[role] }}</el-tag>
+              <StatusTag :status="r.status" />
+            </div>
+          </div>
+        </section>
+        <section v-if="refs.reports.length" class="ref-group">
+          <div class="ref-title">周报（{{ refs.reports.length }}）</div>
+          <div class="ref-list">
+            <div v-for="rep in refs.reports" :key="rep.id" class="actions">
+              <RouterLink :to="{ name: 'report-edit', params: { id: rep.id } }">
+                {{ rep.owner.name }} · {{ rep.week_start }} 这一周
+              </RouterLink>
+              <StatusTag :status="rep.status" />
+            </div>
+          </div>
+        </section>
+      </div>
+    </el-card>
+
+    <FormDialog v-model="editOpen" title="编辑数据集" :loading="savingEdit" @submit="saveEdit">
+      <el-form-item label="名称" :error="editErrors.fe('name')" required>
+        <el-input v-model="editForm.name" />
+      </el-form-item>
+      <el-form-item label="说明" :error="editErrors.fe('description')">
+        <el-input v-model="editForm.description" type="textarea" :autosize="{ minRows: 3 }" />
+      </el-form-item>
+      <el-alert v-for="msg in editErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    </FormDialog>
     <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
   </template>
 </template>
@@ -182,13 +312,28 @@ load()
 .upload-name {
   display: flex;
   gap: 12px;
-  font-size: 14px;
   margin-bottom: 4px;
-}
-.muted {
-  color: var(--el-text-color-secondary);
 }
 .ok {
   color: var(--el-color-success);
+}
+.refs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ref-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ref-title {
+  color: var(--lab-text-3);
+  font-weight: 600;
+}
+.ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { replaceSavedEditor } from '@/router/saved-editor'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { datasetsApi } from '@/modules/datasets/api'
@@ -19,7 +19,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
-import { Clock } from '@element-plus/icons-vue'
+import { Clock, CopyDocument } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
@@ -27,6 +27,7 @@ const route = useRoute()
 const router = useRouter()
 
 const record = ref<Experiment | null>(null)
+const copiedFrom = ref<Experiment | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const loading = ref(false)
 const saving = ref(false)
@@ -49,8 +50,9 @@ const form = reactive<ExperimentWrite>({
 const errors = useFieldErrors(Object.keys(form))
 
 // No record yet only means "new" on the -new route; a failed load must not turn into a create form.
-const isNew = !route.params.id
-const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew))
+const isNew = computed(() => !route.params.id)
+const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew.value))
+const canDelete = computed(() => !!record.value && editable.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 // a parameter value without a name is not in form.params yet
 const { markSaved } = useUnsavedGuard(form, () => editable.value, () => paramsEditor.value?.validate() === false)
@@ -67,14 +69,17 @@ const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 // Only the record owner's datasets can be linked; whoever can edit is the owner.
 const datasets = useOptions(() => datasetsApi.list({ owner: auth.user?.id, page_size: 100 }))
 const equipment = useOptions(() => equipmentApi.list({ page_size: 100 }))
-const equipmentOptions = computed(() => mergeById<EquipmentBrief>(equipment.value, [record.value?.equipment_item]))
+const equipmentOptions = computed(() => mergeById<EquipmentBrief>(equipment.value, [record.value?.equipment_item, copiedFrom.value?.equipment_item]))
 const specimens = useOptions(() => specimensApi.list({ page_size: 100 }))
-const specimenOptions = computed(() => mergeById<SpecimenBrief>(specimens.value, record.value?.specimen_items ?? []))
-const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project]))
+const specimenOptions = computed(() =>
+  mergeById<SpecimenBrief>(specimens.value, [...(record.value?.specimen_items ?? []), ...(copiedFrom.value?.specimen_items ?? [])]),
+)
+const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
 const datasetOptions = computed(() => mergeById<DatasetBrief>(datasets.value, record.value?.datasets ?? []))
 
 function fill(r: Experiment) {
   record.value = r
+  copiedFrom.value = null
   Object.assign(form, {
     project_id: r.project.id,
     title: r.title,
@@ -83,10 +88,30 @@ function fill(r: Experiment) {
     equipment: r.equipment,
     specimen: r.specimen,
     specimen_item_ids: r.specimen_items.map((s) => s.id),
-    params: r.params,
+    params: { ...r.params },
     steps: r.steps,
     anomalies: r.anomalies,
     dataset_ids: r.datasets.map((d) => d.id),
+  })
+  markSaved()
+}
+
+function prefillCopy(src: Experiment) {
+  record.value = null
+  copiedFrom.value = src
+  const own = src.owner.id === auth.user?.id
+  Object.assign(form, {
+    project_id: src.project.id,
+    title: `${src.title}（复制）`,
+    date: toDateStr(new Date()),
+    equipment_item_id: src.equipment_item?.id ?? null,
+    equipment: src.equipment,
+    specimen: src.specimen,
+    specimen_item_ids: src.specimen_items.map((s) => s.id),
+    params: { ...src.params },
+    steps: src.steps,
+    anomalies: '',
+    dataset_ids: own ? src.datasets.map((d) => d.id) : [],
   })
   markSaved()
 }
@@ -100,6 +125,24 @@ async function load(id: number) {
   } finally {
     loading.value = false
   }
+}
+
+async function loadCopy(copyId: number) {
+  loading.value = true
+  try {
+    const src = await experimentsApi.get(copyId)
+    prefillCopy(src)
+    ElMessage.info(`已从 ${src.code} 带入内容，请确认后保存`)
+  } catch (e) {
+    showError(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+function copyAsDraft() {
+  if (!record.value) return
+  void router.push({ name: 'experiment-new', query: { copy: String(record.value.id) } })
 }
 
 async function save(): Promise<Experiment | null> {
@@ -142,6 +185,30 @@ async function submit() {
   }
 }
 
+async function removeDraft() {
+  if (!record.value) return
+  try {
+    await ElMessageBox.confirm('确定删除这份草稿？删除后无法恢复。', '删除草稿', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    await experimentsApi.remove(record.value.id)
+    markSaved()
+    ElMessage.success('草稿已删除')
+    await router.push({ name: 'experiments' })
+  } catch (e) {
+    showError(e)
+  } finally {
+    saving.value = false
+  }
+}
+
 async function returnToDraft() {
   let reason = ''
   try {
@@ -161,7 +228,24 @@ async function returnToDraft() {
   }
 }
 
+watch(
+  () => [route.params.id, route.query.copy] as const,
+  ([idParam, copyParam]) => {
+    if (idParam) {
+      const num = Number(idParam)
+      if (record.value?.id !== num) {
+        loadError.value = ''
+        load(num)
+      }
+    } else if (typeof copyParam === 'string' && Number(copyParam) > 0) {
+      loadError.value = ''
+      loadCopy(Number(copyParam))
+    }
+  },
+)
+
 if (route.params.id) load(Number(route.params.id))
+else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) loadCopy(Number(route.query.copy))
 </script>
 
 <template>
@@ -173,9 +257,11 @@ if (route.params.id) load(Number(route.params.id))
       <PageHeader :back="{ name: 'experiments' }">
         <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建实验记录</template></template>
         <template v-if="record" #tags><StatusTag :status="record.status" /></template>
+        <IconButton v-if="record" :icon="CopyDocument" label="复制为新草稿" @click="copyAsDraft" />
         <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
         <el-button v-if="canReturn" type="warning" @click="returnToDraft">退回</el-button>
         <template v-if="editable">
+          <el-button v-if="canDelete" type="danger" plain :loading="saving" @click="removeDraft">删除草稿</el-button>
           <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
           <el-button type="primary" :loading="saving" @click="submit">提交</el-button>
         </template>
