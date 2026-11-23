@@ -167,6 +167,8 @@ export interface DataFile {
   uploaded_by: UserBrief
   uploaded_at: string
   download_url: string
+  preview_url?: string
+  preview_kind?: 'image' | 'pdf' | 'text' | 'other'
 }
 
 export interface DatasetRunRef extends RunBrief {

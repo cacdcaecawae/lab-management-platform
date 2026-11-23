@@ -15,6 +15,8 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import IconButton from '@/components/IconButton.vue'
+import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
+import { previewKindOf } from '@/utils/preview'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -27,6 +29,12 @@ const keyword = ref('')
 const { items, count, page, pageSize, loading, load } = usePagedList(docsApi.list, filters)
 // shortcut: the first 100 devices; switch to remote search if the ledger grows past that.
 const devices = useOptions(() => equipmentApi.list({ page_size: 100 }))
+const previewOpen = ref(false)
+const previewTarget = ref<PreviewTarget | null>(null)
+function openPreview(file: { name: string; url: string; size?: number }) {
+  previewTarget.value = { name: file.name, url: file.url, size: file.size }
+  previewOpen.value = true
+}
 
 // ---- create / edit / detail dialog ----
 const blank = (): DocWrite => ({ title: '', category: 'manual', equipment_id: null, tags: [], description: '' })
@@ -216,8 +224,11 @@ watch(() => route.query.doc, (doc, previous) => {
       </el-table-column>
       <el-table-column label="最新文件" min-width="180">
         <template #default="{ row }">
-          <a v-if="row.latest" :href="row.latest.url" target="_blank" rel="noopener">{{ row.latest.name }}</a>
-          <span v-if="row.latest" class="muted"> 第 {{ row.latest.number }} 版</span>
+          <template v-if="row.latest">
+            <el-button v-if="previewKindOf(row.latest.name)" link type="primary" @click="openPreview(row.latest)">{{ row.latest.name }}</el-button>
+            <a v-else :href="row.latest.url" target="_blank" rel="noopener">{{ row.latest.name }}</a>
+            <span class="muted"> 第 {{ row.latest.number }} 版</span>
+          </template>
         </template>
       </el-table-column>
       <el-table-column label="作者" min-width="80">
@@ -270,8 +281,10 @@ watch(() => route.query.doc, (doc, previous) => {
         <ul v-if="current.versions.length" class="versions">
           <li v-for="v in current.versions" :key="v.id">
             <span class="version-no">第 {{ v.number }} 版</span>
-            <a :href="v.url" target="_blank" rel="noopener" class="name">{{ v.name }}</a>
+            <el-button v-if="previewKindOf(v.name)" link type="primary" class="name" @click="openPreview(v)">{{ v.name }}</el-button>
+            <a v-else :href="v.url" target="_blank" rel="noopener" class="name">{{ v.name }}</a>
             <span class="muted">{{ formatSize(v.size) }} · {{ v.uploaded_by.name }} · {{ formatTime(v.created_at) }}</span>
+            <a v-if="previewKindOf(v.name)" :href="v.url" :download="v.name" class="muted">下载</a>
             <span v-if="v.note" class="note">{{ v.note }}</span>
             <span class="mono muted" :title="`SHA256 ${v.sha256}`">{{ v.sha256.slice(0, 12) }}</span>
           </li>
@@ -292,6 +305,7 @@ watch(() => route.query.doc, (doc, previous) => {
       <el-button v-if="current && auth.isManager" type="danger" plain @click="remove">删除文档</el-button>
     </template>
   </FormDialog>
+  <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
 
   <HistoryDrawer
     v-if="current"

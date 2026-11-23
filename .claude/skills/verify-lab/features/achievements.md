@@ -32,6 +32,8 @@
 - **外组。** `x_mgr` 请求成果和全文 404，`/api/achievements/` 的 `count` 为 0。导出返回 200；要核对内容，照"导出"一步解开：压缩包里只有 `成果清单.xlsx`，表里只有表头。
 - **第二视角。** query.sh 读 `achievements.models.Achievement`：类型、状态、日期与页面一致，全文存储名为随机名，原文件名在 `fulltext_name`。
 
+- 打开带全文 PDF 的成果，点全文预览入口，核对文档内容和下载入口。
+
 ## Gotchas
 
 - 下拉框选项不出现在无障碍快照里；先 `click` 下拉框，再用 `evaluate_script` 点可见的 `.el-select-dropdown__item`。年份选项文字是"2026 年"，不是"2026"。

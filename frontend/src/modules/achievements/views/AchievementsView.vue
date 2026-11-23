@@ -24,10 +24,17 @@ import AchievementStatsPanel from './AchievementStatsPanel.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import IconButton from '@/components/IconButton.vue'
+import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
 
 const auth = useAuthStore()
 // the export answers with an attachment, so the page stays where it is
 const download = (url: string) => window.location.assign(url)
+const previewOpen = ref(false)
+const previewTarget = ref<PreviewTarget | null>(null)
+function openPdf(name: string, url: string) {
+  previewTarget.value = { name: name || '全文.pdf', url }
+  previewOpen.value = true
+}
 const statsOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
@@ -190,7 +197,7 @@ async function removeFulltext() {
       </el-table-column>
       <el-table-column label="全文" min-width="70">
         <template #default="{ row }">
-          <a v-if="row.fulltext_url" :href="row.fulltext_url" target="_blank" rel="noopener">PDF</a>
+          <el-button v-if="row.fulltext_url" link type="primary" @click="openPdf(row.fulltext_name || `${row.title}.pdf`, row.fulltext_url)">PDF</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -245,7 +252,12 @@ async function removeFulltext() {
       <template v-if="current">
         <div class="section-title">全文（PDF）</div>
         <div class="fulltext">
-          <a v-if="current.fulltext_url" :href="current.fulltext_url" target="_blank" rel="noopener">{{ current.fulltext_name }}</a>
+          <template v-if="current.fulltext_url">
+            <el-button link type="primary" @click="openPdf(current.fulltext_name || `${current.title}.pdf`, current.fulltext_url)">
+              {{ current.fulltext_name || '全文.pdf' }}
+            </el-button>
+            <a :href="current.fulltext_url" :download="current.fulltext_name || '全文.pdf'" class="muted">下载</a>
+          </template>
           <span v-else class="muted">暂未上传</span>
           <template v-if="writer">
             <el-button :icon="Upload" :loading="uploading" @click="picker?.click()">{{ current.fulltext_url ? '替换全文' : '上传全文' }}</el-button>
@@ -259,6 +271,7 @@ async function removeFulltext() {
       <el-button v-if="current && auth.isManager" type="danger" plain @click="remove">删除成果</el-button>
     </template>
   </FormDialog>
+  <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
 
   <HistoryDrawer
     v-if="current"

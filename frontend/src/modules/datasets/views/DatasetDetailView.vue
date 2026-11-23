@@ -8,6 +8,8 @@ import type { DataFile, Dataset, DatasetReferences } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
+import { previewKindOf } from '@/utils/preview'
+import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import IconButton from '@/components/IconButton.vue'
 import FormDialog from '@/components/FormDialog.vue'
@@ -36,6 +38,13 @@ const canDelete = computed(() => isOwner.value && dataset.value?.file_count === 
 // ?version=<code>: the file list a submitted record pinned; files uploaded later are marked.
 const version = typeof route.query.version === 'string' ? route.query.version : ''
 const versionFileIds = ref<Set<number> | null>(null)
+const previewOpen = ref(false)
+const previewTarget = ref<PreviewTarget | null>(null)
+
+function openPreview(row: DataFile) {
+  previewTarget.value = { name: row.name, url: row.download_url, previewUrl: row.preview_url, size: row.size }
+  previewOpen.value = true
+}
 
 async function load() {
   try {
@@ -229,8 +238,13 @@ load()
         <el-table-column label="上传时间" min-width="140">
           <template #default="{ row }">{{ formatTime(row.uploaded_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="70" fixed="right">
-          <template #default="{ row }"><el-link type="primary" :href="row.download_url">下载</el-link></template>
+        <el-table-column label="操作" min-width="110" fixed="right">
+          <template #default="{ row }">
+            <div class="actions">
+              <el-button v-if="previewKindOf(row.name)" link type="primary" @click="openPreview(row as DataFile)">预览</el-button>
+              <el-link type="primary" :href="row.download_url">下载</el-link>
+            </div>
+          </template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -284,6 +298,7 @@ load()
       </el-form-item>
       <el-alert v-for="msg in editErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </FormDialog>
+    <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
   </template>
 </template>
 

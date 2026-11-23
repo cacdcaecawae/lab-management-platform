@@ -50,6 +50,8 @@
 - **到货关联。** `mgr` 在"设备台账"点 "新建设备"：编号 `PA-002`、名称 `5MHz 相控阵探头`，combobox "采购申请（已到货）" 选 PR-2026-0001，保存，详情里"采购申请"一行是链接 PR-2026-0001。`s_b` 打开同一台设备，`evaluate_script` 看 `/api/equipment/1/` 的 `purchase` 只有 `{id, code}`，页面上不是链接。`mgr` 在"耗材库存"新增 `耦合剂`（单位 `瓶`），点 "入库"：数量 `3`，combobox "采购申请（已到货）" 选这张，"登记"。`s_a` 刷新申请详情，`wait_for` "到货登记"：设备 PA-002 和"耗材入库 耦合剂 +3"。整页截图。
 - **数据库。** query.sh 读 `PurchaseRequest`、`Approval`、`Attachment`、`Equipment.purchase_id`、`StockTxn.purchase_id`：审批记录 5 条，`total` 依次是审批人当时看到的金额；附件的存储名是 `procurement/<随机串>.pdf`。中文要正确保存，见 Gotchas。
 
+- 在采购详情上传 PDF 附件并点文件名，确认弹窗可预览、下载，关闭后仍停留在原采购单。
+
 ## Gotchas
 
 - 用 `fill` 把输入框填成空字符串，界面上清空了，但 Vue 没收到输入事件，提交的还是旧值。清空要点进输入框，按 `Control+A` 再按 `Backspace`。
