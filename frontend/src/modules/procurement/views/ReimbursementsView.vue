@@ -137,12 +137,27 @@ const NEXT: Record<string, { to: ReimbursementStatus; label: string; confirm: st
   submitted: { to: 'paid', label: '已到账', confirm: '确认报销款已经到账？' },
 }
 
-async function advance(r: Reimbursement, to: ReimbursementStatus, message: string) {
+// 交财务 in the dialog hands in what is on screen: edits not saved yet go first, as afterwards nothing can change.
+async function saveEdits() {
+  const data = body()
+  if (!Object.keys(data).length) return true
+  try {
+    await reimbursementsApi.update(current.value!.id, data)
+    opened = { ...form }
+    return true
+  } catch (e) {
+    errors.handle(e)
+    return false
+  }
+}
+
+async function advance(r: Reimbursement, to: ReimbursementStatus, message: string, fromDialog = false) {
   try {
     await ElMessageBox.confirm(message, `报销 ${r.code}`, { type: 'warning' })
   } catch {
     return
   }
+  if (fromDialog && !(await saveEdits())) return
   try {
     const saved = await reimbursementsApi.advance(r.id, to)
     if (current.value?.id === r.id) current.value = saved
@@ -190,13 +205,22 @@ watch([tab, statsQuery], () => tab.value === 'stats' && loadStats())
 
 const summary = () => (stats.value ? [`合计`, String(stats.value.count), formatMoney(stats.value.total)] : [])
 
+const reminding = ref(false)
 async function remindFinance() {
+  try {
+    await ElMessageBox.confirm('给财务邮箱发一封邮件，列出已交财务、尚未到账的报销？', '发送财务提醒', { confirmButtonText: '发送' })
+  } catch {
+    return
+  }
+  reminding.value = true
   try {
     const { sent, to } = await reimbursementsApi.remindFinance()
     if (sent) ElMessage.success(`已发送给 ${to}，列出 ${sent} 笔已交财务、尚未到账的报销`)
     else ElMessage.info('没有已交财务、尚未到账的报销，没有发送')
   } catch (e) {
     showError(e)
+  } finally {
+    reminding.value = false
   }
 }
 
@@ -307,7 +331,7 @@ async function editFinanceEmail() {
           <template #actions>
             <IconButton :icon="Download" label="导出 Excel" tag="a" :href="reimbursementsApi.exportUrl(statsQuery)" />
             <IconButton v-if="auth.isManager" :icon="Setting" label="财务邮箱" @click="editFinanceEmail" />
-            <el-button v-if="auth.isManager" @click="remindFinance">发送财务提醒</el-button>
+            <el-button v-if="auth.isManager" :loading="reminding" @click="remindFinance">发送财务提醒</el-button>
           </template>
         </PageToolbar>
         <el-table v-loading="statsLoading" :data="stats?.rows ?? []" show-summary :summary-method="summary" empty-text="没有符合条件的报销">
@@ -383,11 +407,11 @@ async function editFinanceEmail() {
       <el-button v-if="current && editable" type="danger" text @click="remove(current)">删除报销</el-button>
     </template>
     <template #actions>
+      <!-- not blue: one main button per dialog (DESIGN.md), and that is 保存 -->
       <el-button
         v-if="current && writer(current) && current.status === 'pending'"
-        type="primary"
-        :disabled="!hasInvoice(current)"
-        @click="advance(current, 'submitted', NEXT.pending.confirm)"
+        :disabled="!hasInvoice(current) || saving"
+        @click="advance(current, 'submitted', NEXT.pending.confirm, true)"
       >
         交财务
       </el-button>

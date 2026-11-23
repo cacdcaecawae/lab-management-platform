@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from core.exceptions import Conflict
 from core.files import checked_upload, delete_on_commit, download, sha256_of
 from core.history import serialize_history
+from core.params import plain_int, search_text
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Doc, DocVersion
@@ -37,7 +38,7 @@ class DocViewSet(viewsets.ModelViewSet):
         if self.action != "list":  # list filters must not turn detail URLs into 404s
             return docs
         params = self.request.query_params
-        if keyword := params.get("search", "").strip():
+        if keyword := search_text(params):
             # Substring match: PostgreSQL's full-text search does not split Chinese words.
             # shortcut: a sequential scan; add pg_trgm indexes on title/description if thousands of docs get slow.
             docs = docs.annotate(
@@ -49,9 +50,9 @@ class DocViewSet(viewsets.ModelViewSet):
         if category := params.get("category"):
             docs = docs.filter(category=category) if category in Doc.Category.values else docs.none()
         if equipment := params.get("equipment"):
-            docs = docs.filter(equipment_id=equipment) if equipment.isdigit() else docs.none()
+            docs = docs.filter(equipment_id=equipment) if plain_int(equipment) else docs.none()
         if tag := params.get("tag"):
-            docs = docs.filter(tags__contains=[tag])
+            docs = docs.filter(tags__contains=[tag]) if "\x00" not in tag else docs.none()
         return docs
 
     def check_writer(self, doc):
@@ -67,7 +68,9 @@ class DocViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, doc):
         with transaction.atomic():
-            delete_on_commit([v.file for v in doc.versions.all()])
+            # Locked, then the versions read afresh (not the list fetched with the page): an upload just before is included.
+            doc = get_object_or_404(Doc.objects.select_for_update(), pk=doc.pk)
+            delete_on_commit([v.file for v in DocVersion.objects.filter(doc=doc)])
             doc.delete()
 
     @action(detail=True, methods=["post"], parser_classes=[MultiPartParser])
@@ -83,7 +86,8 @@ class DocViewSet(viewsets.ModelViewSet):
         version.file.save(name, uploaded, save=False)  # written before the lock: a big file must not hold it
         try:
             with transaction.atomic():
-                Doc.objects.select_for_update().get(pk=doc.pk)  # numbers count up one at a time
+                # numbers count up one at a time; a document deleted meanwhile is a 404, not a server error
+                get_object_or_404(Doc.objects.select_for_update(), pk=doc.pk)
                 version.number = (doc.versions.aggregate(n=Max("number"))["n"] or 0) + 1
                 version.save()
                 # update(), not save(): a new file is not a change of the document's fields (no history entry)

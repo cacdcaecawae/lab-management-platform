@@ -10,7 +10,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
-from core.files import FileTooLarge, clean_file_name, sha256_of
+from core.files import FileTooLarge, clean_file_name, open_stored, sha256_of
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private
 from core.preview import preview_response
 
@@ -146,7 +146,7 @@ class DataFileViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     @action(detail=True)
     def download(self, request, pk=None):
         data_file = self.get_object()
-        return FileResponse(data_file.file.open("rb"), as_attachment=True, filename=data_file.name)
+        return FileResponse(open_stored(data_file.file), as_attachment=True, filename=data_file.name)
 
     @action(detail=True)
     def preview(self, request, pk=None):

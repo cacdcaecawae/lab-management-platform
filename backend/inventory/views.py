@@ -11,6 +11,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
+from core.params import plain_int
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Batch, Consumable, StockTxn
@@ -71,11 +72,11 @@ class ConsumableViewSet(
             .prefetch_related(batch_details())
         )
         if self.action == "list" and (item := self.request.query_params.get("item")):
-            return consumables.filter(pk=item) if item.isascii() and item.isdigit() and len(item) <= 18 else consumables.none()
+            return consumables.filter(pk=item) if plain_int(item) else consumables.none()
         if self.action == "list" and self.request.query_params.get("low") == "1":
             consumables = consumables.filter(stock__lt=F("safety_stock"))
         if self.action == "list" and (days := self.request.query_params.get("expiring_within")) is not None:
-            if not days.isascii() or not days.isdigit() or len(days) > 3 or not 0 <= int(days) <= 365:
+            if plain_int(days, 3) is None or int(days) > 365:
                 raise ValidationError({"expiring_within": ["须为 0 至 365 天"]})
             today = timezone.localdate()
             expiring = batches_with_balance().filter(
