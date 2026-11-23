@@ -1,0 +1,177 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
+import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import type { Me, UserBrief, WeeklyReportDigest } from '@/api/types'
+import ReportsView from './ReportsView.vue'
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (err: unknown) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (err: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+function makeDigest(week_start: string, ownerName: string, done: string, missingName: string): WeeklyReportDigest {
+  return {
+    week_start,
+    reports: [
+      {
+        id: week_start === '2026-11-16' ? 101 : 102,
+        owner: { id: 2, name: ownerName },
+        week_start,
+        status: 'submitted',
+        submitted_at: `${week_start}T18:00:00+08:00`,
+        goals: '',
+        done,
+        findings: '',
+        next_plan: '',
+        experiments: [],
+        datasets: [],
+        runs: [],
+        feedback: [],
+        created_at: `${week_start}T09:00:00+08:00`,
+        updated_at: `${week_start}T18:00:00+08:00`,
+      },
+    ],
+    missing: [{ id: 3, name: missingName }],
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+async function mountSupervisor(fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
+  vi.stubGlobal('fetch', vi.fn(fetchImpl))
+  const pinia = createPinia()
+  const stub = { template: '<div />' }
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/reports', name: 'reports', component: ReportsView },
+      ...['report-new', 'report-edit', 'experiment-edit', 'dataset-detail', 'run-edit'].map((name) => ({
+        path: `/${name}/:id?`,
+        name,
+        component: stub,
+      })),
+    ],
+  })
+  await router.push('/reports')
+  await router.isReady()
+  useAuthStore(pinia).user = { id: 1, name: '王老师', role: 'advisor', is_supervisor: true } as Me
+  const wrapper = mount(ReportsView, { global: { plugins: [ElementPlus, pinia, router] } })
+  await flushPromises()
+  return wrapper
+}
+
+describe('ReportsView rapid week switching', () => {
+  it('aborts older digest request and ignores late out-of-order response', async () => {
+    const calls: Array<{ url: string; signal?: AbortSignal; d: Deferred<Response> }> = []
+    const wrapper = await mountSupervisor((url, init) => {
+      if (url.startsWith('/api/reports/digest/')) {
+        const d = deferred<Response>()
+        calls.push({ url, signal: init?.signal ?? undefined, d })
+        return d.promise
+      }
+      return Promise.resolve(new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }), { status: 200 }))
+    })
+
+    // Switch to 本周汇总 tab -> triggers first digest request (initial week)
+    const digestTab = wrapper.findAll('.el-tabs__item').find((t) => t.text() === '本周汇总')!
+    await digestTab.trigger('click')
+    await flushPromises()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.signal?.aborted).toBe(false)
+
+    // Quickly switch to an earlier week, then another week before first resolves
+    const picker = wrapper.findComponent({ name: 'ElDatePicker' })
+    picker.vm.$emit('update:modelValue', '2026-11-09')
+    await flushPromises()
+    expect(calls).toHaveLength(2)
+    expect(calls[0]!.signal?.aborted).toBe(true)
+    expect(calls[1]!.url).toContain('week_start=2026-11-09')
+
+    picker.vm.$emit('update:modelValue', '2026-11-16')
+    await flushPromises()
+    expect(calls).toHaveLength(3)
+    expect(calls[1]!.signal?.aborted).toBe(true)
+    expect(calls[2]!.url).toContain('week_start=2026-11-16')
+
+    // Latest week (2026-11-16) arrives first
+    calls[2]!.d.resolve(
+      new Response(JSON.stringify(makeDigest('2026-11-16', '本周同学', '本周完成工作', '本周未交')), { status: 200 }),
+    )
+    await flushPromises()
+    expect(wrapper.text()).toContain('本周完成工作')
+    expect(wrapper.text()).toContain('本周未交')
+
+    // Older week (2026-11-09) arrives late (simulating a response that resolved despite abort)
+    calls[1]!.d.resolve(
+      new Response(JSON.stringify(makeDigest('2026-11-09', '上周同学', '上周旧数据', '上周未交')), { status: 200 }),
+    )
+    await flushPromises()
+
+    // Must still display 2026-11-16, never overwritten by stale 2026-11-09
+    expect(wrapper.text()).toContain('本周完成工作')
+    expect(wrapper.text()).toContain('本周未交')
+    expect(wrapper.text()).not.toContain('上周旧数据')
+    expect(wrapper.text()).not.toContain('上周未交')
+    wrapper.unmount()
+  })
+
+  it('aborts older missing-list request and ignores late out-of-order response', async () => {
+    const calls: Array<{ url: string; signal?: AbortSignal; d: Deferred<Response> }> = []
+    const wrapper = await mountSupervisor((url, init) => {
+      if (url.startsWith('/api/reports/missing/')) {
+        const d = deferred<Response>()
+        calls.push({ url, signal: init?.signal ?? undefined, d })
+        return d.promise
+      }
+      return Promise.resolve(new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }), { status: 200 }))
+    })
+
+    const missingTab = wrapper.findAll('.el-tabs__item').find((t) => t.text() === '未交名单')!
+    await missingTab.trigger('click')
+    await flushPromises()
+    expect(calls).toHaveLength(1)
+
+    const picker = wrapper.findComponent({ name: 'ElDatePicker' })
+    picker.vm.$emit('update:modelValue', '2026-11-09')
+    await flushPromises()
+    picker.vm.$emit('update:modelValue', '2026-11-16')
+    await flushPromises()
+    expect(calls).toHaveLength(3)
+    expect(calls[0]!.signal?.aborted).toBe(true)
+    expect(calls[1]!.signal?.aborted).toBe(true)
+
+    const currentMissing: UserBrief[] = [{ id: 10, name: '本周未交甲' }]
+    const staleMissing: UserBrief[] = [{ id: 11, name: '上周未交乙' }]
+
+    calls[2]!.d.resolve(new Response(JSON.stringify(currentMissing), { status: 200 }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('本周未交甲')
+
+    calls[1]!.d.resolve(new Response(JSON.stringify(staleMissing), { status: 200 }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('本周未交甲')
+    expect(wrapper.text()).not.toContain('上周未交乙')
+    wrapper.unmount()
+  })
+})

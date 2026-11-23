@@ -86,14 +86,18 @@ function fill(r: WeeklyReport) {
   markSaved()
 }
 
+let loadSeq = 0
 async function load(id: number) {
+  const mySeq = ++loadSeq
   loading.value = true
   try {
-    fill(await reportsApi.get(id))
+    const data = await reportsApi.get(id)
+    if (mySeq !== loadSeq) return
+    fill(data)
   } catch (e) {
-    loadError.value = errorMessage(e)
+    if (mySeq === loadSeq) loadError.value = errorMessage(e)
   } finally {
-    loading.value = false
+    if (mySeq === loadSeq) loading.value = false
   }
 }
 

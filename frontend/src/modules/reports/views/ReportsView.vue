@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download } from '@element-plus/icons-vue'
 import { reportsApi } from '@/modules/reports/api'
@@ -39,30 +39,70 @@ const { items, count, page, pageSize, loading } = usePagedList(reportsApi.list, 
 const missingWeek = ref(mondayOf())
 const missing = ref<UserBrief[]>([])
 const missingLoading = ref(false)
+let missingSeq = 0
+let missingController: AbortController | null = null
+
+function cancelMissing() {
+  missingSeq++
+  missingController?.abort()
+  missingController = null
+  missingLoading.value = false
+}
 
 async function loadMissing() {
+  const seq = ++missingSeq
+  missingController?.abort()
+  const controller = new AbortController()
+  missingController = controller
+  missing.value = []
   missingLoading.value = true
   try {
-    missing.value = await reportsApi.missing(missingWeek.value)
+    const data = await reportsApi.missing(missingWeek.value, controller.signal)
+    if (seq !== missingSeq || controller.signal.aborted) return
+    missing.value = data
   } catch (e) {
+    if (seq !== missingSeq || controller.signal.aborted) return
     showError(e)
   } finally {
-    missingLoading.value = false
+    if (seq === missingSeq) {
+      missingController = null
+      missingLoading.value = false
+    }
   }
 }
 
 const digestWeek = ref(mondayOf())
 const digest = ref<WeeklyReportDigest | null>(null)
 const digestLoading = ref(false)
+let digestSeq = 0
+let digestController: AbortController | null = null
+
+function cancelDigest() {
+  digestSeq++
+  digestController?.abort()
+  digestController = null
+  digestLoading.value = false
+}
 
 async function loadDigest() {
+  const seq = ++digestSeq
+  digestController?.abort()
+  const controller = new AbortController()
+  digestController = controller
+  digest.value = null
   digestLoading.value = true
   try {
-    digest.value = await reportsApi.digest(digestWeek.value)
+    const data = await reportsApi.digest(digestWeek.value, controller.signal)
+    if (seq !== digestSeq || controller.signal.aborted) return
+    digest.value = data
   } catch (e) {
+    if (seq !== digestSeq || controller.signal.aborted) return
     showError(e)
   } finally {
-    digestLoading.value = false
+    if (seq === digestSeq) {
+      digestController = null
+      digestLoading.value = false
+    }
   }
 }
 
@@ -84,12 +124,28 @@ async function openThisWeek() {
 }
 
 watch(tab, (t) => {
-  if (t === 'missing') loadMissing()
-  else if (t === 'digest') loadDigest()
-  else filters.status = t === 'pending' ? 'submitted' : ''
+  if (t === 'missing') {
+    cancelDigest()
+    void loadMissing()
+  } else if (t === 'digest') {
+    cancelMissing()
+    void loadDigest()
+  } else {
+    cancelMissing()
+    cancelDigest()
+    filters.status = t === 'pending' ? 'submitted' : ''
+  }
 })
-watch(missingWeek, loadMissing)
-watch(digestWeek, loadDigest)
+watch(missingWeek, () => {
+  if (tab.value === 'missing') void loadMissing()
+})
+watch(digestWeek, () => {
+  if (tab.value === 'digest') void loadDigest()
+})
+onBeforeUnmount(() => {
+  cancelMissing()
+  cancelDigest()
+})
 </script>
 
 <template>

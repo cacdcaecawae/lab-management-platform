@@ -19,8 +19,8 @@ export const reportsApi = {
   submit: (id: number) => api.post<WeeklyReport>(`/api/reports/${id}/submit/`),
   feedback: (id: number, body: FeedbackWrite) => api.post<WeeklyReport>(`/api/reports/${id}/feedback/`, body),
   history: (id: number) => api.get<HistoryEntry[]>(`/api/reports/${id}/history/`),
-  missing: (week_start?: string) => api.get<UserBrief[]>('/api/reports/missing/', { week_start }),
-  digest: (week_start?: string) => api.get<WeeklyReportDigest>('/api/reports/digest/', { week_start }),
+  missing: (week_start?: string, signal?: AbortSignal) => api.get<UserBrief[]>('/api/reports/missing/', { week_start }, signal),
+  digest: (week_start?: string, signal?: AbortSignal) => api.get<WeeklyReportDigest>('/api/reports/digest/', { week_start }, signal),
   digestExportUrl: (week_start?: string) =>
     week_start ? `/api/reports/digest/export/?week_start=${encodeURIComponent(week_start)}` : '/api/reports/digest/export/',
 }
