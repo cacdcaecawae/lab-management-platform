@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -7,6 +7,9 @@ import type { Me } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { routes as systemRoutes } from '@/modules/system'
 import { useNav } from './nav'
+
+// These tests exercise the real route metadata and redirects; the page contents have their own tests.
+vi.mock('@/modules/system/views/SystemView.vue', () => ({ default: { template: '<div />' } }))
 
 const page = { template: '<div />' }
 const routes = [
