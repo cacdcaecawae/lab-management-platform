@@ -5,6 +5,7 @@ import zipfile
 from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.http import content_disposition_header
 from openpyxl import Workbook
@@ -17,6 +18,7 @@ from rest_framework.response import Response
 from core.export import xlsx_bytes
 from core.files import checked_upload, delete_name_on_commit, delete_on_commit, download
 from core.history import serialize_history
+from core.params import plain_int, search_text
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Achievement
@@ -52,17 +54,17 @@ class AchievementViewSet(viewsets.ModelViewSet):
         """Shared by the list and the export, so the export holds exactly what the page shows."""
         params = self.request.query_params
         if item := params.get("item"):
-            return items.filter(pk=item) if item.isascii() and item.isdigit() and len(item) <= 18 else items.none()
+            return items.filter(pk=item) if plain_int(item) else items.none()
         if kind := params.get("type"):
             items = items.filter(type=kind) if kind in Achievement.Type.values else items.none()
         items = filter_status(items, params.get("status"))
         if year := params.get("year"):
-            if not year.isdigit():
+            if plain_int(year, 4) is None:
                 raise ValidationError({"year": ["年份应为数字"]})
             items = items.filter(date__year=int(year))
         if member := params.get("member"):
-            items = items.filter(members=member) if member.isdigit() else items.none()
-        if keyword := params.get("search", "").strip():
+            items = items.filter(members=member) if plain_int(member) else items.none()
+        if keyword := search_text(params):
             items = items.filter(Q(title__icontains=keyword) | Q(authors__icontains=keyword) | Q(venue__icontains=keyword))
         return items
 
@@ -81,6 +83,8 @@ class AchievementViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, achievement):
         with transaction.atomic():
+            # Locked, then re-read: a full text replaced just before is the one to delete.
+            achievement = get_object_or_404(Achievement.objects.select_for_update(), pk=achievement.pk)
             delete_on_commit([achievement.fulltext])
             achievement.delete()
 
@@ -140,8 +144,11 @@ class AchievementViewSet(viewsets.ModelViewSet):
         for row, a in enumerate(items, 1):
             path = ""
             if with_files and a.fulltext:
-                path = f"全文/{row:03d}-{file_safe(a.title)}.pdf"
-                files.append((path, a.fulltext))
+                if a.fulltext.storage.exists(a.fulltext.name):
+                    path = f"全文/{row:03d}-{file_safe(a.title)}.pdf"
+                    files.append((path, a.fulltext))
+                else:  # lost from storage: said in the table instead of failing the whole export
+                    path = "（文件缺失）"
             sheet.append([
                 row, a.get_type_display(), a.title, a.authors, "、".join(m.display_name for m in a.members.all()), a.venue,
                 a.date, a.get_status_display(), a.link, path or ("（无）" if with_files else ("有" if a.fulltext else "")),

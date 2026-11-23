@@ -75,10 +75,6 @@ class AttachmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("附件不能超过 20 MB")
         return file
 
-    def create(self, validated_data):
-        file = validated_data["file"]  # Django's multipart parser already strips any directory from the name
-        return super().create({**validated_data, "name": (file.name or "附件")[-200:], "size": file.size})
-
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
     unit_price = serializers.DecimalField(**MONEY, min_value=Decimal("0"))
