@@ -2,7 +2,6 @@
 
 from django.db.models import BooleanField, Exists, ExpressionWrapper, OuterRef, Q
 
-from accounts.models import User
 
 from .models import Approval, PurchaseRequest
 
@@ -18,8 +17,7 @@ def returned_flag():
 
 
 def awaiting_review(purchases, user):
-    """The part of an (already scoped) queryset that waits for `user`'s review."""
-    stage_status = {User.Role.MANAGER: S.PENDING_INITIAL, User.Role.ADVISOR: S.PENDING_FINAL}.get(user.role)
-    if not stage_status:
-        return purchases.none()
-    return purchases.filter(status=stage_status).exclude(owner=user)
+    """The part of an (already scoped) queryset that waits for `user`'s review: initial ones for a manager, final ones
+    for an approver (both for someone with both tags)."""
+    statuses = [*([S.PENDING_INITIAL] if user.is_manager else []), *([S.PENDING_FINAL] if user.is_approver else [])]
+    return purchases.filter(status__in=statuses).exclude(owner=user)

@@ -11,10 +11,13 @@ class ResearchGroupAdmin(admin.ModelAdmin):
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ["username", "name", "group", "role", "is_active", "must_change_password"]
-    list_filter = ["group", "role", "is_active"]
+    list_display = ["username", "name", "group", "role", "is_manager", "is_approver", "is_active", "must_change_password"]
+    list_filter = ["group", "role", "is_manager", "is_approver", "is_active"]
     search_fields = ["username", "name", "email"]
     fieldsets = BaseUserAdmin.fieldsets + (
-        ("课题组信息", {"fields": ["group", "role", "name", "phone", "wechat", "research_direction", "must_change_password"]}),
+        ("课题组信息", {"fields": [
+            "group", "role", "is_manager", "is_approver", "name", "identity", "enrollment_year", "graduated", "tags", "phone",
+            "wechat", "research_direction", "must_change_password",
+        ]}),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (("课题组信息", {"fields": ["group", "role", "name"]}),)

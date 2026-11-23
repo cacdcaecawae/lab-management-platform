@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from core.exceptions import Conflict
 from core.history import serialize_history
 from core.notifications import notify
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
+from core.permissions import IsActiveMember, IsAdvisor, IsOwnerOrReadOnly, scope_private
 from datasets.versions import pin_versions
 
 from .models import Experiment, ProcessingRun, RecordStatus
@@ -26,7 +26,7 @@ class RecordViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == "return_to_draft":
-            return [IsActiveMember(), IsSupervisor()]
+            return [IsActiveMember(), IsAdvisor()]
         return [IsActiveMember(), IsOwnerOrReadOnly()]
 
     def get_queryset(self):
@@ -58,7 +58,7 @@ class RecordViewSet(viewsets.ModelViewSet):
     def lock_draft(self):
         obj = self.lock_object()
         if obj.status != RecordStatus.DRAFT:
-            raise Conflict("已提交的记录不能修改或删除，请先由管理员或导师退回", code="invalid_state")
+            raise Conflict("已提交的记录不能修改或删除，请先由导师退回", code="invalid_state")
         return obj
 
     def update(self, request, *args, **kwargs):

@@ -113,7 +113,7 @@ def test_duplicate_name_in_group_is_409(api, project, manager, student_a, other_
     r = api(manager).post("/api/projects/", body(student_a, name=project.name), format="json")
     assert r.status_code == 409 and r.data["code"] == "conflict"
     # The same name in another group is fine.
-    other_leader = make_user("o_lead", other_group, role="manager")
+    other_leader = make_user("o_lead", other_group, is_manager=True)
     r = api(other_leader).post("/api/projects/", body(other_leader, name=project.name), format="json")
     assert r.status_code == 201
 

@@ -1,8 +1,12 @@
 import re
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 
 from .models import Notification
+
+# Who a notification for an audience reaches (User.audiences is the other side, for reading them).
+AUDIENCES = {"advisor": Q(role="advisor"), "manager": Q(is_manager=True), "approver": Q(is_approver=True)}
 
 
 LOCAL_PATH = re.compile(r"/[a-z][a-z0-9-]*(?:/[0-9]+)?")
@@ -16,7 +20,7 @@ def notify(group_id, title, link, *, recipient_ids=None, role="", exclude_ids=()
         return
     recipients = get_user_model().objects.filter(group_id=group_id, is_active=True)
     if role:
-        recipients = recipients.filter(role=role)
+        recipients = recipients.filter(AUDIENCES[role])
     if recipient_ids is not None:
         recipients = recipients.filter(pk__in=recipient_ids)
     else:

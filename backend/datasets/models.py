@@ -6,7 +6,7 @@ from simple_history.models import HistoricalRecords
 
 
 class Dataset(models.Model):
-    """数据集：一批原始数据、脚本或处理结果。个人数据：本人 + 本组管理员/导师可见。
+    """数据集：一批原始数据、脚本或处理结果。个人数据：本人 + 本组导师可见。
 
     文件入库后只读；修改过的数据作为新的数据集登记。"""
 

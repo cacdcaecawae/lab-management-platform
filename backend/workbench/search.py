@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from achievements.models import Achievement
-from core.permissions import IsActiveMember, scope_group, scope_private
+from core.permissions import IsActiveMember, scope_finance, scope_group, scope_private
 from datasets.models import Dataset
 from equipment.models import Equipment
 from inventory.models import Consumable
@@ -31,7 +31,7 @@ MODULES = (
     ("runs", "数据处理", ProcessingRun, scope_private, "/runs/{id}", "title", ("title",), None),
     ("datasets", "数据集", Dataset, scope_private, "/datasets/{id}", "name", ("name",), None),
     ("reports", "周报", WeeklyReport, scope_private, "/reports/{id}", "week_start", ("date_text",), None),
-    ("purchases", "采购申请", PurchaseRequest, scope_private, "/purchases/{id}", "purpose",
+    ("purchases", "采购申请", PurchaseRequest, scope_finance, "/purchases/{id}", "purpose",
      ("purpose", "items__name"), None),
     ("equipment", "设备", Equipment, scope_group, "/equipment/{id}", "name",
      ("name", "code", "model", "category", "location"), "code"),

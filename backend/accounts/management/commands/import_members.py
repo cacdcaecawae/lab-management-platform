@@ -33,6 +33,8 @@ class Command(BaseCommand):
             for line, row in enumerate(rows, start=2):
                 values = {col: (row.get(col) or "").strip() for col in COLUMNS}
                 values["role"] = values["role"] or User.Role.STUDENT
+                if values["role"] == "manager":  # the old third role: a student with the 管理员 tag
+                    values.update(role=User.Role.STUDENT, is_manager=True)
                 if not values["username"]:
                     skipped += self.skip(line, "username 为空")
                     continue

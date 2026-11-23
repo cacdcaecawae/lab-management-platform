@@ -35,7 +35,7 @@ const open = (id: number) => router.push(detail(id))
       <el-select v-if="!reviewing" v-model="filters.status" placeholder="全部状态" clearable aria-label="状态">
         <el-option v-for="s in PURCHASE_STATUSES" :key="s" :label="STATUS[s].label" :value="s" />
       </el-select>
-      <el-checkbox v-if="!reviewing && auth.isSupervisor" v-model="filters.mine" :true-value="1" false-value="">只看我的</el-checkbox>
+      <el-checkbox v-if="!reviewing && auth.isFinance" v-model="filters.mine" :true-value="1" false-value="">只看我的</el-checkbox>
       <template #actions>
         <el-button v-if="!reviewing" type="primary" @click="router.push({ name: 'purchase-new' })">新建采购申请</el-button>
       </template>

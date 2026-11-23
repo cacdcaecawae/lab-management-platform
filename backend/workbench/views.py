@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.serializers import UserBriefSerializer
-from core.permissions import is_manager, is_supervisor, scope_group, scope_private
+from core.permissions import is_advisor, is_finance, is_manager, scope_finance, scope_group, scope_private
 from equipment.models import Booking, Equipment
 from equipment.queries import calibration_within
 from equipment.serializers import BookingSerializer, EquipmentBriefSerializer
@@ -61,7 +61,7 @@ class DashboardView(APIView):
             Booking.objects.filter(user=user, cancelled_at__isnull=True), user, "equipment__group"
         ).select_related("equipment", "user", "project", "report")
         purchases = (
-            scope_private(PurchaseRequest.objects.select_related("owner", "fund"), user)
+            scope_finance(PurchaseRequest.objects.select_related("owner", "fund"), user)
             .prefetch_related("items")
             .annotate(returned=returned_flag())
         )
@@ -104,15 +104,16 @@ class DashboardView(APIView):
             "supervisor": None,
             "manager": None,
         }
-        if is_supervisor(user):
+        if is_advisor(user) or is_finance(user):
+            advising = is_advisor(user)  # weekly reports are research records: the advisor's
             pending = scope_private(WeeklyReport.objects.filter(status=WeeklyReport.Status.SUBMITTED), user)
             data["supervisor"] = {
                 "week_start": week_start,
-                "missing_reports": UserBriefSerializer(missing_students(user, week_start), many=True).data,
+                "missing_reports": UserBriefSerializer(missing_students(user, week_start), many=True).data if advising else [],
                 "pending_reviews": WeeklyReportBriefSerializer(
                     pending.select_related("owner").order_by("submitted_at")[:LIMIT], many=True
-                ).data,
-                # managers: waiting for the initial review; advisors: for the final review
+                ).data if advising else [],
+                # managers: waiting for the initial review; approvers: for the final review
                 "purchases_to_review": PurchaseSerializer(
                     awaiting_review(purchases, user).order_by("submitted_at")[:LIMIT], many=True
                 ).data,

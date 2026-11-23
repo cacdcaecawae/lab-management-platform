@@ -1,6 +1,9 @@
 // Types mirror docs/api-contract.md. Keep them in sync with the contract, not with guesses.
 
-export type Role = 'student' | 'manager' | 'advisor'
+// Base role; 管理员 and 终审人 are tags on top (is_manager, is_approver), see the roles-and-identity note.
+export type Role = 'student' | 'advisor'
+export type Identity = 'teacher' | 'postdoc' | 'phd' | 'master' | 'undergraduate' | 'assistant'
+export type MemberStatus = 'active' | 'graduated' | 'disabled'
 
 export interface UserBrief {
   id: number
@@ -12,7 +15,9 @@ export interface Me {
   username: string
   name: string
   role: Role
-  is_supervisor: boolean
+  is_manager: boolean
+  is_approver: boolean
+  is_supervisor: boolean // advisor or manager
   is_superuser: boolean // the ops account: 系统管理 only, usually without a group
   group: { id: number; name: string } | null
   email: string
@@ -35,6 +40,12 @@ export interface Member {
   id: number
   name: string
   role: Role
+  is_manager: boolean
+  is_approver: boolean
+  identity: Identity | ''
+  enrollment_year: number | null
+  member_status: MemberStatus
+  tags: string[]
   research_direction: string
   is_active: boolean
 }
@@ -53,7 +64,9 @@ export type MemberListItem = Member & Partial<Omit<MemberDetail, keyof Member>>
 export interface MemberCreate {
   username: string
   name: string
-  role: Role
+  identity?: Identity | ''
+  enrollment_year?: number | null
+  tags?: string[]
   email?: string
   phone?: string
   wechat?: string
@@ -62,7 +75,12 @@ export interface MemberCreate {
 }
 
 // username: managers can correct a member's login name (e.g. a student number mistyped at signup)
-export type MemberUpdate = Partial<Pick<MemberDetail, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'>>
+export type MemberUpdate = Partial<
+  Pick<
+    MemberDetail,
+    'username' | 'name' | 'identity' | 'enrollment_year' | 'member_status' | 'tags' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'
+  >
+>
 
 // A student who registered through the group's link and waits for a manager.
 export interface PendingMember {
@@ -799,6 +817,12 @@ export interface Account {
   username: string
   name: string
   role: Role
+  is_manager: boolean
+  is_approver: boolean
+  identity: Identity | ''
+  enrollment_year: number | null
+  member_status: MemberStatus
+  tags: string[]
   group: { id: number; name: string } | null
   email: string
   phone: string
@@ -810,10 +834,17 @@ export interface Account {
   last_login: string | null
 }
 
-export type AccountUpdate = Partial<Pick<Account, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'>>
+export type AccountUpdate = Partial<
+  Pick<
+    Account,
+    | 'username' | 'name' | 'role' | 'is_manager' | 'is_approver' | 'identity' | 'enrollment_year' | 'member_status' | 'tags'
+    | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'
+  >
+>
 
-export interface AccountCreate extends Required<Omit<AccountUpdate, 'is_active'>> {
-  username: string
+export interface AccountCreate
+  extends Required<Pick<AccountUpdate, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction'>>,
+    Pick<AccountUpdate, 'is_manager' | 'is_approver' | 'identity' | 'enrollment_year' | 'tags'> {
   group_id: number
   password: string
 }

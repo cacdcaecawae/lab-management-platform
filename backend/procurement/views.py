@@ -23,7 +23,7 @@ from core.export import xlsx_bytes
 from core.files import delete_on_commit, download
 from core.history import serialize_history
 from core.params import plain_int
-from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, scope_group, scope_private
+from core.permissions import IsActiveMember, IsFinance, IsManager, is_approver, is_manager, scope_finance, scope_group
 
 from .mail import notify, send_finance_reminder
 from .notifications import notify_purchase
@@ -50,9 +50,19 @@ EDIT_BLOCKED = {
 STAGE_OF = {S.PENDING_INITIAL: Approval.Stage.INITIAL, S.PENDING_FINAL: Approval.Stage.FINAL}
 
 
+def other_approvers(owner, exclude=()):
+    """Approvers of the owner's group who could do the final review: never the owner (or those in `exclude`)."""
+    return User.objects.filter(group_id=owner.group_id, is_active=True, is_approver=True).exclude(pk__in=[owner.pk, *exclude])
+
+
+def sole_approver(owner):
+    """The owner is the group's only approver: nobody else could do the final review of their own request."""
+    return owner.is_approver and not other_approvers(owner).exists()
+
+
 def first_review(owner):
-    """A manager's own request skips the initial review (managers do initial reviews)."""
-    return S.PENDING_FINAL if owner.role == User.Role.MANAGER else S.PENDING_INITIAL
+    """Managers do the initial reviews, so a manager's own request skips it, unless its final review then has nobody."""
+    return S.PENDING_FINAL if owner.is_manager and not sole_approver(owner) else S.PENDING_INITIAL
 
 
 def item_lines(items):
@@ -142,7 +152,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         purchases = (
-            scope_private(PurchaseRequest.objects.select_related("owner", "fund"), user)
+            scope_finance(PurchaseRequest.objects.select_related("owner", "fund"), user)
             .prefetch_related("items")
             .annotate(returned=returned_flag())
         )
@@ -264,8 +274,8 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchase = self.lock()
             if purchase.owner_id == user.id:
                 raise PermissionDenied("不能审批自己的申请")
-            if not user.is_supervisor:
-                raise PermissionDenied("只有管理员和导师可以审批")
+            if not (is_manager(user) or is_approver(user)):
+                raise PermissionDenied("只有管理员和终审人可以审批")
             # Compare the submission as well: withdrawal + equal-total edits can restore the same state/total.
             if (
                 purchase.status != body.validated_data["status_seen"]
@@ -276,18 +286,25 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             stage = STAGE_OF.get(purchase.status)
             if not stage:
                 raise Conflict(f"当前为“{purchase.get_status_display()}”，不需要审批", code="invalid_state")
-            if stage == Approval.Stage.INITIAL and user.role != User.Role.MANAGER:
+            if stage == Approval.Stage.INITIAL and not is_manager(user):
                 raise PermissionDenied("初审只能由管理员完成")
-            if stage == Approval.Stage.FINAL and user.role != User.Role.ADVISOR:
-                raise PermissionDenied("终审只能由导师完成")
+            if stage == Approval.Stage.FINAL:
+                if not is_approver(user):
+                    raise PermissionDenied("终审只能由终审人完成")
+                did_initial = purchase.approvals.filter(
+                    stage=Approval.Stage.INITIAL, reviewer=user, created_at__gte=purchase.submitted_at
+                ).exists()
+                # One person does both only when nobody else could (the page says so); see the roles note.
+                if did_initial and other_approvers(purchase.owner, exclude=[user.pk]).exists():
+                    raise PermissionDenied("这张单的初审是你做的，终审请由另一位终审人完成")
             Approval.objects.create(
                 request=purchase, stage=stage, reviewer=user, verdict=verdict, comment=comment, total=purchase.total
             )
             if verdict == Approval.Verdict.RETURN:
                 purchase.status = S.DRAFT
-            elif stage == Approval.Stage.INITIAL and purchase.owner.role != User.Role.ADVISOR:
+            elif stage == Approval.Stage.INITIAL and not sole_approver(purchase.owner):
                 purchase.status = S.PENDING_FINAL
-            else:  # final review, or an advisor's own request after the initial review
+            else:  # final review, or the sole approver's own request after the initial review
                 purchase.status = S.APPROVED
             purchase._change_reason = f"{Approval.Stage(stage).label}{Approval.Verdict(verdict).label}：{comment}".rstrip("：")
             purchase.save()
@@ -337,8 +354,8 @@ class AttachmentViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        purchases = scope_private(PurchaseRequest.objects.all(), user)
-        reimbursements = scope_private(Reimbursement.objects.all(), user)
+        purchases = scope_finance(PurchaseRequest.objects.all(), user)
+        reimbursements = scope_finance(Reimbursement.objects.all(), user)
         return Attachment.objects.filter(Q(purchase__in=purchases) | Q(reimbursement__in=reimbursements))
 
     @action(detail=True)
@@ -444,13 +461,13 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ("stats", "export"):
-            return [IsActiveMember(), IsSupervisor()]
+            return [IsActiveMember(), IsFinance()]
         if self.action in ("remind_finance", "finance_email"):
             return [IsActiveMember(), IsManager()]
         return [IsActiveMember()]
 
     def scoped(self):
-        return scope_private(Reimbursement.objects.all(), self.request.user)
+        return scope_finance(Reimbursement.objects.all(), self.request.user)
 
     def get_queryset(self):
         reimbursements = self.scoped().select_related("owner", "fund", "purchase__owner").prefetch_related(

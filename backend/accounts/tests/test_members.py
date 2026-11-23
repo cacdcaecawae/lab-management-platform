@@ -28,7 +28,10 @@ def test_list_only_own_group(api, student_a, student_b, manager, advisor, other_
 def test_student_sees_private_fields_only_for_self(api, student_a, student_b):
     rows = by_id(api(student_a).get("/api/members/").data["results"])
     assert PRIVATE <= set(rows[student_a.id])
-    assert set(rows[student_b.id]) == {"id", "name", "role", "research_direction", "is_active"}
+    assert set(rows[student_b.id]) == {
+        "id", "name", "role", "is_manager", "is_approver", "identity", "enrollment_year", "member_status", "tags",
+        "research_direction", "is_active",
+    }
     assert not PRIVATE & set(api(student_a).get(f"/api/members/{student_b.id}/").data)
 
 
@@ -54,7 +57,8 @@ def test_search_and_filters(api, group, student_a, manager):
 
     assert names("?search=相控阵") == {"王同学"}
     assert names("?search=2026999") == {"王同学"}
-    assert names("?role=manager") == {"mgr"}
+    assert names("?flag=manager") == {"mgr"}
+    assert names("?role=manager") == set()  # no longer a role: the 管理员 tag
     assert names("?is_active=false") == {"王同学"}
     assert "王同学" not in names("?is_active=true")
     assert client.get("/api/members/?is_active=maybe").status_code == 400
@@ -88,7 +92,7 @@ def test_create_validates_password_and_required_fields(api, manager):
     r = api(manager).post("/api/members/", new_member(password="2026001x"), format="json")
     assert r.status_code == 400 and "password" in r.data["errors"]  # too similar to username
     r = api(manager).post("/api/members/", {"username": "x1", "password": NEW_PASSWORD}, format="json")
-    assert r.status_code == 400 and {"name", "role"} <= set(r.data["errors"])
+    assert r.status_code == 400 and "name" in r.data["errors"]
 
 
 def test_create_duplicate_username_is_409(api, manager, other_manager):

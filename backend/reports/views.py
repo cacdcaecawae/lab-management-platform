@@ -10,7 +10,7 @@ from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.history import serialize_history
 from core.notifications import notify
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
+from core.permissions import IsActiveMember, IsAdvisor, IsOwnerOrReadOnly, scope_private
 from datasets.versions import pin_versions
 
 from .models import WeeklyReport
@@ -135,7 +135,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
             report.save()
         return self._detail(report)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=True, methods=["post"], permission_classes=[IsActiveMember, IsAdvisor])
     def feedback(self, request, pk=None):
         with transaction.atomic():
             report = self._lock()
@@ -156,7 +156,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
     def history(self, request, pk=None):
         return Response(serialize_history(self.get_object()))
 
-    @action(detail=False, permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, permission_classes=[IsActiveMember, IsAdvisor])
     def missing(self, request):
         query = ReportQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -176,7 +176,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
         missing = list(missing_students(request.user, week_start))
         return week_start, reports, missing
 
-    @action(detail=False, permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, permission_classes=[IsActiveMember, IsAdvisor])
     def digest(self, request):
         week_start, reports, missing = self._digest_data(request)
         return Response({
@@ -185,7 +185,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
             "missing": UserBriefSerializer(missing, many=True).data,
         })
 
-    @action(detail=False, url_path="digest/export", permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, url_path="digest/export", permission_classes=[IsActiveMember, IsAdvisor])
     def digest_export(self, request):
         week_start, reports, missing = self._digest_data(request)
         md = _render_digest_markdown(week_start, reports, missing)

@@ -47,7 +47,7 @@
 - **测试成功。** "授权码"填 `good-code`，打开"启用邮件"，点 "保存"；再点 "发送测试邮件"，`wait_for` "测试邮件已发到 ops@example.edu"，红框消失。看临时 SMTP 服务收到的邮件：发件人 `lab@example.edu`，收件人 `ops@example.edu`。
 - **修改历史。** 点 "修改历史"，`wait_for` "修改了授权码"，抽屉里有"SMTP 服务器：（空） → 127.0.0.1""启用邮件：否 → 是"，没有授权码。截图并存快照，关闭抽屉。
 - **课题组。** 点 menuitem "课题组"，点 "新建课题组"，名称填 `外组` → "保存"，`wait_for` "已有同名的课题组"；改成 `相控阵课题组`，财务邮箱填 `finance-pa@example.edu`，保存后列表多一行，在籍成员 0。
-- **新建账号。** 点 menuitem "账号"，确认没有 `ops`。点 "新建账号"：`t_new` / `新导师`，课题组选"相控阵课题组"，角色选"导师"，初始密码 `Init-2026-pass!`，点 "保存"，`wait_for` "已新建，对方首次登录时需修改密码"。截图。新开 `isolatedContext: "t_new"` 用这个账号登录，页面跳到 `/password`，显示"首次登录，请先修改初始密码。"
+- **新建账号。** 点 menuitem "账号"，确认没有 `ops`。点 "新建账号"：`t_new` / `新导师`，课题组选"相控阵课题组"，基础角色选"导师"，初始密码 `Init-2026-pass!`，点 "保存"，`wait_for` "已新建，对方首次登录时需修改密码"。截图。新开 `isolatedContext: "t_new"` 用这个账号登录，页面跳到 `/password`，显示"首次登录，请先修改初始密码。"
 - **停用。** 回到 `ops`，在"新导师"那一行点 "停用" → 确定，`wait_for` "已停用"。刷新 `t_new` 的页面，回到登录页。
 - **存储状态。** 在隔离实例点「存储与备份」，默认应显示「服务器本地卷」；启用合成 NAS 后检查身份，替换测试标识后刷新，应显示「不可用」。同时核对普通成员请求 `/api/system/storage-status/` 得到 403。
 - **备份状态。** 刚启动的实例：menuitem 是"存储与备份 需处理"，`wait_for` "尚无成功备份"。在后端目录运行 `manage.py record_ops_run backup ok --snapshot abcdef12 --detail "标签 daily"`，点 "重新检查"，`wait_for` "快照 abcdef12"，菜单项后面的"需处理"随即消失。再记 `backup failed --detail "导出数据库失败（标签 daily，退出码 1）"`，重新检查，失败那一行是红色，菜单又标"需处理"。再记 `drill ok --snapshot abcdef12 --detail "附件校验：3 项"`，演练一行显示"通过"。每一步截图，用 query.sh 读回 `system.models.OpsRun`。"逾期"要等真实时间过去，只有自动化测试覆盖；真实的 `backup.sh` 和恢复演练由脚本测试和整套环境验收覆盖。

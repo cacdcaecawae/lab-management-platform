@@ -25,15 +25,15 @@ const DIGEST_SECTIONS = [
 ] as const
 
 // Supervisors: 待反馈 / 本周汇总 / 未交名单 / 全部. Students only see their own reports (the API scopes the list).
-const tab = ref(auth.isSupervisor ? 'pending' : 'all')
+const tab = ref(auth.isAdvisor ? 'pending' : 'all')
 const filters = reactive({
-  status: auth.isSupervisor ? 'submitted' : '',
+  status: auth.isAdvisor ? 'submitted' : '',
   week_start: '',
   owner: '' as number | '',
   search: '',
 })
 const keyword = ref('')
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+const members = auth.isAdvisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 const { items, count, page, pageSize, loading } = usePagedList(reportsApi.list, filters)
 
 const missingWeek = ref(mondayOf())
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
 
 <template>
   <el-card class="card">
-    <el-tabs v-if="auth.isSupervisor" v-model="tab">
+    <el-tabs v-if="auth.isAdvisor" v-model="tab">
       <el-tab-pane label="待反馈" name="pending" />
       <el-tab-pane label="本周汇总" name="digest" />
       <el-tab-pane label="未交名单" name="missing" />
@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <PageToolbar>
         <el-input v-model="keyword" placeholder="搜索周报内容或姓名" clearable @change="filters.search = keyword" />
-        <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="成员" placeholder="全部成员" clearable filterable>
+        <el-select v-if="auth.isAdvisor" v-model="filters.owner" aria-label="成员" placeholder="全部成员" clearable filterable>
           <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
         </el-select>
         <el-date-picker
@@ -250,18 +250,18 @@ onBeforeUnmount(() => {
           <el-option v-for="s in ['draft', 'submitted', 'needs_revision', 'reviewed']" :key="s" :label="STATUS[s].label" :value="s" />
         </el-select>
         <template #actions>
-          <el-button v-if="!auth.isSupervisor" type="primary" :loading="openingThisWeek" @click="openThisWeek">写本周周报</el-button>
+          <el-button v-if="!auth.isAdvisor" type="primary" :loading="openingThisWeek" @click="openThisWeek">写本周周报</el-button>
         </template>
       </PageToolbar>
       <el-table empty-text="暂无周报" v-loading="loading" :data="items">
-        <el-table-column v-if="auth.isSupervisor" label="学生" min-width="90">
+        <el-table-column v-if="auth.isAdvisor" label="学生" min-width="90">
           <template #default="{ row }">
             <RouterLink :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.owner.name }}</RouterLink>
           </template>
         </el-table-column>
         <el-table-column label="周一日期" min-width="110">
           <template #default="{ row }">
-            <RouterLink v-if="!auth.isSupervisor" :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.week_start }}</RouterLink>
+            <RouterLink v-if="!auth.isAdvisor" :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.week_start }}</RouterLink>
             <template v-else>{{ row.week_start }}</template>
           </template>
         </el-table-column>

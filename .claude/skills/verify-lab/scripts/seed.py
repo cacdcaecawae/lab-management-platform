@@ -16,18 +16,18 @@ group = ResearchGroup.objects.create(name="验证课题组")
 other_group = ResearchGroup.objects.create(name="外组")
 
 
-def make(username, name, grp, role=User.Role.STUDENT, must_change=False):
+def make(username, name, grp, role=User.Role.STUDENT, must_change=False, **tags):
     return User.objects.create_user(
-        username=username, password=PASSWORD, name=name, group=grp, role=role, must_change_password=must_change
+        username=username, password=PASSWORD, name=name, group=grp, role=role, must_change_password=must_change, **tags
     )
 
 
 s_a = make("s_a", "学生甲", group)
 s_b = make("s_b", "学生乙", group)
 make("s_new", "新同学", group, must_change=True)
-make("mgr", "管理员甲", group, User.Role.MANAGER)
-make("adv", "导师甲", group, User.Role.ADVISOR)
-make("x_mgr", "外组管理员", other_group, User.Role.MANAGER)
+make("mgr", "管理员甲", group, is_manager=True)  # a student with the 管理员 tag
+make("adv", "导师甲", group, User.Role.ADVISOR, is_approver=True)
+make("x_mgr", "外组管理员", other_group, is_manager=True)
 # the ops account: a superuser without a group, which only sees 系统管理
 User.objects.create_superuser("ops", password=PASSWORD, name="运维", must_change_password=False)
 

@@ -16,7 +16,7 @@ import FormDialog from '@/components/FormDialog.vue'
 const auth = useAuthStore()
 const router = useRouter()
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+const members = auth.isAdvisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 const filters = reactive({ project: '' as number | '', owner: '' as number | '', kind: '', search: '' })
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(datasetsApi.list, filters)
@@ -54,7 +54,7 @@ async function create() {
       <el-select v-model="filters.project" aria-label="项目" placeholder="全部项目" clearable filterable>
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
-      <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="创建人" placeholder="全部成员" clearable filterable>
+      <el-select v-if="auth.isAdvisor" v-model="filters.owner" aria-label="创建人" placeholder="全部成员" clearable filterable>
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <el-select v-model="filters.kind" aria-label="类型" placeholder="全部类型" clearable>

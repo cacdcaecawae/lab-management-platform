@@ -61,16 +61,20 @@ const editable = computed(() => (record.value ? (status.value === 'draft' && min
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 const { markSaved } = useUnsavedGuard(form, () => editable.value)
 const canReview = computed(() => {
-  const role = auth.user?.role
   if (!record.value || mine.value) return false
-  return (status.value === 'pending_initial' && role === 'manager') || (status.value === 'pending_final' && role === 'advisor')
+  return (status.value === 'pending_initial' && auth.isManager) || (status.value === 'pending_final' && auth.isApprover)
 })
+// The group's only approver may do both reviews of a request (the roles note); the record says so.
+const sameReviewer = (i: number) => {
+  const [before, a] = [record.value!.approvals[i - 1], record.value!.approvals[i]]
+  return a.stage === 'final' && before?.stage === 'initial' && before.verdict === 'approve' && before.reviewer.id === a.reviewer.id
+}
 const lastReturn = computed<Approval | undefined>(() =>
   record.value?.returned ? [...record.value.approvals].reverse().find((a) => a.verdict === 'return') : undefined,
 )
 const formTotal = computed(() => itemsTotal(form.items))
 const waitingFor = computed(() =>
-  ({ pending_initial: '等待管理员初审', pending_final: '等待导师终审' } as Record<string, string>)[status.value ?? ''] ?? '',
+  ({ pending_initial: '等待管理员初审', pending_final: '等待终审人终审' } as Record<string, string>)[status.value ?? ''] ?? '',
 )
 const canMark = computed(() => auth.isManager && (status.value === 'approved' || status.value === 'purchased'))
 
@@ -171,7 +175,7 @@ async function submit() {
   busy.value = true
   try {
     fill(await purchasesApi.submit(r.id))
-    ElMessage.success(record.value?.status === 'pending_final' ? '已提交，等待导师终审' : '已提交，等待管理员初审')
+    ElMessage.success(record.value?.status === 'pending_final' ? '已提交，等待终审人终审' : '已提交，等待管理员初审')
   } catch (e) {
     handleErrors(e)
   } finally {
@@ -370,7 +374,7 @@ if (route.params.id) load(Number(route.params.id))
     <el-card v-if="record?.approvals.length" header="审批记录" class="card">
       <el-timeline>
         <el-timeline-item
-          v-for="a in record.approvals"
+          v-for="(a, i) in record.approvals"
           :key="a.id"
           :timestamp="formatTime(a.created_at)"
           :type="a.verdict === 'approve' ? 'success' : 'danger'"
@@ -379,6 +383,7 @@ if (route.params.id) load(Number(route.params.id))
           <div>
             {{ STAGE_LABELS[a.stage] }} · {{ a.reviewer.name }} · <b>{{ REVIEW_VERDICT_LABELS[a.verdict] }}</b>
             <span class="muted">（当时合计 ¥ {{ formatMoney(a.total) }}）</span>
+            <span v-if="sameReviewer(i)" class="muted">初审和终审为同一人</span>
           </div>
           <div v-if="a.comment" class="comment">{{ a.comment }}</div>
         </el-timeline-item>

@@ -30,15 +30,19 @@ def test_student_sees_own_todos_only(api, project, student_a, student_b):
     assert data["supervisor"] is None
 
 
-def test_supervisor_sees_missing_and_pending_in_own_group(api, project, student_a, student_b, manager, other_group):
+def test_advisor_sees_missing_and_pending_in_own_group(api, project, student_a, student_b, manager, advisor, other_group):
     outsider = make_user("outsider", other_group)
     report(student_a, WeeklyReport.Status.SUBMITTED)
     report(outsider, WeeklyReport.Status.SUBMITTED)
 
-    sup = api(manager).get("/api/dashboard/").json()["supervisor"]
+    sup = api(advisor).get("/api/dashboard/").json()["supervisor"]
     assert sup["week_start"] == current_week_start().isoformat()
-    assert [u["id"] for u in sup["missing_reports"]] == [student_b.id]
+    # the manager is a student too (the 管理员 tag): one more weekly report to hand in
+    assert sorted(u["id"] for u in sup["missing_reports"]) == sorted([student_b.id, manager.id])
     assert [r["owner"]["id"] for r in sup["pending_reviews"]] == [student_a.id]
+    # a student with the 管理员 tag: purchases to review, but no weekly reports of others
+    sup = api(manager).get("/api/dashboard/").json()["supervisor"]
+    assert sup["missing_reports"] == sup["pending_reviews"] == []
 
 
 def test_dashboard_requires_login(api, db):

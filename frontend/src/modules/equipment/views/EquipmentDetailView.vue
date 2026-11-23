@@ -91,7 +91,7 @@ load()
         </el-descriptions-item>
         <el-descriptions-item label="采购申请" :span="2">
           <!-- the request is private to its applicant and supervisors: others see the code only -->
-          <RouterLink v-if="equipment.purchase && auth.isSupervisor" class="code" :to="{ name: 'purchase-detail', params: { id: equipment.purchase.id } }">
+          <RouterLink v-if="equipment.purchase && auth.isFinance" class="code" :to="{ name: 'purchase-detail', params: { id: equipment.purchase.id } }">
             {{ equipment.purchase.code }}
           </RouterLink>
           <span v-else class="code">{{ equipment.purchase?.code }}</span>

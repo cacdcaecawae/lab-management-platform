@@ -62,7 +62,7 @@ const { markSaved } = useUnsavedGuard(
   () => editable.value || canFeedback.value,
   () => canFeedback.value && !!fb.content.trim(),
 )
-const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isSupervisor && !isOwner.value)
+const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isAdvisor && !isOwner.value)
 const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)))
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
 

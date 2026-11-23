@@ -94,16 +94,16 @@ def test_owner_is_told_when_a_record_is_returned(api, resource, record, student_
     assert not Notification.objects.exclude(recipient=student_a).exists()
 
 
-def test_return_requires_a_reason(api, resource, record, student_a, manager):
+def test_return_requires_a_reason(api, resource, record, student_a, advisor):
     submitted(resource, record, api(student_a))
     for body in ({}, {"reason": "   "}):
-        response = api(manager).post(url(resource, record, "return"), body, format="json")
+        response = api(advisor).post(url(resource, record, "return"), body, format="json")
         assert response.status_code == 400
         assert "reason" in response.json()["errors"]
 
 
-def test_only_submitted_records_can_be_returned(api, resource, record, manager):
-    response = api(manager).post(url(resource, record, "return"), {"reason": "x"}, format="json")
+def test_only_submitted_records_can_be_returned(api, resource, record, advisor):
+    response = api(advisor).post(url(resource, record, "return"), {"reason": "x"}, format="json")
     assert response.status_code == 409
     assert response.json()["code"] == "invalid_state"
 
@@ -144,8 +144,8 @@ def test_students_cannot_return(api, resource, record, student_a, student_b):
         assert response.status_code == 403
 
 
-def test_supervisor_cannot_write_someone_elses_record(api, resource, record, manager):
-    client = api(manager)
+def test_supervisor_cannot_write_someone_elses_record(api, resource, record, advisor):
+    client = api(advisor)
     assert client.patch(url(resource, record), {"title": "x"}, format="json").status_code == 403
     assert client.post(url(resource, record, "submit")).status_code == 403
     assert client.delete(url(resource, record)).status_code == 403
@@ -164,33 +164,38 @@ def test_other_student_gets_404(api, resource, record, student_b):
     assert client.get(url(resource)).json()["count"] == 0
 
 
-def test_other_group_supervisor_gets_404(api, resource, record, student_a, other_manager):
+def test_other_group_supervisor_gets_404(api, resource, record, student_a, other_advisor):
     submitted(resource, record, api(student_a))
-    client = api(other_manager)
+    client = api(other_advisor)
     assert client.get(url(resource, record)).status_code == 404
     assert client.get(url(resource, record, "history")).status_code == 404
     assert client.post(url(resource, record, "return"), {"reason": "x"}, format="json").status_code == 404
     assert client.get(url(resource)).json()["count"] == 0
 
 
-def test_group_supervisors_can_read(api, resource, record, manager, advisor):
-    for supervisor in (manager, advisor):
-        client = api(supervisor)
-        assert client.get(url(resource, record)).status_code == 200
-        assert client.get(url(resource, record, "history")).status_code == 200
-        assert [r["id"] for r in client.get(url(resource)).json()["results"]] == [record.pk]
+def test_the_groups_advisors_read_and_its_managers_do_not(api, resource, record, student_a, manager, advisor):
+    client = api(advisor)
+    assert client.get(url(resource, record)).status_code == 200
+    assert client.get(url(resource, record, "history")).status_code == 200
+    assert [r["id"] for r in client.get(url(resource)).json()["results"]] == [record.pk]
+    # a student with the 管理员 tag runs the group's affairs, not its research records
+    submitted(resource, record, api(student_a))
+    client = api(manager)
+    assert client.get(url(resource, record)).status_code == 404
+    assert client.get(url(resource)).json()["count"] == 0
+    assert client.post(url(resource, record, "return"), {"reason": "x"}, format="json").status_code == 403
 
 
 # --- list filters --------------------------------------------------------------------------
 
 
-def test_list_filters(api, resource, record, student_a, student_b, group, manager):
+def test_list_filters(api, resource, record, student_a, student_b, group, advisor):
     make = make_experiment if resource == "experiments" else make_run
     other_project = Project.objects.create(group=group, name="另一个项目", leader=student_b)
     theirs = make(student_b, other_project, title="别人的记录")
     submitted(resource, theirs, api(student_b))
 
-    client = api(manager)
+    client = api(advisor)
 
     def ids(**params):
         return {r["id"] for r in client.get(url(resource), params).json()["results"]}

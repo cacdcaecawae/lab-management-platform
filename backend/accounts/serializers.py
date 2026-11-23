@@ -23,12 +23,12 @@ class MeSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "name", "role", "is_supervisor", "is_superuser", "group",
+            "id", "username", "name", "role", "is_manager", "is_approver", "is_supervisor", "is_superuser", "group",
             "email", "phone", "wechat", "research_direction", "must_change_password", "avatar_url",
         ]
         # PATCH /api/auth/me/ (个人信息): the person keeps their own contact details and research direction up to date.
         # Name, login name and role are set by managers / ops; a renamed account could pass as someone else.
-        read_only_fields = ["username", "name", "role", "is_superuser", "must_change_password"]
+        read_only_fields = ["username", "name", "role", "is_manager", "is_approver", "is_superuser", "must_change_password"]
 
     avatar_url = serializers.SerializerMethodField()
 

@@ -34,7 +34,7 @@ const { items, count, page, pageSize, loading, load } = usePagedList(reimburseme
 
 // All funds for filtering (a stopped one still has records); the form offers active ones only.
 const funds = useOptions(() => fundsApi.list({ page_size: 100 }))
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+const members = auth.isFinance ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 // shortcut: the 100 most recent purchase requests I can see; switch to remote search if that is not enough.
 const purchases = useOptions(() => purchasesApi.list({ page_size: 100 }))
 const statusLabels = Object.fromEntries(Object.entries(REIMBURSEMENT_STATUS).map(([k, v]) => [k, v.label]))
@@ -266,7 +266,7 @@ async function editFinanceEmail() {
       <el-select v-model="filters.fund" placeholder="全部经费" clearable filterable aria-label="经费来源">
         <el-option v-for="f in funds" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
       </el-select>
-      <el-select v-if="auth.isSupervisor" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
+      <el-select v-if="auth.isFinance" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <template #actions>
@@ -282,7 +282,7 @@ async function editFinanceEmail() {
               <el-button link type="primary" class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
             </template>
           </el-table-column>
-          <el-table-column v-if="auth.isSupervisor" label="报销人" min-width="80">
+          <el-table-column v-if="auth.isFinance" label="报销人" min-width="80">
             <template #default="{ row }">{{ row.owner.name }}</template>
           </el-table-column>
           <el-table-column label="类别" min-width="80">
@@ -334,7 +334,7 @@ async function editFinanceEmail() {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="auth.isSupervisor" label="统计" name="stats">
+      <el-tab-pane v-if="auth.isFinance" label="统计" name="stats">
         <PageToolbar>
           <el-radio-group v-model="by">
             <el-radio-button v-for="(label, k) in BY_LABELS" :key="k" :value="k">按{{ label }}</el-radio-button>

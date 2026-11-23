@@ -23,7 +23,7 @@ def build_digests(today, site_url):
     managers = defaultdict(list)
     digests = defaultdict(list)
     for user in eligible.values():
-        if user.role == User.Role.MANAGER:
+        if user.is_manager:
             managers[user.group_id].append(user.pk)
 
     def notice(recipient, title, item, path):

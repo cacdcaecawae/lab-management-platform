@@ -1,4 +1,3 @@
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
@@ -20,7 +19,7 @@ class NotificationViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     def get_queryset(self):
         user = self.request.user
         scoped = scope_group(Notification.objects.filter(recipient=user), user)
-        scoped = scoped.filter(Q(audience_role="") | Q(audience_role=user.role))
+        scoped = scoped.filter(audience_role__in=user.audiences)  # a tag taken away hides what it brought
         if self.action == "list" and self.request.query_params.get("unread") == "1":
             scoped = scoped.filter(read_at__isnull=True)
         return scoped

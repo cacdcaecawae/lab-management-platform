@@ -30,15 +30,48 @@ class LoginNameMixin:
             raise Conflict(LOGIN_NAME_TAKEN)
 
 
-class MemberSerializer(LoginNameMixin, serializers.ModelSerializer):
-    """Member for everyone in the group; MemberDetail (private fields too) for supervisors and the member."""
+STATUSES = {"active": "在籍", "graduated": "已毕业", "disabled": "已停用"}
+
+
+class MemberDetailsMixin(serializers.Serializer):
+    """Identity, year, status and tags (describe a person; no permissions), shared by the members page and 系统管理.
+    `member_status` is written through is_active and graduated: only 在籍 signs in."""
+
+    member_status = serializers.ChoiceField(choices=list(STATUSES), required=False)
+    tags = serializers.ListField(child=serializers.CharField(max_length=20, allow_blank=True), max_length=10, required=False)
+
+    def validate_tags(self, value):
+        return list(dict.fromkeys(tag.strip() for tag in value if tag.strip()))  # in order, once each
+
+    def validate_member_status(self, value):
+        if value != "active" and self.instance is not None and self.instance == self.context["request"].user:
+            raise serializers.ValidationError("不能停用自己的账号")
+        return value
+
+    def update(self, user, validated_data):
+        status = validated_data.pop("member_status", None)
+        if status:
+            validated_data.update(is_active=status == "active", graduated=status == "graduated")
+        return super().update(user, validated_data)
+
+
+class MemberSerializer(LoginNameMixin, MemberDetailsMixin, serializers.ModelSerializer):
+    """Member for everyone in the group; MemberDetail (private fields too) for supervisors and the member.
+    Base role and the two tags are read-only here: ops sets them, and approvers the 管理员 tag (MemberViewSet.manager)."""
 
     class Meta:
         model = User
-        fields = ["id", "name", "role", "research_direction", "is_active", *PRIVATE_FIELDS]
-        read_only_fields = ["must_change_password"]
+        fields = [
+            "id", "name", "role", "is_manager", "is_approver", "identity", "enrollment_year", "member_status", "tags",
+            "research_direction", "is_active", *PRIVATE_FIELDS,
+        ]
+        read_only_fields = ["role", "is_manager", "is_approver", "must_change_password"]
         # Keep the format check but drop DRF's UniqueValidator: duplicates are a 409, as when creating.
-        extra_kwargs = {"name": {"allow_blank": False}, "username": {"validators": [User.username_validator]}}
+        extra_kwargs = {
+            "name": {"allow_blank": False},
+            "username": {"validators": [User.username_validator]},
+            "enrollment_year": {"min_value": 1950, "max_value": 2100},
+        }
 
     def to_representation(self, member):
         data = super().to_representation(member)
@@ -47,15 +80,6 @@ class MemberSerializer(LoginNameMixin, serializers.ModelSerializer):
             for field in PRIVATE_FIELDS:
                 data.pop(field)
         return data
-
-    def validate_role(self, value):
-        user = self.context["request"].user
-        if self.instance == user:
-            if value != user.role:
-                raise serializers.ValidationError("不能修改自己的角色")
-        elif value != User.Role.STUDENT:
-            raise serializers.ValidationError("管理员只能设置学生账号；导师和管理员账号请联系运维在“系统管理”里设置")
-        return value
 
     def validate_is_active(self, value):
         if not value and self.instance == self.context["request"].user:
@@ -90,16 +114,19 @@ class NewAccountMixin:
 
 
 class MemberCreateSerializer(NewAccountMixin, MemberSerializer):
+    """A manager adds a student (the base role's default); advisors and the tags are set by ops."""
+
     password = serializers.CharField(write_only=True, trim_whitespace=False)
+    member_status = serializers.CharField(read_only=True)  # a new account is 在籍
 
     class Meta(MemberSerializer.Meta):
         fields = [*MemberSerializer.Meta.fields, "password"]
-        read_only_fields = ["is_active", "must_change_password"]
+        read_only_fields = ["role", "is_manager", "is_approver", "is_active", "must_change_password"]
         # Keep the format check but drop DRF's UniqueValidator: duplicates are a 409, not a 400.
         extra_kwargs = {
             "name": {"required": True, "allow_blank": False},
-            "role": {"required": True},
             "username": {"validators": [User.username_validator]},
+            "enrollment_year": {"min_value": 1950, "max_value": 2100},
         }
 
     def create(self, validated_data):

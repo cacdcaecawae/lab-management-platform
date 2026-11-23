@@ -9,7 +9,7 @@ class RecordStatus(models.TextChoices):
 
 
 class Experiment(models.Model):
-    """实验记录。个人数据：本人 + 本组管理员/导师可见。提交后锁定，管理员/导师可退回为草稿。"""
+    """实验记录。个人数据：本人 + 本组导师可见。提交后锁定，导师可退回为草稿。"""
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="操作人", on_delete=models.PROTECT, related_name="experiments")
     project = models.ForeignKey("projects.Project", verbose_name="项目", on_delete=models.PROTECT, related_name="experiments")

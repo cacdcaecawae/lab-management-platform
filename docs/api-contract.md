@@ -42,8 +42,8 @@
 
 - 个人数据（实验、数据集/文件、处理记录、周报）：本人 + 本组管理员/导师可读；只有本人可写。
 - 组内公开（项目、成员公开字段；第二期的设备、预约、使用登记、耗材与流水）：本组全员可读。
-- 设备台账、耗材品类、入库、盘点调整只有本组**管理员**（`role=manager`，不含导师）可写。
-- 第三期：采购申请、报销和它们的附件是个人数据（本人 + 本组管理员、导师）；经费来源组内公开，只有管理员可写。
+- 设备台账、耗材品类、入库、盘点调整只有本组**管理员**（`is_manager=true`，任何基础角色；不含没有管理员标签的导师）可写。
+- 第三期：采购申请、报销和它们的附件是个人数据（本人 + 本组管理员、终审人）；经费来源组内公开，只有管理员可写。
 - 越权读取一律 404。
 - 系统管理 `/api/system/` 只有运维账号（超级用户）可用，其他账号 403；运维账号访问业务接口仍然 403 `no_group`。
 
@@ -63,9 +63,9 @@
 | POST | `/api/auth/password/` | `{old_password, new_password}` → 204；新密码按 Django 密码规则校验 |
 | POST | `/api/auth/register/` | 匿名，要 CSRF。`{code, username, name, email?, password}` → 201。`code` 是课题组注册链接里的码，在事务里按它锁住课题组后、先于其他字段核对（链接关闭或更换与在途申请不会交错），不对 400（`errors.code`），不会提示学号是否已存在；学号已存在 409；密码按 Django 规则校验。建成该组的学生账号，`is_active=false`、`pending=true`、`must_change_password=false`，并给本组管理员发站内通知。每组待审核超过 30 个时 409 `too_many_pending`；同一来源地址每小时 10 次，超过 429 |
 
-`Me = {id, username, name, role, is_supervisor, is_superuser, group: {id, name} | null, email, phone, wechat, research_direction, must_change_password, avatar_url}`（`is_superuser`：运维账号；`avatar_url`：本人头像，每次上传都会变，没有头像为 `null`）
+`Me = {id, username, name, role, is_manager, is_approver, is_supervisor, is_superuser, group: {id, name} | null, email, phone, wechat, research_direction, must_change_password, avatar_url}`（`is_supervisor`：导师或管理员）（`is_superuser`：运维账号；`avatar_url`：本人头像，每次上传都会变，没有头像为 `null`）
 
-`role`: `student` | `manager` | `advisor`
+`role`（基础角色）: `student` | `advisor`；`is_manager` 管理员、`is_approver` 终审人是可叠加的标签
 
 ## 工作台 `/api/dashboard/`（主代理，集成阶段实现）
 
@@ -125,16 +125,18 @@
 
 ## 成员 `/api/members/`（Agent A）
 
-`Member`（本组成员可见的公开字段）：`{id, name, role, research_direction, is_active}`
+`Member`（本组成员可见的公开字段）：`{id, name, role, is_manager, is_approver, identity, enrollment_year, member_status, tags, research_direction, is_active}`（`identity`：`teacher` 教师 / `postdoc` 博士后 / `phd` 博士生 / `master` 硕士生 / `undergraduate` 本科生 / `assistant` 科研助理，可为空串；`member_status`：`active` 在籍 / `graduated` 已毕业 / `disabled` 已停用，只有在籍能登录；`tags`：本组自由填写的词条，最多 10 个、每个 20 字）
 `MemberDetail`（本组管理员/导师可见，本人看自己也返回）：在 `Member` 基础上增加 `{username, email, phone, wechat, must_change_password}`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/members/?search=&role=&is_active=` | 本组全员 | 只返回本组成员；`search` 匹配姓名、研究方向，管理员/导师另外匹配学号（学生看不到学号，也不能用搜索试探） |
+| GET | `/api/members/?search=&role=&identity=&flag=&tag=&year=&status=&is_active=` | 本组全员 | 只返回本组成员；`flag`：`manager` / `approver`；不认识的筛选值返回空列表；`search` 匹配姓名、研究方向，管理员/导师另外匹配学号（学生看不到学号，也不能用搜索试探） |
 | GET | `/api/members/{id}/` | 本组全员 | 外组成员 404 |
-| POST | `/api/members/` | 管理员 | `{username, name, role, email?, phone?, wechat?, research_direction?, password}` → 201 `MemberDetail`；`role` 只能是 `student`；学号 / 工号已被任何账号使用 → 409 `conflict`（"这个学号 / 工号已经有账号在用"）；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
-| PATCH | `/api/members/{id}/` | 管理员 | 可改 `username, name, role, email, phone, wechat, research_direction, is_active`（本组学生和自己）；`username` 是登录名，用来改正注册时填错的学号，格式同新建，已被使用 → 409 `conflict`，改后用新登录名登录，记录不受影响；不可改课题组；管理员不能停用自己 |
+| POST | `/api/members/` | 管理员 | `{username, name, identity?, enrollment_year?, tags?, email?, phone?, wechat?, research_direction?, password}` → 201 `MemberDetail`；新账号是学生、在籍（`role` 和两个标签只读，传了也忽略）；学号 / 工号已被任何账号使用 → 409 `conflict`（"这个学号 / 工号已经有账号在用"）；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
+| PATCH | `/api/members/{id}/` | 管理员 | 可改 `username, name, identity, enrollment_year, member_status, tags, email, phone, wechat, research_direction, is_active`（本组没有标签的学生和自己；`role`、`is_manager`、`is_approver` 只读）；`username` 是登录名，用来改正注册时填错的学号，格式同新建，已被使用 → 409 `conflict`，改后用新登录名登录，记录不受影响；不可改课题组；管理员不能停用自己 |
 | POST | `/api/members/{id}/reset-password/` | 管理员 | `{password}` → 204，并置 `must_change_password=true` |
+| POST | `/api/members/{id}/manager/` | 终审人 | `{is_manager: bool}` → `MemberDetail`；本组任何成员（运维账号 404） |
+| GET | `/api/members/export/?<同列表筛选>` | 导师、管理员 | 花名册 `.xlsx`（姓名、学号 / 工号、基础角色、管理员、终审人、身份、入学年份、状态、词条、邮箱、电话、研究方向），与列表筛选一致 |
 | GET | `/api/members/signup/` | 管理员 | 本组注册链接的码 `{code}`，空串表示关闭 |
 | POST | `/api/members/signup/` | 管理员 | `{open: true}` 生成新码（旧码失效），`{open: false}` 关闭 → `{code}` |
 | GET | `/api/members/pending/` | 管理员 | 本组待审核的申请 `[{id, username, name, email, date_joined}]`，不分页 |
@@ -143,9 +145,9 @@
 
 待审核的申请不是成员：成员列表、详情、修改都看不到它们（404），选人的地方也不接受。
 
-不提供删除（离组用 `is_active=false`）。管理员只能修改、停用、重置**学生**账号（以及修改自己的资料），`role` 只能设为 `student`，不能改自己的角色；导师、管理员账号由运维在"系统管理 → 账号"里管理，运维账号只在 `/admin/` 管理；对它们 PATCH / 重置密码返回 404。
+不提供删除（离组用 `is_active=false`）。管理员只能修改、停用、重置**没有标签的学生**账号（以及修改自己的资料），不能改任何人的基础角色和标签；导师、带标签的账号由运维在"系统管理 → 账号"里管理（终审人只能开关管理员标签），运维账号只在 `/admin/` 管理；对它们 PATCH / 重置密码返回 404。
 
-管理命令：`python manage.py import_members <file.csv> --group <课题组名>`。CSV 列：`username,name,role,email,phone,research_direction`（UTF-8，可带 BOM）。为每个新用户生成随机初始密码，`must_change_password=true`；已存在的用户名跳过并报告；结果（用户名, 初始密码）输出到 stdout 或 `--output` 指定的 CSV。
+管理命令：`python manage.py import_members <file.csv> --group <课题组名>`。CSV 列：`username,name,role,email,phone,research_direction`（UTF-8，可带 BOM；`role` 是 `student` 或 `advisor`，旧的 `manager` 按"学生 + 管理员"导入）。为每个新用户生成随机初始密码，`must_change_password=true`；已存在的用户名跳过并报告；结果（用户名, 初始密码）输出到 stdout 或 `--output` 指定的 CSV。
 
 ## 项目 `/api/projects/`（Agent A）
 
@@ -394,7 +396,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/purchases/?status=&mine=1&todo=1&search=` | 个人数据范围 | 本人 + 本组管理员、导师；`todo=1` 只列等当前用户审批的（管理员：待初审；导师：待终审；都不含自己的）；`search` 匹配用途、品名、申请人 |
+| GET | `/api/purchases/?status=&mine=1&todo=1&search=` | 个人数据范围 | 本人 + 本组管理员、终审人；`todo=1` 只列等当前用户审批的（管理员：待初审；终审人：待终审；都不含自己的）；`search` 匹配用途、品名、申请人 |
 | POST | `/api/purchases/` | 本组全员 | `{purpose, fund_id?, items?: [{name, spec?, quantity, unit_price, link?}]}` → 201 `PurchaseDetail`（草稿）。`fund_id` 只能选本组可用的经费 |
 | GET | `/api/purchases/{id}/` | 个人数据范围 | `PurchaseDetail` |
 | PATCH | `/api/purchases/{id}/` | 见说明 | 草稿：本人。已批准、已采购：本人或管理员。审批中 → 409 `invalid_state`（先撤回）；已到货 → 409。`items` 整体替换。已批准后品名、数量或单价有变化 → 回到待初审（管理员的申请回到待终审），审批记录保留，修改历史的 `reason` 写明改前改后；改后的整单要通过和提交时一样的检查（至少 1 条明细、合计大于 0 等），否则 400，这次修改不生效 |
@@ -434,8 +436,8 @@
 | POST | `/api/reimbursements/{id}/advance/` | 本人或管理员 | `{status}`：待提交 → 已交财务（必须已有发票类附件，400 `errors.attachments`）→ 已到账；已交财务 → 待提交只限管理员（403），修改历史记下退回人。其他变化 409 |
 | POST | `/api/reimbursements/{id}/attachments/` | 本人或管理员 | 同采购申请；只有待提交可以上传，否则 409 `invalid_state` |
 | GET | `/api/reimbursements/{id}/history/` | 个人数据范围 | |
-| GET | `/api/reimbursements/stats/?by=&…` | 管理员、导师 | `by`: `fund` \| `category`（默认）\| `owner` \| `month`。→ `{by, rows: [{key, label, count, total}], count, total}`，合计由数据库按同样条件求和 |
-| GET | `/api/reimbursements/export/?by=&…` | 管理员、导师 | `.xlsx`：工作表"汇总"（按 `by` 分组，最后一行合计）和"明细" |
+| GET | `/api/reimbursements/stats/?by=&…` | 管理员、终审人 | `by`: `fund` \| `category`（默认）\| `owner` \| `month`。→ `{by, rows: [{key, label, count, total}], count, total}`，合计由数据库按同样条件求和 |
+| GET | `/api/reimbursements/export/?by=&…` | 管理员、终审人 | `.xlsx`：工作表"汇总"（按 `by` 分组，最后一行合计）和"明细" |
 | POST | `/api/reimbursements/remind-finance/` | 管理员 | 给课题组的财务邮箱发一封"已交财务、尚未到账"的清单 → `{sent, to}`（`sent=0` 表示没有待到账的报销，没有发）。没设财务邮箱或平台没启用邮件 → 409 `not_configured`；SMTP 失败 → 502 `mail_failed` |
 | GET / PATCH | `/api/reimbursements/finance-email/` | 管理员 | 本组的财务邮箱 `{finance_email}`；PATCH 同样的结构，空字符串表示不设 |
 
@@ -527,11 +529,11 @@
 | GET / POST | `/api/system/groups/` | 课题组 `{id, name, finance_email, member_count, created_at}`（`member_count`：在籍成员）；名称重复 400 |
 | PATCH | `/api/system/groups/{id}/` | `{name?, finance_email?}`；不能删除 |
 | GET | `/api/system/accounts/?search=&group=&role=&is_active=` | 所有课题组的成员账号，分页，不含运维账号 |
-| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, email?, phone?, wechat?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
-| PATCH | `/api/system/accounts/{id}/` | `{username?, name?, role?, email?, phone?, wechat?, research_direction?, is_active?}`；`username`（登录名）可以改正，已被任何账号使用 → 409 `conflict`；课题组创建后不能改；运维账号 404 |
+| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, is_manager?, is_approver?, identity?, enrollment_year?, tags?, email?, phone?, wechat?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
+| PATCH | `/api/system/accounts/{id}/` | `{username?, name?, role?, is_manager?, is_approver?, identity?, enrollment_year?, member_status?, tags?, email?, phone?, wechat?, research_direction?, is_active?}`；`username`（登录名）可以改正，已被任何账号使用 → 409 `conflict`；课题组创建后不能改；运维账号 404 |
 | POST | `/api/system/accounts/{id}/reset-password/` | `{password}` → 204，对方下次登录需改密码 |
 
-`Account = {id, username, name, role, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
+`Account = {id, username, name, role, is_manager, is_approver, identity, enrollment_year, member_status, tags, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
 
 邮件的发送失败（业务通知和测试邮件都算）记为 `last_mail_error` / `last_mail_error_at`，格式同上（原因 + 要检查什么，见 `docs/mail-setup.md`），之后发送成功一次就清空。
 

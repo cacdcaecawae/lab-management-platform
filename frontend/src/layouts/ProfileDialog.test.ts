@@ -16,7 +16,9 @@ afterEach(() => {
 })
 
 const me: Me = {
-  id: 1, username: '2026017', name: '学生甲', role: 'student', is_supervisor: false, is_superuser: false,
+  id: 1, username: '2026017', name: '学生甲', role: 'student', is_manager: false,
+  is_approver: false,
+  is_supervisor: false, is_superuser: false,
   group: { id: 1, name: '超声组' }, email: '', phone: '', wechat: '', research_direction: '', must_change_password: false,
   avatar_url: null,
 }

@@ -40,8 +40,8 @@ def test_scope_listing_read_all_and_group_role_changes(api, group, other_group, 
     assert a.post(URL + "read-all/").json() == {"updated": 0}
     assert api(student_b).post(URL + "read-all/").json() == {"updated": 1}
     assert a.get(URL).json()["count"] == 1
-    manager.role = manager.Role.STUDENT
-    manager.save(update_fields=["role"])
+    manager.is_manager = False  # the 管理员 tag taken away: what it brought goes with it
+    manager.save(update_fields=["is_manager"])
     assert api(manager).get(URL).json()["count"] == 0
     student_a.group = other_group
     student_a.save(update_fields=["group"])
@@ -49,7 +49,7 @@ def test_scope_listing_read_all_and_group_role_changes(api, group, other_group, 
 
 
 def test_creation_scope_and_rollback(group, student_a, other_manager):
-    inactive = make_user("retired-manager", group, role=other_manager.Role.MANAGER, is_active=False)
+    inactive = make_user("retired-manager", group, is_manager=True, is_active=False)
     with pytest.raises(ValueError, match="local"):
         notify(group.pk, "bad path", "https://example.test/", recipient_ids=[student_a.pk])
     with pytest.raises(ValueError, match="recipients"):
@@ -128,7 +128,7 @@ def test_equipment_notification_is_atomic_and_rolls_back_business_write(api, gro
     assert notices(other_manager) == []
 
 
-def test_meeting_assignment_and_reassignment_report_review_and_specimen_return(api, group, manager, student_a, student_b):
+def test_meeting_assignment_and_reassignment_report_review_and_specimen_return(api, group, manager, advisor, student_a, student_b):
     admin = api(manager)
     meeting = admin.post("/api/meetings/", {
         "date": "2026-11-19", "title": "Fixture", "actions": [{"owner_id": student_a.pk, "content": "fixture"}],
@@ -143,9 +143,10 @@ def test_meeting_assignment_and_reassignment_report_review_and_specimen_return(a
 
     report = WeeklyReport.objects.create(owner=student_a, week_start=current_week_start(), status=WeeklyReport.Status.SUBMITTED)
     feedback = f"/api/reports/{report.pk}/feedback/"
-    assert admin.post(feedback, {"verdict": "needs_revision", "content": "补充"}, format="json").status_code == 200
+    reviewer = api(advisor)  # weekly reports are reviewed by advisors
+    assert reviewer.post(feedback, {"verdict": "needs_revision", "content": "补充"}, format="json").status_code == 200
     assert api(student_a).post(f"/api/reports/{report.pk}/submit/").status_code == 200
-    assert admin.post(feedback, {"verdict": "reviewed", "content": "已阅"}, format="json").status_code == 200
+    assert reviewer.post(feedback, {"verdict": "reviewed", "content": "已阅"}, format="json").status_code == 200
     assert notices(student_a)[1:] == [(title, f"/reports/{report.pk}") for title in ("周报需补充", "周报已阅")]
 
     specimen = Specimen.objects.create(group=group, code="NOTICE", name="试件")

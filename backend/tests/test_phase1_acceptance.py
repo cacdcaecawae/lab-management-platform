@@ -67,7 +67,7 @@ def test_research_record_chain_review_flow_and_isolation(
     ).json()
     rid = report["id"]
     assert a.post(f"/api/reports/{rid}/submit/").status_code == 200
-    r = api(manager).post(f"/api/reports/{rid}/feedback/", {"verdict": "needs_revision", "content": "补充重复性分析"}, format="json")
+    r = api(advisor).post(f"/api/reports/{rid}/feedback/", {"verdict": "needs_revision", "content": "补充重复性分析"}, format="json")
     assert r.json()["status"] == "needs_revision"
     assert a.patch(f"/api/reports/{rid}/", {"findings": "三组重复实验结果一致"}, format="json").status_code == 200
     assert a.post(f"/api/reports/{rid}/submit/").status_code == 200
@@ -76,21 +76,21 @@ def test_research_record_chain_review_flow_and_isolation(
     history = a.get(f"/api/reports/{rid}/history/").json()
     assert any(c["field"] == "findings" for entry in history for c in entry["changes"])
 
-    # Isolation: classmate and other group's manager get 404 on every private URL, including downloads.
+    # Isolation: a classmate, a classmate with the 管理员 tag and the other group's manager get 404 on every private
+    # URL, including downloads; the group's advisor reads them.
     private_urls = [
         f"/api/datasets/{raw['id']}/", f"/api/datasets/{raw['id']}/files/", f"/api/files/{raw_file['id']}/",
         raw_file["download_url"], f"/api/experiments/{exp['id']}/", f"/api/experiments/{exp['id']}/history/",
         f"/api/runs/{run['id']}/", f"/api/reports/{rid}/", f"/api/reports/{rid}/history/",
     ]
-    for outsider in (student_b, other_manager):
+    for outsider in (student_b, manager, other_manager):
         client = api(outsider)
         for url in private_urls:
             assert client.get(url).status_code == 404, (outsider.username, url)
         assert client.get("/api/experiments/").json()["count"] == 0
-    for supervisor in (manager, advisor):
-        client = api(supervisor)
-        for url in private_urls:
-            assert client.get(url).status_code == 200, (supervisor.username, url)
+    client = api(advisor)
+    for url in private_urls:
+        assert client.get(url).status_code == 200, (advisor.username, url)
 
 
 def test_list_filters_do_not_hide_detail(api, project, student_a):

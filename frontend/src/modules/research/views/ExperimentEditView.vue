@@ -56,7 +56,7 @@ const canDelete = computed(() => !!record.value && editable.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 // a parameter value without a name is not in form.params yet
 const { markSaved } = useUnsavedGuard(form, () => editable.value, () => paramsEditor.value?.validate() === false)
-const canReturn = computed(() => record.value?.status === 'submitted' && auth.isSupervisor)
+const canReturn = computed(() => record.value?.status === 'submitted' && auth.isAdvisor)
 const readonlyHint = computed(() => {
   const r = record.value
   if (!r || editable.value) return ''

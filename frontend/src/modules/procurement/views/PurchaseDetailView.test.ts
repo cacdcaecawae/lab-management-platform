@@ -54,7 +54,7 @@ async function mountAsManager(reviewResponse: { status: number; body: unknown },
   })
   await router.push('/p/5')
   await router.isReady()
-  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
+  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'student', is_manager: true, is_supervisor: true } as Me
   const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] }, attachTo: document.body })
   await flushPromises()
   const click = async (text: string) => {

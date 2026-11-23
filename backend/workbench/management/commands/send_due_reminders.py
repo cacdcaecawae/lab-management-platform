@@ -97,7 +97,8 @@ class Command(BaseCommand):
                 continue
             # Re-read authorization just before claiming; do not send a snapshot from an old group.
             address = User.objects.filter(
-                pk=recipient.pk, is_active=True, group_id=recipient.group_id, role=recipient.role, email=recipient.email,
+                pk=recipient.pk, is_active=True, group_id=recipient.group_id, role=recipient.role,
+                is_manager=recipient.is_manager, email=recipient.email,
             ).values_list("email", flat=True).first()
             if not address:
                 outcomes["skipped"] += 1

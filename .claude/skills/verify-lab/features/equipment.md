@@ -24,7 +24,7 @@
 - `isolation`：外组管理员打开设备地址看到"记录不存在或无权查看"；设备、预约、照片接口都是 404，列表为空。
 - `mobile`：390px 宽度下日历默认是日视图；设备列表在日历上面（不显示小月历），页面打开后滚到 08:00 附近，往上滑是设备列表和工具栏。
 - `booking-link`：已经在预约页时，再点工作台或通知里 `/bookings?booking=<id>` 的链接，也会弹出那条预约；关掉弹窗后地址去掉 `?booking`，再点同一个链接还会弹出。
-- `purchase-link`（第三期）：新增 / 编辑设备的表单有 combobox "采购申请（已到货）"，只列已到货的采购申请；详情页"采购申请"一行显示单号，管理员、导师是链接。步骤见 [procurement.md](./procurement.md) 的"到货关联"。
+- `purchase-link`（第三期）：新增 / 编辑设备的表单有 combobox "采购申请（已到货）"，只列已到货的采购申请；详情页"采购申请"一行显示单号，管理员、终审人是链接。步骤见 [procurement.md](./procurement.md) 的"到货关联"。
 - `docs-section`（第四期）：详情页"资料"一栏按分类列出知识库里关联这台设备的文档和最新文件，button "在知识库中查看"。步骤见 [knowledge.md](./knowledge.md) 的"设备页"。
 
 ## How to get to it (user POV)

@@ -231,7 +231,7 @@ function drag(e: PointerEvent) {
         <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}</h1>
         <p class="sub">{{ today }}<template v-if="data"> · {{ summary }}</template></p>
       </div>
-      <el-button v-if="!auth.isSupervisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
+      <el-button v-if="!auth.isAdvisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
     </header>
 
     <!-- Left: things only you can move forward. Right: what is already booked or borrowed, to keep in mind. -->

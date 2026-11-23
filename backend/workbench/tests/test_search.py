@@ -42,7 +42,8 @@ def test_all_module_scopes(api, student_a, student_b, advisor, manager, other_ma
     own = catalog(student_a, "2030-A")
     peer = catalog(student_b, "2030-B")
     foreign = catalog(other_manager, "2030-C")
-    private = {"experiments", "runs", "datasets", "reports", "purchases"}
+    research = {"experiments", "runs", "datasets", "reports"}
+    private = research | {"purchases"}
     clients = [api(user) for user in (student_a, advisor, manager, other_manager)]
     for i, client in enumerate(clients):
         with django_assert_max_num_queries(15):
@@ -50,11 +51,14 @@ def test_all_module_scopes(api, student_a, student_b, advisor, manager, other_ma
         assert response.status_code == 200
         assert response["Cache-Control"] == "private, no-store"
         found = {group["module"]: [item["id"] for item in group["items"]] for group in response.data}
-        assert found == {
+        expected = {
             key: [foreign[key].pk] if i == 3 else
-            [own[key].pk] if i == 0 and key in private else [peer[key].pk, own[key].pk]
+            [own[key].pk] if i == 0 and key in private else
+            [] if i == 2 and key in research else  # a student with the 管理员 tag: purchases, not research records
+            [peer[key].pk, own[key].pk]
             for key in own
         }
+        assert found == {key: ids for key, ids in expected.items() if ids}
 
 
 def test_bounds_stability_and_blind_fields(api, student_a):

@@ -5,7 +5,7 @@ const PurchaseDetail = () => import('./views/PurchaseDetailView.vue')
 
 export const routes: RouteRecordRaw[] = [
   { path: 'purchases', name: 'purchases', component: Purchases, meta: { title: '采购申请' } },
-  { path: 'purchases/reviews', name: 'purchase-reviews', component: Purchases, meta: { title: '我的审批', supervisor: true } },
+  { path: 'purchases/reviews', name: 'purchase-reviews', component: Purchases, meta: { title: '我的审批', finance: true } },
   { path: 'purchases/new', name: 'purchase-new', component: PurchaseDetail, meta: { title: '新建采购申请', menu: 'purchases' } },
   { path: 'purchases/:id(\\d+)', name: 'purchase-detail', component: PurchaseDetail, meta: { title: '采购申请', menu: 'purchases' } },
   {

@@ -59,7 +59,7 @@ def test_groups_eligibility_blind_data_and_one_digest_per_day(student_a, manager
     borrow(a, "NOT-DUE", monday)
     borrow(a, "UNDATED", None)
     borrow(a, "MOVED-BORROWER", monday - timedelta(days=1), lab=other_group)
-    address(make_user("inactive-manager", manager.group, manager.Role.MANAGER, is_active=False))
+    address(make_user("inactive-manager", manager.group, is_manager=True, is_active=False))
     for code, delta, status in (
         ("CAL-30", 30, Equipment.Status.AVAILABLE), ("CAL-7", 7, Equipment.Status.AVAILABLE),
         ("CAL-0", 0, Equipment.Status.AVAILABLE), ("CAL-NOT-YET", 8, Equipment.Status.AVAILABLE),
@@ -94,6 +94,7 @@ def test_groups_eligibility_blind_data_and_one_digest_per_day(student_a, manager
 def test_friday_weekly_report_was_not_submitted_and_non_monday_overdue_rule(student_a, student_b, manager):
     a, b = address(student_a), address(student_b)
     address(manager)
+    WeeklyReport.objects.create(owner=manager, week_start=MONDAY, status=WeeklyReport.Status.SUBMITTED)  # a student too
     WeeklyReport.objects.create(owner=a, week_start=MONDAY, status=WeeklyReport.Status.SUBMITTED)
     borrow(a, "FIRST-OVERDUE", FRIDAY - timedelta(days=1))
     borrow(a, "SKIP-LONGER-OVERDUE", FRIDAY - timedelta(days=2))

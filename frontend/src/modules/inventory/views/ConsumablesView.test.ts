@@ -22,7 +22,7 @@ it('sends the displayed ledger version and reloads without retrying a stale stoc
       previous: null, results: isItems ? [item] : [] }), { status: 200 }))
   }))
   const pinia = createPinia()
-  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
+  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'student', is_manager: true, is_supervisor: true } as Me
   const wrapper = mount(ConsumablesView, { global: { plugins: [ElementPlus, pinia] }, attachTo: document.body })
   await flushPromises()
   // 盘点 sits in the row's "更多" menu

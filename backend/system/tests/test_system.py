@@ -192,9 +192,13 @@ def test_accounts(api, ops, group, other_group, student_a, manager):
     assert api(ops).get("/api/system/accounts/", {"group": other_group.id}).data["count"] == 0
 
     # the group is fixed once created: moving someone changes who can see their records
-    api(ops).patch(f"/api/system/accounts/{student_a.id}/", {"role": "manager", "group_id": other_group.id}, format="json")
+    # ops sets the base role and both tags
+    r = api(ops).patch(f"/api/system/accounts/{student_a.id}/", {
+        "role": "advisor", "is_manager": True, "is_approver": True, "group_id": other_group.id,
+    }, format="json")
+    assert r.status_code == 200 and (r.data["role"], r.data["is_manager"], r.data["is_approver"]) == ("advisor", True, True)
     student_a.refresh_from_db()
-    assert student_a.role == "manager" and student_a.group_id == group.id
+    assert student_a.role == "advisor" and student_a.is_manager and student_a.is_approver and student_a.group_id == group.id
 
     assert api(ops).post(f"/api/system/accounts/{advisor_id}/reset-password/", {"password": "Reset-2026-pass!"}, format="json").status_code == 204
     assert login(api, "t_adv2", "Reset-2026-pass!").status_code == 200

@@ -10,7 +10,9 @@ const me = vi.hoisted(() => vi.fn())
 vi.mock('@/api/auth', () => ({ authApi: { me } }))
 
 const ops: Me = {
-  id: 1, username: 'ops', name: '', role: 'student', is_supervisor: false, is_superuser: true, group: null,
+  id: 1, username: 'ops', name: '', role: 'student', is_manager: false,
+  is_approver: false,
+  is_supervisor: false, is_superuser: true, group: null,
   email: '', phone: '', wechat: '', research_direction: '', must_change_password: true, avatar_url: null,
 }
 
@@ -89,7 +91,7 @@ describe('route guard', () => {
     await router.push('/labels?type=equipment&ids=1')
     expect(router.currentRoute.value.name).toBe('workbench')
     const auth = useAuthStore()
-    auth.user = { ...student, role: 'manager' }
+    auth.user = { ...student, is_manager: true, is_supervisor: true }
     await router.push('/labels?type=equipment&ids=1')
     expect(router.currentRoute.value.name).toBe('labels')
   })

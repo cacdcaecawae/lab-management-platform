@@ -1,6 +1,17 @@
 // Display labels and formatting shared by the pages.
 
-export const ROLE_LABELS: Record<string, string> = { student: '学生', manager: '管理员', advisor: '导师' }
+export const ROLE_LABELS: Record<string, string> = { student: '学生', advisor: '导师' }
+export const IDENTITY_LABELS: Record<string, string> = {
+  teacher: '教师', postdoc: '博士后', phd: '博士生', master: '硕士生', undergraduate: '本科生', assistant: '科研助理',
+}
+export const MEMBER_STATUS: Record<string, { label: string; type: 'success' | 'info' }> = {
+  active: { label: '在籍', type: 'success' },
+  graduated: { label: '已毕业', type: 'info' },
+  disabled: { label: '已停用', type: 'info' },
+}
+// "学生 · 管理员", "导师 · 终审人": the base role, then the tags.
+export const roleText = (u: { role: string; is_manager?: boolean; is_approver?: boolean }) =>
+  [ROLE_LABELS[u.role], u.is_manager && '管理员', u.is_approver && '终审人'].filter(Boolean).join(' · ')
 
 // After editing an account (成员, 系统管理): a changed login name is spelled out, since the person signs in with it.
 export function renamedMessage(before: string | undefined, after: string): string {

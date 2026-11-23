@@ -18,7 +18,8 @@ def _drain(resp):
 def test_download_zip_streams_all_files(api, student_a, manager, advisor, dataset_a, upload):
     upload(api(student_a), dataset_a, [("a.csv", b"t,v\n1,2\n"), ("波形说明.txt", "中文内容".encode())])
 
-    for user in (student_a, manager, advisor):
+    assert api(manager).get(f"/api/datasets/{dataset_a.pk}/download-zip/").status_code == 404  # not an advisor
+    for user in (student_a, advisor):
         resp = api(user).get(f"/api/datasets/{dataset_a.pk}/download-zip/")
         assert resp.status_code == 200
         assert resp["Content-Type"] == "application/zip"
@@ -77,7 +78,7 @@ def test_download_zip_isolation(api, student_a, student_b, other_manager, datase
     assert api(other_manager).get(f"/api/datasets/{dataset_b.pk}/download-zip/").status_code == 404
 
 
-def test_references_lists_experiments_runs_and_reports(api, student_a, student_b, manager, other_manager, project, dataset_a):
+def test_references_lists_experiments_runs_and_reports(api, student_a, student_b, advisor, other_manager, project, dataset_a):
     exp = Experiment.objects.create(owner=student_a, project=project, title="兰姆波实验", date=datetime.date(2026, 11, 16))
     exp.datasets.add(dataset_a)
 
@@ -90,7 +91,7 @@ def test_references_lists_experiments_runs_and_reports(api, student_a, student_b
     rep = WeeklyReport.objects.create(owner=student_a, week_start=datetime.date(2026, 11, 16), status="submitted")
     rep.datasets.add(dataset_a)
 
-    for user in (student_a, manager):
+    for user in (student_a, advisor):
         resp = api(user).get(f"/api/datasets/{dataset_a.pk}/references/")
         assert resp.status_code == 200
         body = resp.json()

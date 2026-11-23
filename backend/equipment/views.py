@@ -53,7 +53,7 @@ def notify_managers(report):
         return
     booking = report.booking
     equipment = Equipment.objects.get(pk=booking.equipment_id)
-    managers = User.objects.filter(group_id=equipment.group_id, role=User.Role.MANAGER, is_active=True).exclude(email="")
+    managers = User.objects.filter(group_id=equipment.group_id, is_manager=True, is_active=True).exclude(email="")
     recipients = list(managers.values_list("email", flat=True))
     body = (
         f"{booking.user.display_name} 使用 {equipment.code} {equipment.name} 后登记了异常：\n\n"
@@ -217,7 +217,7 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                         equipment.status = Equipment.Status.NEEDS_CHECK
                         equipment._change_reason = f"{request.user.display_name} 登记使用异常：{report.description}"
                         equipment.save()
-                    notify(equipment.group_id, "设备登记使用异常", f"/equipment/{equipment.pk}", role=User.Role.MANAGER)
+                    notify(equipment.group_id, "设备登记使用异常", f"/equipment/{equipment.pk}", role="manager")
                     transaction.on_commit(lambda: notify_managers(report))
         except Exception:
             # FileField writes before the database INSERT. Keep the instance even if save() fails.
