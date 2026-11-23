@@ -6,6 +6,8 @@ import { ApiError } from '@/api/client'
 import type { Attachment, AttachmentKind, MeetingFile } from '@/api/types'
 import { ATTACHMENT_KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { showError } from '@/utils/errors'
+import { previewKindOf } from '@/utils/preview'
+import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
 
 // upload: omitted when the viewer may not add files; canDelete: per file (the server checks again).
 // Meeting files have no kind: pass withKinds=false; all callers supply their own remover.
@@ -34,6 +36,13 @@ const emit = defineEmits<{ changed: [] }>()
 const kind = ref<AttachmentKind>(props.defaultKind ?? 'quote')
 const picker = ref<HTMLInputElement>()
 const busy = ref(false)
+const previewOpen = ref(false)
+const previewTarget = ref<PreviewTarget | null>(null)
+
+function openPreview(a: FileItem) {
+  previewTarget.value = { name: a.name, url: a.url, size: a.size }
+  previewOpen.value = true
+}
 
 async function onPick(e: Event) {
   const input = e.target as HTMLInputElement
@@ -78,8 +87,19 @@ async function remove(a: FileItem) {
     <ul v-if="attachments.length" class="files">
       <li v-for="a in attachments" :key="a.id">
         <el-tag v-if="'kind' in a" size="small" disable-transitions>{{ ATTACHMENT_KIND_LABELS[a.kind] }}</el-tag>
-        <a :href="a.url" target="_blank" rel="noopener" class="name">{{ a.name }}</a>
+        <el-image
+          v-if="previewKindOf(a.name) === 'image'"
+          class="thumb"
+          :src="a.url"
+          :preview-src-list="[a.url]"
+          preview-teleported
+          fit="cover"
+          :alt="a.name"
+        />
+        <el-button v-if="previewKindOf(a.name)" link type="primary" class="name" @click="openPreview(a)">{{ a.name }}</el-button>
+        <a v-else :href="a.url" target="_blank" rel="noopener" class="name">{{ a.name }}</a>
         <span class="meta">{{ formatSize(a.size) }} · {{ a.uploaded_by.name }} · {{ formatTime(a.created_at) }}</span>
+        <a v-if="previewKindOf(a.name)" :href="a.url" :download="a.name" class="meta">下载</a>
         <el-button v-if="canDelete(a)" link type="danger" @click="remove(a)">删除</el-button>
       </li>
     </ul>
@@ -92,6 +112,7 @@ async function remove(a: FileItem) {
       <span class="meta">{{ hint }}</span>
       <input ref="picker" type="file" :accept="accept" multiple hidden @change="onPick" />
     </div>
+    <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
   </div>
 </template>
 
@@ -133,5 +154,13 @@ async function remove(a: FileItem) {
 }
 .kind {
   width: 110px;
+}
+.thumb {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--el-border-radius-small);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
 }
 </style>

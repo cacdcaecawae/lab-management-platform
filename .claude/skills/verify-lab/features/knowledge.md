@@ -39,6 +39,8 @@
 - **外组。** `x_mgr` 请求 `/api/docs/<id>/` 和版本文件都是 404，`/api/docs/` 的 `count` 为 0。
 - **第二视角。** query.sh 读 `knowledge.models.Doc` 和 `DocVersion`：版本号 1、2，SHA256 与样例一致，存储名是服务器生成的随机名。
 
+- 在有 TXT、CSV 或 PDF 版本的文档里点文件预览入口；核对预览内容，再用下载入口取回该版本。
+
 ## Gotchas
 
 - 搜索框回车或失焦后才生效，只填不回车列表不变。
