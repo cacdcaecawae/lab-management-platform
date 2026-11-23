@@ -88,7 +88,7 @@ def check_specimen_filters(stack, *, browser, login, visit, visible, button, lab
     borrow(student, returned_path, "学生甲")
     button(student, "登记归还").click()  # opens the return dialog (location, note, photo since PR #49)
     label_input(student, "归还说明（可选）").send_keys("合成验证：完好")
-    button(student, "登记归还", within="//div[contains(@class,'el-dialog__footer')]").click()
+    button(student, "登记归还", within="//*[contains(@class,'el-dialog__footer')]").click()
     body_has(student, "已登记归还")
     peer = browser(stack)
     login(peer, "s_b")
