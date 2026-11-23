@@ -8,7 +8,7 @@ import RoutePage from './RoutePage.vue'
 import SideNav from './SideNav.vue'
 import PhoneTabBar from './PhoneTabBar.vue'
 import { labelTableCells, pageHeaders, phone } from './phone'
-import { closeAllTabs, closeOtherTabs, closeTab, neighborTab, openedTabs, pageColor, trackTab, type OpenedTab } from './nav'
+import { closeAllTabs, closeOtherTabs, closeTab, neighborTab, openedTabs, pageColor, sidebarFolded, trackTab, type OpenedTab } from './nav'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,7 +93,7 @@ watch(
 
 <template>
   <div class="shell" :class="{ 'with-tab-bar': tabBar }">
-    <aside v-if="!phone" class="sidebar"><SideNav /></aside>
+    <aside v-if="!phone" class="sidebar" :class="{ folded: sidebarFolded }"><SideNav foldable /></aside>
     <el-drawer v-if="phone" v-model="drawer" direction="ltr" size="260px" :with-header="false" class="nav-drawer">
       <SideNav @close="drawer = false" />
     </el-drawer>
@@ -152,14 +152,10 @@ watch(
   z-index: 20;
   flex: 0 0 240px;
   height: 100vh;
-  overflow-y: auto;
   box-sizing: border-box;
-  /* the menu is taller than a laptop screen: scroll it, but show the bar only while the pointer is over it */
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
 }
-.sidebar:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+.sidebar.folded {
+  flex-basis: 64px;
 }
 .body {
   flex: 1;

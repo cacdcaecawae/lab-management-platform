@@ -4,8 +4,8 @@ import { useRoute } from 'vue-router'
 import { Bell, Calendar, House, Menu } from '@element-plus/icons-vue'
 import { useNotificationsStore } from '@/stores/notifications'
 
-// Phone only (DESIGN.md "手机"): the three pages people open most, then 菜单 for the sidebar (account card, search,
-// every module). 菜单 is the current one on any other page.
+// Phone only (DESIGN.md "手机"): the three pages people open most, then 菜单 for the sidebar (Phase and search, every
+// module, the account). 菜单 is the current one on any other page.
 const emit = defineEmits<{ menu: [] }>()
 const route = useRoute()
 const notes = useNotificationsStore()

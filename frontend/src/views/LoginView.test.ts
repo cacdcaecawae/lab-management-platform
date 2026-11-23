@@ -5,7 +5,8 @@ import LoginView from './LoginView.vue'
 import { ApiError } from '@/api/client'
 
 const login = vi.hoisted(() => vi.fn())
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ login }) }))
+const signedIn = vi.hoisted(() => ({ user: null as null | { group: object | null } }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ login, get user() { return signedIn.user } }) }))
 vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
 // jsdom has no modal dialogs
 Object.assign(HTMLDialogElement.prototype, {
@@ -37,7 +38,22 @@ async function signIn(wrapper: Awaited<ReturnType<typeof show>>['wrapper']) {
 }
 
 describe('LoginView (the home page)', () => {
-  beforeEach(() => login.mockReset())
+  beforeEach(() => {
+    login.mockReset()
+    signedIn.user = null
+  })
+
+  it('signed in (the sidebar leads here), its button goes in instead of opening the sheet', async () => {
+    signedIn.user = { group: { id: 1 } }
+    const { wrapper, router, open } = await show('/login')
+    expect(wrapper.get('main button').text()).toBe('进入工作台')
+    await wrapper.get('main button').trigger('click')
+    await flushPromises()
+    expect(open()).toBe(false)
+    expect(router.currentRoute.value.name).toBe('workbench')
+    signedIn.user = { group: null } // ops: the guard takes it to 存储与备份
+    expect((await show('/login')).wrapper.get('main button').text()).toBe('进入系统管理')
+  })
 
   it('shows the home page; 登录 opens the sign-in sheet', async () => {
     const { wrapper, open } = await show('/login')

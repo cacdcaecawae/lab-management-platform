@@ -9,7 +9,7 @@
 
 ## How to get to it (user POV)
 
-左侧栏点 button "全站搜索"（看起来是"搜索"输入框）或在没有输入时按 `/`。页面中间出现搜索面板，背后变暗；点面板外面或按 Esc 关闭。
+左侧栏顶上 Phase 右边点 button "全站搜索"（放大镜图标）或在没有输入时按 `/`。页面中间出现搜索面板，背后变暗；点面板外面或按 Esc 关闭。
 
 ## Driving it with chrome-devtools MCP
 

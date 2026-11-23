@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { searchSite, type SearchGroup } from '@/api/search'
+import IconButton from '@/components/IconButton.vue'
 
 const route = useRoute()
 const root = ref<HTMLElement>()
@@ -65,7 +66,7 @@ function shortcut(event: KeyboardEvent) {
   }
   if (event.defaultPrevented || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing
     || (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable]'))) return
-  // The sidebar and the phone drawer each have a search box: only the one on screen answers.
+  // The sidebar and the phone drawer each have a search button: only the one on screen answers.
   if (!root.value?.offsetParent) return
   event.preventDefault()
   void launch()
@@ -79,11 +80,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="site-search" @keydown.esc.stop="close">
-    <button type="button" class="search-trigger" aria-label="全站搜索" :aria-expanded="open" @click="open ? close() : launch()">
-      <el-icon><Search /></el-icon>
-      <span>搜索</span>
-      <kbd>/</kbd>
-    </button>
+    <IconButton :icon="Search" label="全站搜索" aria-keyshortcuts="/" :aria-expanded="open" @click="open ? close() : launch()" />
     <!-- Teleported to body so the sidebar's sticky stacking context (z-index: 20) never traps the mask under page overlays. -->
     <Teleport to="body">
       <div v-if="open" class="search-mask" @click.self="close" @keydown.esc.stop="close">
@@ -110,34 +107,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.search-trigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 32px;
-  padding: 0 6px 0 12px;
-  border: 1px solid var(--lab-border);
-  border-radius: 999px;
-  background: var(--lab-bg-card);
-  color: var(--lab-text-3);
-  font: inherit;
-  cursor: pointer;
-}
-.search-trigger:hover,
-.search-trigger:focus-visible {
-  border-color: var(--el-border-color);
-  outline: none;
-}
-kbd {
-  margin-left: auto;
-  padding: 0 6px;
-  border: 1px solid var(--lab-border);
-  border-radius: 999px;
-  font-family: var(--lab-mono);
-  font-size: 13px;
-  line-height: 18px;
-}
 .search-mask {
   position: fixed;
   inset: 0;
