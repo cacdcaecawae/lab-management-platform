@@ -3,7 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemStorage from './SystemStorage.vue'
-import { systemApi, type StorageInfo } from '@/modules/system/api'
+import type { StorageInfo } from '@/api/opsStatus'
+import { systemApi } from '@/modules/system/api'
 import { storageApi, type OpsStorage } from '@/api/storageUsage'
 
 vi.mock('@/modules/system/api', () => ({ systemApi: { storage: vi.fn() } }))

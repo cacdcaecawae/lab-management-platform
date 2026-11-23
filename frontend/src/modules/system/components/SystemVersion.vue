@@ -8,8 +8,9 @@ import { systemApi } from '@/modules/system/api'
 import { showError } from '@/utils/errors'
 import { formatTime } from '@/utils/format'
 
-// Shared with the sidebar (stores/ops), which marks 版本 when an update is available.
-const info = defineModel<VersionInfo>('info', { required: true })
+// Shared with the sidebar (stores/ops), which marks 版本 when an update is available. null until the first check
+// answers, or when it failed: 重新检查 is there either way.
+const info = defineModel<VersionInfo | null>('info', { default: null })
 const checking = ref(false)
 
 async function check() {
@@ -33,10 +34,11 @@ let timer = 0
 onBeforeUnmount(() => clearTimeout(timer))
 
 async function update() {
-  const target = info.value.latest!
+  const { current, latest } = info.value! // its button shows only with an update available
+  const target = latest!
   try {
     await ElMessageBox.confirm(
-      `更新时网站会停止几分钟，先备份再切换。新版本起不来时：没改数据库结构的，自动退回 ${info.value.current}；改过的，网站保持停止，需要到服务器上处理。`,
+      `更新时网站会停止几分钟，先备份再切换。新版本起不来时：没改数据库结构的，自动退回 ${current}；改过的，网站保持停止，需要到服务器上处理。`,
       `更新到 ${target}`,
       { type: 'warning', confirmButtonText: '立即更新' },
     )
@@ -82,7 +84,7 @@ const progressText = computed(() => {
   if (s.state === 'done') return `已更新到 ${s.target}，正在重新载入`
   if (s.state === 'failed')
     return siteUp.value
-      ? `没有更新，网站仍是 ${info.value.current}。原因在服务器安装目录的 run/update/update.log`
+      ? `没有更新，网站仍是 ${info.value!.current}。原因在服务器安装目录的 run/update/update.log`
       : '更新没有完成，网站已停止，需要到服务器上处理。原因在安装目录的 run/update/update.log'
   return s.step ? `第 ${s.step} 步，共 3 步：${STEPS[s.step]}` : STEPS[0]
 })
@@ -93,13 +95,16 @@ const progressText = computed(() => {
     <template #extra>
       <IconButton :icon="Refresh" label="重新检查" :loading="checking" :disabled="!!status && status.state !== 'failed'" @click="check" />
     </template>
-    <el-descriptions-item label="当前版本">{{ info.current === 'local' ? '从源码构建（local）' : info.current }}</el-descriptions-item>
-    <el-descriptions-item label="最新版本">
-      <el-link v-if="info.latest" :href="info.url" target="_blank" type="primary">{{ info.latest }}（发布说明）</el-link>
-      <span v-else-if="info.error">{{ info.error }}</span>
-      <span v-else>还没有发布过正式版本</span>
-    </el-descriptions-item>
-    <el-descriptions-item label="检查时间">{{ formatTime(info.checked_at) }}</el-descriptions-item>
+    <template v-if="info">
+      <el-descriptions-item label="当前版本">{{ info.current === 'local' ? '从源码构建（local）' : info.current }}</el-descriptions-item>
+      <el-descriptions-item label="最新版本">
+        <el-link v-if="info.latest" :href="info.url" target="_blank" type="primary">{{ info.latest }}（发布说明）</el-link>
+        <span v-else-if="info.error">{{ info.error }}</span>
+        <span v-else>还没有发布过正式版本</span>
+      </el-descriptions-item>
+      <el-descriptions-item label="检查时间">{{ formatTime(info.checked_at) }}</el-descriptions-item>
+    </template>
+    <el-descriptions-item v-else label="当前版本">—</el-descriptions-item>
   </el-descriptions>
 
   <div v-if="status" class="progress">
@@ -109,7 +114,7 @@ const progressText = computed(() => {
     />
     <p>{{ progressText }}</p>
   </div>
-  <el-alert v-else-if="info.update_available" type="warning" :closable="false" show-icon :title="`有新版本 ${info.latest}`">
+  <el-alert v-else-if="info?.update_available" type="warning" :closable="false" show-icon :title="`有新版本 ${info.latest}`">
     <el-button v-if="info.agent" type="primary" class="update" @click="update">立即更新</el-button>
     <template v-else>
       <p>在服务器的仓库目录里运行：</p>
@@ -119,7 +124,7 @@ const progressText = computed(() => {
       <pre class="cmd">bash scripts/update-agent.sh --install</pre>
     </template>
   </el-alert>
-  <p v-else-if="info.latest && info.current !== 'local'" class="note">已是最新版本。</p>
+  <p v-else-if="info?.latest && info.current !== 'local'" class="note">已是最新版本。</p>
 </template>
 
 <style scoped>

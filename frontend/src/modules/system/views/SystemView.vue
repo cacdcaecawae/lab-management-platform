@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SystemAccounts from '@/modules/system/components/SystemAccounts.vue'
 import SystemGroups from '@/modules/system/components/SystemGroups.vue'
@@ -14,7 +14,8 @@ import { useOpsStore } from '@/stores/ops'
 const route = useRoute()
 const page = computed(() => route.name)
 const ops = useOpsStore()
-ops.load()
+// On every page: this view stays mounted while moving between them (RoutePage), and a check that failed is asked again.
+watch(page, () => ops.load(), { immediate: true })
 </script>
 
 <template>
@@ -23,9 +24,7 @@ ops.load()
     <SystemAccounts v-else-if="page === 'system-accounts'" />
     <SystemGroups v-else-if="page === 'system-groups'" />
     <SystemMail v-else-if="page === 'system-mail'" />
-    <template v-else-if="page === 'system-version'">
-      <SystemVersion v-if="ops.version" v-model:info="ops.version" />
-    </template>
+    <SystemVersion v-else-if="page === 'system-version'" v-model:info="ops.version" />
     <SystemLoginEvents v-else-if="page === 'system-logins'" />
   </el-card>
 </template>
