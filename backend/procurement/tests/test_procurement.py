@@ -1,6 +1,7 @@
 import io
 import threading
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -284,6 +285,11 @@ def test_a_correction_after_approval_is_still_a_request_worth_reviewing(api, stu
     r = patch([{"name": "赠品", "quantity": 1, "unit_price": "0.00"}])
     assert r.status_code == 400 and r.data["errors"]["items"] == ["合计必须大于 0"]
     assert status_of(pid) == "approved" and PurchaseRequest.objects.get(pk=pid).total == Decimal(TOTAL)  # untouched
+    r = api(student_a).patch(f"/api/purchases/{pid}/", {"purpose": " ", "fund_id": None}, format="json")
+    assert r.status_code == 400 and set(r.data["errors"]) == {"purpose", "fund_id"}
+    assert PurchaseRequest.objects.get(pk=pid).fund_id == fund.id
+    Fund.objects.filter(pk=fund.id).update(active=False)  # stopped since: other corrections still go through
+    assert api(student_a).patch(f"/api/purchases/{pid}/", {"purpose": "改了用途"}, format="json").status_code == 200
 
 
 def test_a_draft_a_reimbursement_points_at_is_kept(api, student_a, fund):
@@ -346,6 +352,20 @@ def test_attachments(api, student_a, student_b, manager, other_manager, fund, mo
     api(student_a).post(f"/api/purchases/{pid}/withdraw/")
     assert api(student_a).delete(f"/api/attachments/{r.data['id']}/").status_code == 204
     assert not Attachment.objects.exists()
+
+
+def test_an_upload_to_a_draft_deleted_meanwhile_leaves_no_file(api, settings, monkeypatch, student_a, fund):
+    pid = create(api(student_a), fund).data["id"]
+    get_object = PurchaseViewSet.get_object
+
+    def then_deleted(view):
+        purchase = get_object(view)
+        PurchaseRequest.objects.filter(pk=purchase.pk).delete()  # deleted in another tab while the file uploads
+        return purchase
+
+    monkeypatch.setattr(PurchaseViewSet, "get_object", then_deleted)
+    assert api(student_a).post(f"/api/purchases/{pid}/attachments/", {"file": pdf()}).status_code == 404
+    assert not [p for p in Path(settings.MEDIA_ROOT).rglob("*") if p.is_file()]
 
 
 

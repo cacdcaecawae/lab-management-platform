@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db import transaction
 from django.http import FileResponse
 from rest_framework import status
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 
 
 class FileTooLarge(APIException):
@@ -56,9 +56,17 @@ def checked_upload(request, max_size=None, types=None):
     return uploaded, name
 
 
+def open_stored(field_file):
+    """The stored file opened for reading; one missing from storage (lost, not restored yet) is a 404, not a 500."""
+    try:
+        return field_file.open("rb")
+    except FileNotFoundError:
+        raise NotFound("服务器上找不到这个文件") from None
+
+
 def download(field_file, name):
     inline = Path(name).suffix.lower() in INLINE_TYPES
-    return FileResponse(field_file.open("rb"), as_attachment=not inline, filename=name)
+    return FileResponse(open_stored(field_file), as_attachment=not inline, filename=name)
 
 
 def delete_on_commit(field_files):

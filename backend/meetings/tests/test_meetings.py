@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from meetings.models import ActionItem, Meeting, MeetingFile
+from meetings.views import MeetingViewSet
 
 pytestmark = pytest.mark.django_db
 
@@ -83,3 +84,21 @@ def test_presenters_upload_files(api, django_capture_on_commit_callbacks, manage
     with django_capture_on_commit_callbacks(execute=True):
         assert api(manager).delete(f"/api/meetings/{meeting['id']}/").status_code == 204
     assert not MeetingFile.objects.exists() and not stored.exists()
+
+
+def test_deleting_a_meeting_removes_a_file_uploaded_just_before(
+    api, monkeypatch, django_capture_on_commit_callbacks, manager, student_a, meeting
+):
+    get_object = MeetingViewSet.get_object
+
+    def then_uploaded(view):
+        found = get_object(view)  # its files are fetched with it: none yet
+        if view.action != "destroy":
+            return found
+        assert api(student_a).post(f"/api/meetings/{found.pk}/files/", {"file": SimpleUploadedFile("a.pptx", b"PK")}).status_code == 201
+        return found
+
+    monkeypatch.setattr(MeetingViewSet, "get_object", then_uploaded)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert api(manager).delete(f"/api/meetings/{meeting['id']}/").status_code == 204
+    assert not [p for p in Path(settings.MEDIA_ROOT).rglob("*") if p.is_file()]

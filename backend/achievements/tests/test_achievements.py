@@ -130,3 +130,14 @@ def test_export_a_years_accepted_papers_with_full_texts(api, student_a, manager,
     archive = zipfile.ZipFile(io.BytesIO(b"".join(r.streaming_content)))
     assert archive.namelist() == ["成果清单.xlsx"]
     assert load_workbook(io.BytesIO(archive.read("成果清单.xlsx")))["成果清单"].max_row == 1
+
+
+def test_export_names_a_full_text_missing_from_storage(api, student_a):
+    a = api(student_a)
+    aid = register(a, title="论文一").data["id"]
+    a.post(f"/api/achievements/{aid}/fulltext/", {"file": pdf()})
+    (Path(settings.MEDIA_ROOT) / Achievement.objects.get().fulltext.name).unlink()
+    r = a.get("/api/achievements/export/", {"files": "1"})
+    archive = zipfile.ZipFile(io.BytesIO(b"".join(r.streaming_content)))
+    assert r.status_code == 200 and archive.namelist() == ["成果清单.xlsx"]
+    assert load_workbook(io.BytesIO(archive.read("成果清单.xlsx")))["成果清单"]["J2"].value == "（文件缺失）"

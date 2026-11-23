@@ -4,7 +4,7 @@ import pytest
 from django.utils import timezone
 
 from conftest import make_user
-from equipment.models import Equipment
+from equipment.models import Booking, Equipment
 from reports.models import WeeklyReport
 from reports.queries import current_week_start
 from research.models import Experiment
@@ -114,3 +114,13 @@ def test_calibration_reminders_match_filter_including_date_boundaries(api, group
     assert mgr.get("/api/equipment/?calibration_within=0").json()["count"] == 2
     assert mgr.get("/api/equipment/?calibration_within=-1").status_code == 400
     assert mgr.get("/api/equipment/?calibration_within=no").status_code == 400
+
+
+def test_bookings_of_a_former_group_stay_out_of_sight(api, group, other_group, student_a):
+    device = Equipment.objects.create(group=group, code="UT-001", name="超声探伤仪")
+    start = timezone.now() + timedelta(hours=2)
+    Booking.objects.create(equipment=device, user=student_a, start_at=start, end_at=start + timedelta(hours=1))
+    assert len(api(student_a).get("/api/dashboard/").data["my"]["upcoming_bookings"]) == 1
+    student_a.group = other_group  # moved to another group
+    student_a.save()
+    assert api(student_a).get("/api/dashboard/").data["my"]["upcoming_bookings"] == []

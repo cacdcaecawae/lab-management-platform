@@ -189,3 +189,9 @@ def test_patch_omitted_defects_preserved_and_empty_list_clears(api, manager):
     assert Specimen.objects.get(pk=sid).defects.count() == 2
     assert api(manager).patch(url, {'defects': []}, format='json').status_code == 200
     assert Specimen.objects.get(pk=sid).defects.count() == 0
+
+
+def test_defect_sizes_are_not_negative(api, manager):
+    body = {**BLOCK, "defects": [{"kind": "fbh", "size_mm": "-1.00", "depth_mm": "-2.00"}]}
+    r = api(manager).post(URL, body, format="json")
+    assert r.status_code == 400 and not Specimen.objects.exists()

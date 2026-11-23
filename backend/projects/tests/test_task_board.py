@@ -1,6 +1,7 @@
 import pytest
 from django.db import IntegrityError, transaction
 
+from conftest import make_user
 from projects.models import Project, Task
 
 pytestmark = pytest.mark.django_db
@@ -116,3 +117,11 @@ def test_dashboard_task_limit_and_validation(api, project, student_a):
     assert len(client.get("/api/dashboard/").data["my"]["tasks"]) == 20
     assert client.get(project_url(project) + "?status=unknown").status_code == 400
     assert client.get(project_url(project) + "?assignee=bad").status_code == 400
+
+
+def test_a_member_without_a_name_is_shown_by_username(api, project, group):
+    nameless = make_user("s_c", group, name="")
+    project.members.add(nameless)
+    task_id = post(api(nameless), project, assignee_id=nameless.id).data["id"]
+    edited = patch(api(nameless), task_id, status="doing").data
+    assert edited["history"][0]["actor"] == "s_c" and edited["assignee"]["name"] == "s_c"

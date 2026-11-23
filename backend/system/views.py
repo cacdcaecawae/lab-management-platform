@@ -22,6 +22,7 @@ from core import mail
 from core.exceptions import Conflict, MailFailed
 from core.history import serialize_history
 from core.models import SiteSettings
+from core.params import plain_int
 from core.permissions import IsSuperuser
 
 from .serializers import (
@@ -178,7 +179,7 @@ class AccountViewSet(ResetPasswordMixin, mixins.ListModelMixin, mixins.CreateMod
             return accounts
         params = self.request.query_params
         if params.get("group"):
-            accounts = accounts.filter(group_id=params["group"]) if params["group"].isdigit() else accounts.none()
+            accounts = accounts.filter(group_id=params["group"]) if plain_int(params["group"]) else accounts.none()
         if params.get("role"):
             accounts = accounts.filter(role=params["role"]) if params["role"] in User.Role.values else accounts.none()
         if params.get("is_active"):

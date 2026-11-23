@@ -1,10 +1,10 @@
 from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from accounts.models import User
