@@ -39,6 +39,7 @@ def test_upload_single_file(api, student_a, dataset_a, upload, stored_files):
         "id": f.pk, "dataset_id": dataset_a.pk, "name": "波形1.csv", "size": len(content),
         "sha256": hashlib.sha256(content).hexdigest(), "uploaded_by": {"id": student_a.pk, "name": student_a.name},
         "uploaded_at": body["uploaded_at"], "download_url": f"/api/files/{f.pk}/download/",
+        "preview_url": f"/api/files/{f.pk}/preview/", "preview_kind": "text",
     }
     [path] = stored_files()
     assert path.read_bytes() == content

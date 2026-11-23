@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from core.exceptions import Conflict
 from core.files import FileTooLarge, clean_file_name, sha256_of
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private
+from core.preview import preview_response
 
 from .models import DataFile, Dataset
 from .serializers import DataFileSerializer, DatasetSerializer
@@ -146,3 +147,9 @@ class DataFileViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     def download(self, request, pk=None):
         data_file = self.get_object()
         return FileResponse(data_file.file.open("rb"), as_attachment=True, filename=data_file.name)
+
+    @action(detail=True)
+    def preview(self, request, pk=None):
+        data_file = self.get_object()
+        raw = request.query_params.get("raw") == "1"
+        return preview_response(data_file.file, data_file.name, size=data_file.size, raw=raw)

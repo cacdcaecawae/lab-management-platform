@@ -189,7 +189,7 @@
 
 `Dataset = {id, code, project: {id,name}, owner: UserBrief, name, kind, description, file_count, total_size, version, created_at, updated_at}`
 `kind`: `raw` 原始数据 | `script` 脚本 | `result` 处理结果 | `other`
-`DataFile = {id, dataset_id, name, size, sha256, uploaded_by: UserBrief, uploaded_at, download_url}`（`download_url` = `/api/files/{id}/download/`）
+`DataFile = {id, dataset_id, name, size, sha256, uploaded_by: UserBrief, uploaded_at, download_url, preview_url, preview_kind}`（`download_url` = `/api/files/{id}/download/`，`preview_url` = `/api/files/{id}/preview/`，`preview_kind`: `image` | `pdf` | `text` | `other`）
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
@@ -202,6 +202,7 @@
 | POST | `/api/datasets/{id}/files/` | 本人 | `multipart/form-data`：一个或多个 `file` 字段；可选 `sha256`（仅单文件时，客户端算好的校验值）。→ 201 `[DataFile]` |
 | GET | `/api/files/{id}/` | 个人数据范围 | `DataFile` |
 | GET | `/api/files/{id}/download/` | 个人数据范围 | 流式下载，`Content-Disposition: attachment`（文件名用 RFC 5987 编码） |
+| GET | `/api/files/{id}/preview/?raw=1` | 个人数据范围 | 安全在线预览：文本/CSV/代码返回 JSON（最多前 256 KB / 200 行，自动识别 UTF-8 / GB18030）；白名单图片（不含 SVG）与 PDF 带 `?raw=1` 内联返回并附 `nosniff` / CSP / `Cache-Control: private`；不支持类型带 `?raw=1` 返回 415 |
 
 上传规则（前端目前每个文件单独发一个请求，以便显示单文件进度；接口仍支持一次多文件）：
 - 同一数据集内已有同名文件、或同一请求内重名 → 409 `file_exists`，**整个请求不保存任何文件**。

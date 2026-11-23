@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
 from core.permissions import scope_group
+from core.preview import preview_kind
 from projects.models import Project
 from projects.serializers import ProjectBriefSerializer
 
@@ -51,10 +52,21 @@ class DataFileSerializer(serializers.ModelSerializer):
     dataset_id = serializers.IntegerField(read_only=True)
     uploaded_by = UserBriefSerializer(read_only=True)
     download_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    preview_kind = serializers.SerializerMethodField()
 
     class Meta:
         model = DataFile
-        fields = ["id", "dataset_id", "name", "size", "sha256", "uploaded_by", "uploaded_at", "download_url"]
+        fields = [
+            "id", "dataset_id", "name", "size", "sha256", "uploaded_by", "uploaded_at",
+            "download_url", "preview_url", "preview_kind",
+        ]
 
     def get_download_url(self, obj):
         return reverse("datafile-download", args=[obj.pk])
+
+    def get_preview_url(self, obj):
+        return reverse("datafile-preview", args=[obj.pk])
+
+    def get_preview_kind(self, obj):
+        return preview_kind(obj.name)
