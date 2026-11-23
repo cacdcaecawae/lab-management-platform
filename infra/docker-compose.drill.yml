@@ -9,7 +9,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "lab_drill", "-d", "lab_drill"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "lab_drill", "-d", "lab_drill"]
+      start_period: 3m
       interval: 2s
       retries: 30
   verifier:

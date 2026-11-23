@@ -167,7 +167,8 @@ const ease = (x: number) => x * x * (3 - 2 * x)
 
 // Draws on the canvas until the returned stop() is called. Nothing (undefined) where the browser cannot: no WebGL 2,
 // no float render targets, or the shaders do not build. lost() runs if the GPU drops the context later.
-// Only while it can be seen (on screen, tab in front); still, apart from the pointer's tilt, with reduced motion.
+// Only while it can be seen (on screen, tab in front). With reduced motion it is one still picture: no tilt after the
+// pointer, no frame loop; drawn again only when its size changes or a click asks for the next figure.
 export function drawGlass(cv: HTMLCanvasElement, lost: () => void): (() => void) | undefined {
   const gl = cv.getContext('webgl2', { antialias: false, alpha: false })
   if (!gl || !(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))) return
@@ -350,10 +351,10 @@ export function drawGlass(cv: HTMLCanvasElement, lost: () => void): (() => void)
   }
 
   let slow = 0, counted = 0, last = 0
-  function loop() {
+  function loop() { // the moving ring (not with reduced motion: drawStill)
     const now = performance.now() / 1000
-    frame(frozen ? 0 : now)
-    if (!frozen && dpr > 1 && counted < 90) { // a weak GPU: give up sharpness before smoothness
+    frame(now)
+    if (dpr > 1 && counted < 90) { // a weak GPU: give up sharpness before smoothness
       if (last && now - last > 0.03) slow++
       if (++counted === 90 && slow > 45) {
         dpr = 1
@@ -374,19 +375,33 @@ export function drawGlass(cv: HTMLCanvasElement, lost: () => void): (() => void)
     ptrX = (e.clientX / innerWidth - 0.5) * 2
     ptrY = (e.clientY / innerHeight - 0.5) * 2
   }
+  const drawStill = () => {
+    cancelAnimationFrame(raf)
+    raf = requestAnimationFrame(() => frame(0))
+  }
   const onClick = () => { // jump to the next figure
+    if (frozen) {
+      skip += HOLD + MORPH
+      drawStill()
+      return
+    }
     const into = (performance.now() / 1000 - start + skip) % (HOLD + MORPH)
     if (into < HOLD) skip += HOLD - into
   }
   let onScreen = true
   const wake = () => { // draw only while it can be seen
     cancelAnimationFrame(raf)
-    if (!document.hidden && onScreen) {
+    if (document.hidden || !onScreen) return
+    if (frozen) drawStill()
+    else {
       last = 0
       loop()
     }
   }
-  const sized = new ResizeObserver(() => resize())
+  const sized = new ResizeObserver(() => {
+    resize() // which clears the canvas
+    if (frozen) drawStill()
+  })
   const seen = new IntersectionObserver(([e]) => {
     onScreen = e.isIntersecting
     wake()
@@ -406,11 +421,11 @@ export function drawGlass(cv: HTMLCanvasElement, lost: () => void): (() => void)
   }
   sized.observe(cv)
   seen.observe(cv)
-  addEventListener('pointermove', onPointer)
+  if (!frozen) addEventListener('pointermove', onPointer)
   cv.addEventListener('click', onClick)
   cv.addEventListener('webglcontextlost', onLost)
   document.addEventListener('visibilitychange', wake)
-  loop()
+  wake()
   return () => {
     stop()
     gl.getExtension('WEBGL_lose_context')?.loseContext() // free the GPU now, not when the canvas is collected

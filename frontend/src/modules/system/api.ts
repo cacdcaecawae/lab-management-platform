@@ -1,4 +1,5 @@
 import { api, type Page } from '@/api/client'
+import { opsStatusApi } from '@/api/opsStatus'
 import type {
   Account,
   AccountCreate,
@@ -9,27 +10,14 @@ import type {
   MailSettingsWrite,
   SystemGroup,
   SystemGroupWrite,
-  VersionInfo,
 } from '@/api/types'
 
-export type OpsRun = { finished_at: string; ok: boolean; snapshot: string; detail: string }
-export type StorageInfo = {
-  primary: 'nas' | 'local'
-  nas_ready: boolean | null
-  disk_free: number | null
-  disk_low: boolean
-  backup: { last_ok: OpsRun | null; last_failure: OpsRun | null; overdue: boolean; failing: boolean }
-  drill: { last: OpsRun | null; overdue: boolean }
-  attention: boolean
-}
-
 export const systemApi = {
-  storage: () => api.get<StorageInfo>('/api/system/storage-status/'),
+  ...opsStatusApi, // storage, version: the sidebar asks for them too
   mail: () => api.get<MailSettings>('/api/system/mail/'),
   saveMail: (body: MailSettingsWrite) => api.put<MailSettings>('/api/system/mail/', body),
   mailHistory: () => api.get<HistoryEntry[]>('/api/system/mail/history/'),
   testMail: (to: string) => api.post<{ to: string }>('/api/system/mail/test/', { to }),
-  version: (refresh = false) => api.get<VersionInfo>('/api/system/version/', { refresh: refresh ? 1 : undefined }),
   update: (target: string) => api.post<{ target: string; requested_at: number }>('/api/system/update/', { target }),
   groups: (q?: ListQuery) => api.get<Page<SystemGroup>>('/api/system/groups/', q),
   createGroup: (body: SystemGroupWrite) => api.post<SystemGroup>('/api/system/groups/', body),

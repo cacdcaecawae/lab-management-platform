@@ -7,9 +7,8 @@
 #   scripts/restore.sh <snapshot|latest> [--db-only] [--yes]
 set -euo pipefail
 source "$(dirname "$0")/server-env.sh"
-need_backup_repository
-
 if [ $# -eq 0 ]; then
+  need_backup_repository
   restic snapshots --host lab
   exit 0
 fi
@@ -26,19 +25,24 @@ for arg in "$@"; do
   esac
 done
 [ -z "$keep_stopped" ] || [[ -n "$db_only" && -n "$yes" ]] || die "内部回退模式需要 --db-only --yes"
+[[ $snap == latest || $snap =~ ^[0-9a-f]{1,64}$ ]] || die "需要 latest 或快照编号"
+need_backup_repository
 # Resolve the moving alias once: a cron backup can finish between restoring the DB and the files.
 # restic's snapshots JSON has a top-level full "id" per snapshot. Match that field, not the human table's
 # short ID; escaped quotes inside JSON strings cannot match. Reject zero/multiple IDs before stopping anything.
-if [ "$snap" = latest ]; then
-  snapshot_json=$(restic snapshots --json --host lab latest) || die "无法查询 latest，未停止网站"
-  snap=$(printf '%s\n' "$snapshot_json" | \
+snapshot_json=$(restic snapshots --json --host lab "$snap") || die "无法查询快照，未停止网站"
+selected=$(printf '%s\n' "$snapshot_json" | \
     grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-f]{64}"' | \
-    sed -E 's/.*"([0-9a-f]{64})"/\1/') || die "无法确定 latest 的快照编号，未停止网站"
-  [[ "$snap" =~ ^[0-9a-f]{64}$ ]] || die "需要唯一的 lab 备份快照，未停止网站"
-fi
+    sed -E 's/.*"([0-9a-f]{64})"/\1/') || die "无法确定快照编号，未停止网站"
+[[ $selected =~ ^[0-9a-f]{64}$ && ( $snap == latest || $selected == "$snap"* ) ]] || die "需要唯一匹配的备份快照，未停止网站"
+snap=$selected
+snapshot_time=$(grep -oE '"time"[[:space:]]*:[[:space:]]*"[0-9T:.Z+-]+"' <<<"$snapshot_json" | cut -d'"' -f4) &&
+  [[ -n $snapshot_time && $snapshot_time != *$'\n'* ]] || die "无法确定快照时间，未停止网站"
+what=数据库
+[ -n "$db_only" ] || what=数据库和上传的文件
+url=${SITE_URL:-$(envget SITE_URL)}
+printf '恢复目标：%s\nCompose 项目：%s\n配置网址：%s\n快照：%s（%s）\n将覆盖：%s\n' "$PWD" "$COMPOSE_PROJECT_NAME" "${url:-未配置}" "$snap" "$snapshot_time" "$what"
 if [ -z "$yes" ]; then
-  what=数据库
-  [ -n "$db_only" ] || what=数据库和上传的文件
   read -r -p "用快照 $snap 覆盖当前的$what，期间网站停止。输入 yes 确认：" answer
   [ "$answer" = yes ] || die "已取消"
 fi

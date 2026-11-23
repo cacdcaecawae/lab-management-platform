@@ -50,7 +50,7 @@ watchPostEffect(() => {
 // The workbench greets by name instead of repeating its title.
 const title = computed(() => (route.name === 'workbench' ? '' : String(route.meta.title ?? '')))
 
-// Phone (DESIGN.md "手机"): a bottom tab bar instead of the menu button (not for ops, who have one page), no tab strip,
+// Phone (DESIGN.md "手机"): a bottom tab bar instead of the menu button (not for ops, whose pages are all in the menu), no tab strip,
 // and the top bar only on list pages: the page name and the list's buttons (#phone-actions). Detail pages carry their
 // own back + title in the card.
 const tabBar = computed(() => phone.value && !!auth.user?.group)

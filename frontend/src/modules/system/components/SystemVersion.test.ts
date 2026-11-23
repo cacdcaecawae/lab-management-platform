@@ -39,6 +39,16 @@ it.each([
   expect(text).not.toContain('update.sh') // the command only shows when there is something newer
 })
 
+it('offers 重新检查 before the first answer, or when it failed', async () => {
+  vi.spyOn(systemApi, 'version').mockResolvedValue(base)
+  const wrapper = mount(SystemVersion, { props: { info: null }, global: { plugins: [ElementPlus] } })
+  expect(wrapper.text()).toContain('当前版本')
+  await wrapper.get('button[aria-label="重新检查"]').trigger('click')
+  await flushPromises()
+  expect(systemApi.version).toHaveBeenCalledWith(true)
+  expect(wrapper.emitted('update:info')).toEqual([[base]])
+})
+
 it('follows the update from the server, ignoring the status an earlier update left', async () => {
   vi.useFakeTimers()
   vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)

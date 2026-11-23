@@ -132,9 +132,10 @@ async function doReset() {
     <el-table-column prop="email" label="邮箱" min-width="170" />
     <el-table-column label="状态" min-width="160">
       <template #default="{ row }">
+        <!-- one tag: 未改初始密码 is an account in use that has not signed in for real yet -->
         <el-tag v-if="row.pending" class="status-tag" type="warning" disable-transitions>待审核</el-tag>
+        <el-tag v-else-if="row.is_active && row.must_change_password" class="status-tag" type="warning" disable-transitions>未改初始密码</el-tag>
         <el-tag v-else class="status-tag" :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
-        <el-tag v-if="row.is_active && row.must_change_password" class="status-tag next-tag" type="warning" disable-transitions>未改初始密码</el-tag>
       </template>
     </el-table-column>
     <el-table-column label="最近登录" min-width="150">
@@ -200,9 +201,3 @@ async function doReset() {
     <el-alert v-for="msg in resetErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
   </FormDialog>
 </template>
-
-<style scoped>
-.next-tag {
-  margin-left: 4px;
-}
-</style>
