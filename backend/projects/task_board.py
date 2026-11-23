@@ -41,7 +41,7 @@ def task_snapshot(task):
 def record_change(task, user, before, after):
     changes = {key: {"before": before.get(key), "after": value} for key, value in after.items() if key not in before or before[key] != value}
     if changes:
-        task.history.create(actor_name=user.name, changes=changes)
+        task.history.create(actor_name=user.display_name, changes=changes)
 
 
 class TaskAssigneeField(GroupMemberField):
@@ -88,7 +88,7 @@ class TaskSerializer(serializers.ModelSerializer):
         if milestone and not project.milestones.filter(pk=milestone).exists():
             raise serializers.ValidationError({"milestone_id": "请选择本项目里程碑"})
         if "assignee" in attrs:
-            attrs["assignee_name"] = assignee.name if assignee else ""
+            attrs["assignee_name"] = assignee.display_name if assignee else ""
         return attrs
 
 

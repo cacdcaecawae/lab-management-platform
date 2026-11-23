@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -38,7 +39,9 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, meeting):
         with transaction.atomic():
-            delete_on_commit([f.file for f in meeting.files.all()])
+            # Locked, then the files read afresh (not the list fetched with the page): an upload just before is included.
+            meeting = get_object_or_404(Meeting.objects.select_for_update(), pk=meeting.pk)
+            delete_on_commit([f.file for f in MeetingFile.objects.filter(meeting=meeting)])
             meeting.delete()
 
     @action(detail=True, methods=["post"], parser_classes=[MultiPartParser])
@@ -49,9 +52,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("只有议程里的汇报人和管理员可以上传附件")
         uploaded, name = checked_upload(request)
         meeting_file = MeetingFile(meeting=meeting, name=name, size=uploaded.size, uploaded_by=request.user)
-        meeting_file.file.save(name, uploaded, save=False)
+        meeting_file.file.save(name, uploaded, save=False)  # written before the lock: a big file must not hold it
         try:
-            meeting_file.save()
+            with transaction.atomic():
+                # a meeting deleted meanwhile is a 404, not a database error
+                get_object_or_404(Meeting.objects.select_for_update(), pk=meeting.pk)
+                meeting_file.save()
         except Exception:
             meeting_file.file.delete(save=False)
             raise

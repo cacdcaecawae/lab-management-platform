@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from equipment.models import Equipment
 from knowledge.models import Doc, DocVersion
+from knowledge.views import DocViewSet
 
 pytestmark = pytest.mark.django_db
 
@@ -96,3 +97,24 @@ def test_search_finds_a_devices_sdk_and_manual(api, student_a, device):
     assert found(equipment=device.id) == sorted([sdk, manual]) and found(equipment="x") == []
     assert found(tag="操作") == [manual]
     assert a.get(f"/api/docs/{other}/", {"category": "manual"}).status_code == 200  # filters do not hide details
+
+
+def test_an_upload_to_a_doc_deleted_meanwhile_is_404_and_leaves_no_file(api, monkeypatch, student_a):
+    doc_id = create(api(student_a)).data["id"]
+    get_object = DocViewSet.get_object
+
+    def then_deleted(view):
+        doc = get_object(view)
+        Doc.objects.filter(pk=doc.pk).delete()  # deleted while the file uploads
+        return doc
+
+    monkeypatch.setattr(DocViewSet, "get_object", then_deleted)
+    assert upload(api(student_a), doc_id).status_code == 404
+    assert not [p for p in Path(settings.MEDIA_ROOT).rglob("*") if p.is_file()]
+
+
+def test_a_file_missing_from_storage_is_404(api, student_a):
+    doc_id = create(api(student_a)).data["id"]
+    upload(api(student_a), doc_id)
+    (Path(settings.MEDIA_ROOT) / DocVersion.objects.get().file.name).unlink()  # e.g. not restored from the backup
+    assert api(student_a).get(f"/api/docs/{doc_id}/versions/1/file/").status_code == 404
