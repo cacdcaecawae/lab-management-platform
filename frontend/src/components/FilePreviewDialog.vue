@@ -3,7 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Download, TopRight } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
 import { formatSize } from '@/utils/format'
-import { isDelimitedFile, parseDelimitedRows, previewKindOf, type PreviewKind } from '@/utils/preview'
+import {
+  MAX_PDF_PREVIEW_BYTES,
+  isDelimitedFile,
+  parseDelimitedRows,
+  previewKindOf,
+  type PreviewKind,
+} from '@/utils/preview'
 
 export interface PreviewTarget {
   name: string
@@ -12,18 +18,28 @@ export interface PreviewTarget {
   size?: number
 }
 
-const props = defineProps<{
-  target: PreviewTarget | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    target: PreviewTarget | null
+    maxPdfBytes?: number
+  }>(),
+  {
+    maxPdfBytes: MAX_PDF_PREVIEW_BYTES,
+  },
+)
 const open = defineModel<boolean>({ required: true })
 
 const loading = ref(false)
 const error = ref('')
+const pdfTooLarge = ref(false)
+const pdfTooLargeSize = ref<number | null>(null)
 const blobUrl = ref<string | null>(null)
 const textContent = ref('')
 const truncated = ref(false)
 const textView = ref<'table' | 'raw'>('table')
 let seq = 0
+let activeController: AbortController | null = null
+let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
 const kind = computed<PreviewKind | null>(() => (props.target ? previewKindOf(props.target.name) : null))
 const delimiter = computed(() => (props.target ? isDelimitedFile(props.target.name) : null))
@@ -53,18 +69,39 @@ function revokeBlob() {
   }
 }
 
-async function readCappedStream(response: Response, maxBytes = 256 * 1024, maxLines = 200) {
+function cancelActive() {
+  if (activeReader) {
+    const r = activeReader
+    activeReader = null
+    void r.cancel().catch(() => {})
+  }
+  if (activeController) {
+    activeController.abort()
+    activeController = null
+  }
+}
+
+function isAbortError(e: unknown, signal: AbortSignal): boolean {
+  return signal.aborted || (e instanceof DOMException && e.name === 'AbortError')
+}
+
+async function readCappedStream(response: Response, signal: AbortSignal, maxBytes = 256 * 1024, maxLines = 200) {
   const reader = response.body?.getReader()
   if (!reader) {
     const full = await response.text()
     const lines = full.split(/\r?\n/)
     return { content: lines.slice(0, maxLines).join('\n'), truncated: lines.length > maxLines }
   }
+  activeReader = reader
   const chunks: Uint8Array[] = []
   let total = 0
   let byteTruncated = false
   try {
     while (true) {
+      if (signal.aborted) {
+        await reader.cancel()
+        return { content: '', truncated: false }
+      }
       const { value, done } = await reader.read()
       if (done) break
       if (value) {
@@ -79,6 +116,7 @@ async function readCappedStream(response: Response, maxBytes = 256 * 1024, maxLi
       }
     }
   } finally {
+    if (activeReader === reader) activeReader = null
     reader.releaseLock()
   }
   const buf = new Uint8Array(chunks.reduce((s, c) => s + c.byteLength, 0))
@@ -94,55 +132,148 @@ async function readCappedStream(response: Response, maxBytes = 256 * 1024, maxLi
   return { content: clipped.slice(0, maxLines).join('\n'), truncated: byteTruncated || lineTruncated }
 }
 
+async function readCappedPdf(response: Response, controller: AbortController, maxBytes: number): Promise<Blob | null> {
+  const headerLen = Number(response.headers.get('content-length') ?? '')
+  if (Number.isFinite(headerLen) && headerLen > maxBytes) {
+    pdfTooLarge.value = true
+    pdfTooLargeSize.value = headerLen
+    void response.body?.cancel().catch(() => {})
+    controller.abort()
+    return null
+  }
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const buf = await response.arrayBuffer()
+    if (buf.byteLength > maxBytes) {
+      pdfTooLarge.value = true
+      pdfTooLargeSize.value = buf.byteLength
+      return null
+    }
+    return new Blob([buf], { type: 'application/pdf' })
+  }
+  activeReader = reader
+  const chunks: BlobPart[] = []
+  let total = 0
+  try {
+    while (true) {
+      if (controller.signal.aborted) {
+        await reader.cancel()
+        return null
+      }
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) {
+        total += value.byteLength
+        if (total > maxBytes) {
+          pdfTooLarge.value = true
+          pdfTooLargeSize.value = total
+          chunks.length = 0
+          await reader.cancel()
+          controller.abort()
+          return null
+        }
+        chunks.push(value)
+      }
+    }
+  } finally {
+    if (activeReader === reader) activeReader = null
+    reader.releaseLock()
+  }
+  if (controller.signal.aborted) return null
+  return new Blob(chunks, { type: 'application/pdf' })
+}
+
 async function loadPreview() {
   const mySeq = ++seq
+  cancelActive()
   revokeBlob()
   error.value = ''
+  pdfTooLarge.value = false
+  pdfTooLargeSize.value = null
   textContent.value = ''
   truncated.value = false
   textView.value = delimiter.value ? 'table' : 'raw'
   const target = props.target
-  if (!open.value || !target || !kind.value) return
+  if (!open.value || !target || !kind.value) {
+    loading.value = false
+    return
+  }
 
-  if (kind.value === 'image') return // <el-image> loads directly with session cookies
+  if (kind.value === 'image') {
+    loading.value = false
+    return // <el-image> loads directly with session cookies
+  }
 
+  if (kind.value === 'pdf' && target.size != null && target.size > props.maxPdfBytes) {
+    pdfTooLarge.value = true
+    pdfTooLargeSize.value = target.size
+    loading.value = false
+    return
+  }
+
+  const controller = new AbortController()
+  activeController = controller
   loading.value = true
   try {
     if (kind.value === 'pdf') {
-      const res = await fetch(rawUrl.value, { credentials: 'same-origin' })
+      const res = await fetch(rawUrl.value, { credentials: 'same-origin', signal: controller.signal })
       if (!res.ok) throw new Error(`加载失败（${res.status}）`)
-      const buf = await res.arrayBuffer()
+      const blob = await readCappedPdf(res, controller, props.maxPdfBytes)
       if (mySeq !== seq) return
-      blobUrl.value = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
+      if (!blob) {
+        if (pdfTooLargeSize.value != null) pdfTooLarge.value = true
+        return
+      }
+      blobUrl.value = URL.createObjectURL(blob)
       return
     }
     if (target.previewUrl) {
-      const res = await fetch(target.previewUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      const res = await fetch(target.previewUrl, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      })
       if (!res.ok) throw new Error(`加载失败（${res.status}）`)
       const data = (await res.json()) as { content?: string; truncated?: boolean }
-      if (mySeq !== seq) return
+      if (mySeq !== seq || controller.signal.aborted) return
       textContent.value = data.content ?? ''
       truncated.value = !!data.truncated
     } else {
-      const res = await fetch(target.url, { credentials: 'same-origin' })
+      const res = await fetch(target.url, { credentials: 'same-origin', signal: controller.signal })
       if (!res.ok) throw new Error(`加载失败（${res.status}）`)
-      const data = await readCappedStream(res)
-      if (mySeq !== seq) return
+      const data = await readCappedStream(res, controller.signal)
+      if (mySeq !== seq || controller.signal.aborted) return
       textContent.value = data.content
       truncated.value = data.truncated
     }
   } catch (e) {
-    if (mySeq === seq) error.value = e instanceof Error ? e.message : '预览加载失败'
+    if (mySeq !== seq || isAbortError(e, controller.signal)) return
+    error.value = e instanceof Error ? e.message : '预览加载失败'
   } finally {
+    if (activeController === controller) activeController = null
     if (mySeq === seq) loading.value = false
   }
 }
 
-watch([open, () => props.target], () => {
-  if (open.value) void loadPreview()
-  else revokeBlob()
+watch(
+  [open, () => props.target],
+  () => {
+    if (open.value) {
+      void loadPreview()
+    } else {
+      seq++
+      cancelActive()
+      revokeBlob()
+      loading.value = false
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  seq++
+  cancelActive()
+  revokeBlob()
 })
-onBeforeUnmount(revokeBlob)
 </script>
 
 <template>
@@ -172,6 +303,16 @@ onBeforeUnmount(revokeBlob)
       <div v-else-if="kind === 'image'" class="image-wrap">
         <el-image :src="rawUrl" :preview-src-list="[rawUrl]" preview-teleported fit="contain" class="preview-img" :alt="target.name" />
       </div>
+      <div v-else-if="kind === 'pdf' && pdfTooLarge" class="large-pdf">
+        <el-empty
+          :description="`PDF 超过弹窗预览上限（${formatSize(maxPdfBytes)}）${pdfTooLargeSize ? `，当前约 ${formatSize(pdfTooLargeSize)}` : ''}，请新窗口打开或下载查看`"
+        >
+          <div class="actions">
+            <el-button tag="a" :href="rawUrl" target="_blank" rel="noopener">新窗口打开</el-button>
+            <el-button type="primary" tag="a" :href="target.url" :download="target.name">下载文件</el-button>
+          </div>
+        </el-empty>
+      </div>
       <div v-else-if="kind === 'pdf'" class="pdf-wrap">
         <iframe v-if="blobUrl" :src="blobUrl" :title="target.name" class="pdf-frame" />
       </div>
@@ -185,7 +326,9 @@ onBeforeUnmount(revokeBlob)
           title="文件较大，仅展示前 200 行（最多 256 KB），完整内容请点击右上角下载。"
         />
         <el-table v-if="textView === 'table' && parsedTable" :data="parsedTable.data" max-height="62vh" border size="small" empty-text="暂无内容">
-          <el-table-column v-for="(h, idx) in parsedTable.headers" :key="idx" :prop="`c${idx}`" :label="h" min-width="100" show-overflow-tooltip />
+          <el-table-column v-for="(h, idx) in parsedTable.headers" :key="idx" :label="h" min-width="120">
+            <template #default="{ row }"><span class="csv-cell">{{ row[`c${idx}`] }}</span></template>
+          </el-table-column>
         </el-table>
         <pre v-else class="code-box mono">{{ textContent }}</pre>
       </div>
@@ -244,8 +387,15 @@ onBeforeUnmount(revokeBlob)
   border-radius: var(--lab-radius);
   background: var(--lab-bg-subtle);
 }
+.large-pdf {
+  padding: 24px 12px;
+}
 .trunc-alert {
   margin-bottom: 12px;
+}
+.csv-cell {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .code-box {
   margin: 0;
