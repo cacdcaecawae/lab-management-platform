@@ -19,6 +19,7 @@ import { showError, useFieldErrors } from '@/utils/errors'
 import BookingFormDialog from '../components/BookingFormDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
+import PhotoPicker from '@/components/PhotoPicker.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -155,8 +156,10 @@ const canReport = computed(() => !!detail.value && mine.value && detail.value.ki
 
 const reportForm = reactive({ condition: 'normal' as Condition, description: '', photo: null as File | null })
 const reportErrors = useFieldErrors(['condition', 'description', 'photo'])
+const reportPhotoBusy = ref(false)
 const busy = ref(false)
 watch(detail, () => {
+  reportPhotoBusy.value = false
   Object.assign(reportForm, { condition: 'normal', description: '', photo: null })
   reportErrors.clear()
 })
@@ -167,8 +170,6 @@ if (route.query.booking) {
     api()?.gotoDate(b.start_at)
   }, showError)
 }
-
-const pickPhoto = (e: Event) => (reportForm.photo = (e.target as HTMLInputElement).files?.[0] ?? null)
 
 async function cancel() {
   const b = detail.value
@@ -197,10 +198,10 @@ async function cancel() {
 
 async function submitReport() {
   const b = detail.value
-  if (!b) return
+  if (!b || reportPhotoBusy.value) return
   busy.value = true
   try {
-    detail.value = await bookingsApi.report(b.id, reportForm)
+    detail.value = await bookingsApi.report(b.id, { ...reportForm })
     ElMessage.success(reportForm.condition === 'abnormal' ? '已登记异常，设备转为待检查，管理员会收到提醒' : '已登记')
     api()?.refetchEvents()
   } catch (e) {
@@ -266,6 +267,7 @@ async function submitReport() {
     cancel-text="关闭"
     :readonly="!canReport"
     :loading="busy"
+    :disabled="reportPhotoBusy"
     @submit="submitReport"
   >
     <template #before>
@@ -286,7 +288,15 @@ async function submitReport() {
               {{ CONDITION_LABELS[detail.report.condition] }}
             </el-tag>
             <span>{{ detail.report.description }}</span>
-            <a v-if="detail.report.photo_url" :href="detail.report.photo_url" target="_blank" rel="noopener">照片</a>
+            <el-image
+              v-if="detail.report.photo_url"
+              class="report-thumb"
+              :src="detail.report.photo_url"
+              :preview-src-list="[detail.report.photo_url]"
+              preview-teleported
+              fit="cover"
+              alt="使用照片"
+            />
           </div>
         </el-descriptions-item>
       </el-descriptions>
@@ -301,8 +311,8 @@ async function submitReport() {
       <el-form-item label="说明" :error="reportErrors.fe('description')" :required="reportForm.condition === 'abnormal'">
         <el-input v-model="reportForm.description" type="textarea" :autosize="{ minRows: 2 }" placeholder="异常时写明现象，例如 探头线接触不良" />
       </el-form-item>
-      <el-form-item label="照片（可选，JPG / PNG / WebP，10 MB 以内）" :error="reportErrors.fe('photo')">
-        <input type="file" accept="image/jpeg,image/png,image/webp" @change="pickPhoto" />
+      <el-form-item label="照片（可选，方便下一个人找设备）" :error="reportErrors.fe('photo')">
+        <PhotoPicker v-if="detailOpen" v-model="reportForm.photo" v-model:processing="reportPhotoBusy" :disabled="busy" />
       </el-form-item>
       <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </div>
@@ -467,5 +477,12 @@ async function submitReport() {
   .side {
     position: static;
   }
+}
+.report-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--el-border-radius-small);
+  border: 1px solid var(--lab-border);
+  cursor: zoom-in;
 }
 </style>

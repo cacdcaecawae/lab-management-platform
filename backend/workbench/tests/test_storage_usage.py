@@ -65,6 +65,7 @@ def test_all_recorded_attachment_sources(api, group, manager, other_manager, mon
     from knowledge.models import Doc, DocVersion
     from meetings.models import Meeting, MeetingFile
     from procurement.models import Attachment, Fund, PurchaseRequest, Reimbursement
+    from specimens.models import Specimen, SpecimenLoan
 
     ops = User.objects.create(username="ops-metadata", is_superuser=True, must_change_password=False)
     monkeypatch.setattr(storage.shutil, "disk_usage", Mock(side_effect=FileNotFoundError))
@@ -79,14 +80,20 @@ def test_all_recorded_attachment_sources(api, group, manager, other_manager, mon
     pay = Reimbursement.objects.create(owner=other_manager, fund=fund, amount="1", occurred_on="2026-11-01")
     Attachment.objects.create(purchase=purchase, file="synthetic/purchase", size=6, uploaded_by=other_manager)
     Attachment.objects.create(reimbursement=pay, file="synthetic/reimbursement", size=7, uploaded_by=manager)
+    specimen = Specimen.objects.create(group=group, code="SP-ST", name="合成试件")
+    SpecimenLoan.objects.create(
+        specimen=specimen, borrower=manager, return_photo="synthetic/specimen.jpg",
+        return_photo_size=9, return_photo_uploaded_at=datetime(2026, 11, 1, 4, tzinfo=timezone.utc),
+    )
     r = api(ops).get(OPS)
     assert r.data["disk"] == {"kind": "local", "filesystem": None}
     by_group = {g["id"]: g for g in r.data["groups"]}
     ours = by_group[group.pk]
-    assert ours["known_bytes"] == 15 and ours["unknown_files"] == 0
+    assert ours["known_bytes"] == 24 and ours["unknown_files"] == 0
     assert ours["modules"]["knowledge"]["known_bytes"] == 4
     assert ours["modules"]["meetings"]["known_bytes"] == 5
     assert ours["modules"]["procurement"]["known_bytes"] == 6
+    assert ours["modules"]["specimens"]["known_bytes"] == 9
     assert by_group[other_manager.group_id]["modules"]["procurement"]["known_bytes"] == 7
 
 

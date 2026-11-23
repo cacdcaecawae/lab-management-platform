@@ -381,6 +381,17 @@ export interface SpecimenLoan {
   returned_at: string | null
   returned_by: UserBrief | null
   return_note: string
+  return_location: string
+  return_photo_url: string | null
+}
+
+export interface SpecimenReturnPhoto {
+  loan_id: number
+  url: string
+  location: string
+  note: string
+  returned_at: string
+  returned_by: UserBrief | null
 }
 
 export interface LoanWrite {
@@ -405,6 +416,7 @@ export interface Specimen extends SpecimenBrief {
   defects_public: boolean
   defects: (Defect & { id: number })[] | null
   current_loan: SpecimenLoan | null
+  latest_return_photo?: SpecimenReturnPhoto | null
   notes: string
   created_at: string
   updated_at: string

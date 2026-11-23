@@ -4,6 +4,12 @@ from django.db.models import Q
 from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
+from core.files import stored_name
+
+
+def loan_photo_upload_to(instance, filename):
+    return stored_name("specimens", filename)
+
 
 class Specimen(models.Model):
     """试样与标准件台账：标准试块、对比试块、试样等。组内公开；只有本组管理员能新建和修改。不删除，不再用的改为"停用"。
@@ -87,6 +93,10 @@ class SpecimenLoan(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="登记归还的人", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
     )
     return_note = models.CharField("归还说明", max_length=200, blank=True)
+    return_location = models.CharField("放回位置", max_length=200, blank=True)
+    return_photo = models.FileField("归还照片", upload_to=loan_photo_upload_to, max_length=300, blank=True)
+    return_photo_size = models.BigIntegerField("归还照片大小", null=True, blank=True)
+    return_photo_uploaded_at = models.DateTimeField("归还照片上传时间", null=True, blank=True)
 
     class Meta:
         verbose_name = verbose_name_plural = "借用"
