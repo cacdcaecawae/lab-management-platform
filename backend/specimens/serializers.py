@@ -39,6 +39,7 @@ class DefectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Defect
         fields = ["id", "kind", "size_mm", "depth_mm", "position", "note"]
+        extra_kwargs = {"size_mm": {"min_value": 0}, "depth_mm": {"min_value": 0}}
 
 
 class LoanSerializer(serializers.ModelSerializer):

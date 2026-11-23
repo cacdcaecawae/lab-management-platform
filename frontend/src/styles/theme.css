@@ -571,6 +571,10 @@ a:focus-visible {
   .el-card__header {
     padding: 12px 16px;
   }
+  /* a span-2 field in a one-column form would add an implicit second column and squeeze the first */
+  .form-grid > .span-2 {
+    grid-column: 1 / -1;
+  }
 
   /* Toolbar: the search box, a 筛选 button for the folded dropdowns; the buttons went to the top bar. */
   .page-toolbar {

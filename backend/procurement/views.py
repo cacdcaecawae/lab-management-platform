@@ -4,6 +4,7 @@ from django.db import transaction
 from django.db.models import Count, F, ProtectedError, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.http import content_disposition_header
@@ -21,6 +22,7 @@ from core.exceptions import Conflict, MailFailed
 from core.export import xlsx_bytes
 from core.files import delete_on_commit, download
 from core.history import serialize_history
+from core.params import plain_int
 from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, scope_group, scope_private
 
 from .mail import notify, send_finance_reminder
@@ -78,11 +80,27 @@ def submission_errors(purchase):
     return errors
 
 
-def save_attachment(request, **parent):
+def save_attachment(request, lock):
+    """`lock()` re-reads the parent FOR UPDATE and checks it, returning {"purchase": ...} or {"reimbursement": ...}.
+    The file is written before the lock (a big file must not hold it) and removed again when no row is saved."""
     serializer = AttachmentSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    serializer.save(uploaded_by=request.user, **parent)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    data = serializer.validated_data
+    upload = data["file"]  # Django's multipart parser already strips any directory from the name
+    attachment = Attachment(
+        kind=data.get("kind", Attachment.Kind.OTHER), name=(upload.name or "附件")[-200:], size=upload.size,
+        uploaded_by=request.user,
+    )
+    attachment.file.save(upload.name, upload, save=False)
+    try:
+        with transaction.atomic():
+            for field, parent in lock().items():
+                setattr(attachment, field, parent)
+            attachment.save()
+    except Exception:
+        attachment.file.delete(save=False)
+        raise
+    return Response(AttachmentSerializer(attachment).data, status=status.HTTP_201_CREATED)
 
 
 class FundViewSet(
@@ -178,10 +196,15 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 purchase.submitted_at = timezone.now()
                 purchase._change_reason = f"{user.display_name} 修改了明细，重新审批：{'；'.join(before)} → {'；'.join(after)}"
             serializer.save()
-            if reset:
-                # Going back to review is a new submission: the same checks apply (no empty or 0-yuan request).
-                if errors := submission_errors(purchase):
+            if purchase.status != S.DRAFT:
+                # Going back to review is a new submission: the same checks apply (no empty or 0-yuan request). Without
+                # one, a submitted request still keeps its purpose and fund; a fund stopped since only matters on review.
+                errors = submission_errors(purchase)
+                if not reset and purchase.fund_id:
+                    errors.pop("fund_id", None)
+                if errors:
                     raise ValidationError(errors)  # inside the transaction: nothing of the edit is kept
+            if reset:
                 notify_purchase(purchase)
                 transaction.on_commit(lambda: notify(purchase.pk))
         return self.respond(purchase.pk)
@@ -299,7 +322,10 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         purchase = self.get_object()
         if not (purchase.owner_id == request.user.id or is_manager(request.user)):
             raise PermissionDenied("只有申请人和管理员可以上传附件")
-        return save_attachment(request, purchase=purchase)
+        # locked: a draft deleted meanwhile is a 404, not a database error and a file left behind
+        return save_attachment(
+            request, lambda: {"purchase": get_object_or_404(PurchaseRequest.objects.select_for_update(), pk=purchase.pk)}
+        )
 
     @action(detail=True)
     def history(self, request, pk=None):
@@ -354,7 +380,7 @@ def filter_reimbursements(queryset, params):
             queryset = queryset.filter(**{name: params[name]})
     for name in ("fund", "owner"):
         if params.get(name):
-            if not params[name].isdigit():
+            if plain_int(params[name]) is None:
                 raise ValidationError({name: ["必须是整数"]})
             queryset = queryset.filter(**{f"{name}_id": int(params[name])})
     if params.get("month"):
@@ -495,12 +521,15 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
     def attachments(self, request, pk=None):
         reimbursement = self.get_object()
         self.check_writer(reimbursement)
-        with transaction.atomic():
+
+        def lock():
             # Locked like advance(): no file slips in while the reimbursement is handed to finance.
-            locked = Reimbursement.objects.select_for_update().get(pk=reimbursement.pk)
+            locked = get_object_or_404(Reimbursement.objects.select_for_update(), pk=reimbursement.pk)
             if locked.status != R.PENDING:
                 raise Conflict("已交财务的报销不能再上传附件；需要补充请管理员先退回“待提交”", code="invalid_state")
-            return save_attachment(request, reimbursement=locked)
+            return {"reimbursement": locked}
+
+        return save_attachment(request, lock)
 
     @action(detail=True)
     def history(self, request, pk=None):

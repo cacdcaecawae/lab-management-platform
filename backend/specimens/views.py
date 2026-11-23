@@ -71,10 +71,11 @@ class SpecimenViewSet(
         params = self.request.query_params
         if self.action != "list":  # list filters must not turn detail URLs into 404s
             return specimens
+        # an unknown value (also one with a NUL, which PostgreSQL cannot compare) matches nothing, as on other lists
         if params.get("kind"):
-            specimens = specimens.filter(kind=params["kind"])
+            specimens = specimens.filter(kind=params["kind"]) if params["kind"] in Specimen.Kind.values else specimens.none()
         if params.get("status"):
-            specimens = specimens.filter(status=params["status"])
+            specimens = specimens.filter(status=params["status"]) if params["status"] in Specimen.Status.values else specimens.none()
         loans = open_loans().filter(specimen=OuterRef("pk"))
         if params.get("overdue") == "1":
             loans = overdue_loans(loans)

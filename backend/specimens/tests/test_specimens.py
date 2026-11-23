@@ -260,3 +260,9 @@ def test_return_photo_cleaned_up_on_rollback(api, tmp_path, settings, student_a,
     monkeypatch.setattr(Specimen, "save", orig_save)
     assert list((tmp_path / "specimens").glob("*")) == []
     assert SpecimenLoan.objects.get(pk=loan_id).returned_at is None
+
+
+def test_defect_sizes_are_not_negative(api, manager):
+    body = {**BLOCK, "defects": [{"kind": "fbh", "size_mm": "-1.00", "depth_mm": "-2.00"}]}
+    r = api(manager).post(URL, body, format="json")
+    assert r.status_code == 400 and not Specimen.objects.exists()

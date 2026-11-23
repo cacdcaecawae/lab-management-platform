@@ -56,7 +56,10 @@ class DashboardView(APIView):
         week_start = current_week_start()
         mine = WeeklyReport.objects.filter(owner=user).select_related("owner")
         current = mine.filter(week_start=week_start).first()
-        bookings = Booking.objects.filter(user=user, cancelled_at__isnull=True).select_related("equipment", "user", "project", "report")
+        # scoped like the bookings page: after a move to another group the old group's devices and projects stay out of sight
+        bookings = scope_group(
+            Booking.objects.filter(user=user, cancelled_at__isnull=True), user, "equipment__group"
+        ).select_related("equipment", "user", "project", "report")
         purchases = (
             scope_private(PurchaseRequest.objects.select_related("owner", "fund"), user)
             .prefetch_related("items")
