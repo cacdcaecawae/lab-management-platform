@@ -6,12 +6,11 @@ import type {
   ReportWrite,
   UserBrief,
   WeeklyReport,
-  WeeklyReportBrief,
   WeeklyReportDigest,
 } from '@/api/types'
 
 export const reportsApi = {
-  list: (q?: ListQuery) => api.get<Page<WeeklyReportBrief>>('/api/reports/', q),
+  list: (q?: ListQuery) => api.get<Page<WeeklyReport>>('/api/reports/', q),
   get: (id: number) => api.get<WeeklyReport>(`/api/reports/${id}/`),
   create: (body: ReportWrite) => api.post<WeeklyReport>('/api/reports/', body),
   update: (id: number, body: Partial<ReportWrite>) => api.patch<WeeklyReport>(`/api/reports/${id}/`, body),

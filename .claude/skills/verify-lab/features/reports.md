@@ -33,6 +33,9 @@
 - **第二视角。** 运行 `bash .claude/skills/verify-lab/scripts/query.sh 'from reports.models import WeeklyReport; r = WeeklyReport.objects.get(); print(r.status, list(r.feedback.values_list("verdict", "content")), r.history.count())'`，状态为 `reviewed`，有一条 `needs_revision` 和一条 `reviewed` 反馈，历史条数大于 1。
 - **同周重复。** `s_a` 再点 "写本周周报" 并保存，出现"……这一周的周报已经存在，请在周报列表中打开它继续编辑"。
 
+- 学生从周报列表点“写本周周报”，已有本周记录时直接进入编辑。新建时选周一，点“带入上周计划”，核对本周目标来自上一周；上周缺报时目标保持原值。本人草稿可删除。
+- 导师进入“未交名单”，让名单请求失败，确认出现“未交名单加载失败”，恢复连接后点“重试”。在“本周汇总”切换周次，核对正文和未交名单，下载“导出汇总 Markdown”。在全部周报按学生和关键词筛选，提交反馈后点“下一份待反馈”。
+
 ## Gotchas
 
 - 选"需补充"却不写内容，会出现"选择"需补充"时请写明需要补充的内容"，这是预期的校验。

@@ -37,7 +37,7 @@ const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size
 const { items, count, page, pageSize, loading } = usePagedList(reportsApi.list, filters)
 
 const missingWeek = ref(mondayOf())
-const missing = ref<UserBrief[]>([])
+const missing = ref<UserBrief[] | null>(null)
 const missingLoading = ref(false)
 let missingSeq = 0
 let missingController: AbortController | null = null
@@ -54,7 +54,7 @@ async function loadMissing() {
   missingController?.abort()
   const controller = new AbortController()
   missingController = controller
-  missing.value = []
+  missing.value = null
   missingLoading.value = true
   try {
     const data = await reportsApi.missing(missingWeek.value, controller.signal)
@@ -163,8 +163,11 @@ onBeforeUnmount(() => {
         <el-date-picker v-model="missingWeek" type="date" value-format="YYYY-MM-DD" :disabled-date="notMonday" :clearable="false" />
       </PageToolbar>
       <div v-loading="missingLoading">
-        <el-empty v-if="!missing.length" description="这一周没有未交的同学" />
-        <div v-else class="actions">
+        <el-result v-if="missing === null && !missingLoading" icon="warning" title="未交名单加载失败">
+          <template #extra><el-button @click="loadMissing">重试</el-button></template>
+        </el-result>
+        <el-empty v-else-if="missing?.length === 0" description="这一周没有未交的同学" />
+        <div v-else-if="missing" class="actions">
           <el-tag v-for="u in missing" :key="u.id" type="danger" size="large" disable-transitions>{{ u.name }}</el-tag>
         </div>
       </div>

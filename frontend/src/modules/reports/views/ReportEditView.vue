@@ -10,7 +10,7 @@ import { reportsApi } from '@/modules/reports/api'
 import type { DatasetBrief, ExperimentBrief, ReportWrite, RunBrief, Verdict, WeeklyReport } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
-import { formatTime, mergeById, mondayOf, notMonday } from '@/utils/format'
+import { formatTime, mergeById, mondayOf, notMonday, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
@@ -102,15 +102,19 @@ async function load(id: number) {
 }
 
 async function carryLastPlan() {
+  const week = form.week_start
+  const previous = new Date(week + 'T12:00:00')
+  if (Number.isNaN(previous.getTime())) return
+  previous.setDate(previous.getDate() - 7)
   carrying.value = true
   try {
-    const page = await reportsApi.list({ owner: auth.user?.id, page_size: 10 })
-    const prev = page.results.find((r) => r.week_start < form.week_start)
-    if (!prev) {
-      ElMessage.info('没有找到更早的周报')
+    const page = await reportsApi.list({ owner: auth.user?.id, week_start: toDateStr(previous), page_size: 1 })
+    if (!isNew.value || form.week_start !== week) return
+    const detail = page.results[0]
+    if (!detail) {
+      ElMessage.info('上周没有周报')
       return
     }
-    const detail = await reportsApi.get(prev.id)
     if (!detail.next_plan.trim()) {
       ElMessage.info(`上周（${detail.week_start}）周报没有填写下周计划`)
       return
@@ -125,6 +129,7 @@ async function carryLastPlan() {
         return
       }
     }
+    if (!isNew.value || form.week_start !== week) return
     form.goals = detail.next_plan
     ElMessage.success(`已带入 ${detail.week_start} 周报的下周计划`)
   } catch (e) {

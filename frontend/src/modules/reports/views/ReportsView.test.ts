@@ -82,6 +82,24 @@ async function mountSupervisor(fetchImpl: (url: string, init?: RequestInit) => P
 }
 
 describe('ReportsView rapid week switching', () => {
+  it('only reports everyone submitted after a successful empty response', async () => {
+    let attempts = 0
+    const wrapper = await mountSupervisor(async (url) => {
+      if (url.startsWith('/api/reports/missing/')) {
+        return ++attempts === 1 ? new Response('{}', { status: 500 }) : new Response('[]')
+      }
+      return new Response(JSON.stringify({ count: 0, results: [] }))
+    })
+    await wrapper.findAll('.el-tabs__item').find((t) => t.text() === '未交名单')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('未交名单加载失败')
+    expect(wrapper.text()).not.toContain('这一周没有未交的同学')
+    await wrapper.findAll('button').find((b) => b.text() === '重试')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('这一周没有未交的同学')
+    wrapper.unmount()
+  })
+
   it('aborts older digest request and ignores late out-of-order response', async () => {
     const calls: Array<{ url: string; signal?: AbortSignal; d: Deferred<Response> }> = []
     const wrapper = await mountSupervisor((url, init) => {

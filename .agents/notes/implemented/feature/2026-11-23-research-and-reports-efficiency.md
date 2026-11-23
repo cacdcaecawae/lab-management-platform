@@ -12,7 +12,7 @@ Status: implemented
 - **周报汇总、导出与搜索（`backend/reports/views.py` + `ReportsView.vue` / `ReportEditView.vue`）**：
   - `WeeklyReportViewSet` 启用 `SearchFilter`，覆盖学生姓名与四段正文（`owner__name`, `goals`, `done`, `findings`, `next_plan`）。
   - 新增导师专属 `GET /api/reports/digest/?week_start=` 与 `GET /api/reports/digest/export/?week_start=`：仅汇总本组非草稿周报与未交名单，导出 UTF-8 Markdown（`Cache-Control: private, no-store`）。
-  - 前端新增「本周汇总」标签页（含一键导出 Markdown `IconButton`）、搜索框与导师端成员筛选；「本周汇总」与「未交名单」切换周次/标签及详情页切换周报时，结合单调请求序号与 `AbortController` 中止过期请求并清空旧周缓存，避免快速切换周次时旧响应晚到覆盖当前日期；学生点击「写本周周报」先查询本周是否已有记录，有则直接打开；新建周报提供「带入上周计划」按钮；本人草稿支持「删除草稿」；导师反馈完成后自动探测下一份待反馈周报并提供「下一份待反馈」连续批阅按钮。
+  - 前端新增「本周汇总」标签页（含一键导出 Markdown `IconButton`）、搜索框与导师端成员筛选；「本周汇总」与「未交名单」切换周次/标签及详情页切换周报时，结合单调请求序号与 `AbortController` 中止过期请求并清空旧周缓存，避免快速切换周次时旧响应晚到覆盖当前日期；学生点击「写本周周报」先查询本周是否已有记录，有则直接打开；未交名单查询失败时显示重试入口；新建周报按所选周一减七天精确查询本人的周报，从列表响应直接带入计划；本人草稿支持「删除草稿」；导师反馈完成后自动探测下一份待反馈周报并提供「下一份待反馈」连续批阅按钮。
 - **科研记录与数据集效率增强（`backend/datasets/views.py` + `research`/`datasets` 前端）**：
   - 新增 `GET /api/datasets/{id}/download-zip/?version=`：复用快照版本查询，空集 409 `empty_dataset`，总大小超上限（默认 200 MB，可通过 `DATASET_ZIP_MAX_BYTES` 配置）413 `too_large_for_zip`，通过 `SpooledTemporaryFile` + `ZIP_STORED` 分块流式写入并捕获底层文件缺失返回 404。
   - 新增 `GET /api/datasets/{id}/references/`：直接通过 Django 反向关联管理器（`experiments`、`used_by_runs`、`script_of_runs`、`produced_by_runs`、`weekly_reports`）并施加 `scope_private` 返回反向引用，**不引入 `datasets → research/reports` 模块依赖**，完整遵守 `scripts/check_module_deps.py` 分层边界。
