@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { replaceSavedEditor } from '@/router/saved-editor'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { datasetsApi } from '@/modules/datasets/api'
@@ -17,7 +17,7 @@ import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PinnedDatasets from '@/components/PinnedDatasets.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
-import { Clock } from '@element-plus/icons-vue'
+import { Clock, CopyDocument } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
@@ -25,6 +25,7 @@ const route = useRoute()
 const router = useRouter()
 
 const record = ref<ProcessingRun | null>(null)
+const copiedFrom = ref<ProcessingRun | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const loading = ref(false)
 const saving = ref(false)
@@ -54,8 +55,9 @@ const scriptError = computed(
 )
 
 // No record yet only means "new" on the -new route; a failed load must not turn into a create form.
-const isNew = !route.params.id
-const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew))
+const isNew = computed(() => !route.params.id)
+const editable = computed(() => (record.value ? record.value.status === 'draft' && record.value.owner.id === auth.user?.id : isNew.value))
+const canDelete = computed(() => !!record.value && editable.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 // a parameter value without a name is not in form.params yet
 const { markSaved } = useUnsavedGuard(form, () => editable.value, () => paramsEditor.value?.validate() === false)
@@ -71,7 +73,7 @@ const readonlyHint = computed(() => {
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 // Only the record owner's datasets can be referenced; whoever can edit is the owner.
 const mine = useOptions(() => datasetsApi.list({ owner: auth.user?.id, page_size: 100 }))
-const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project]))
+const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
 const datasetOptions = computed(() =>
   mergeById<DatasetBrief>(mine.value, [...(record.value?.inputs ?? []), record.value?.script_dataset, record.value?.output_dataset]),
 )
@@ -80,6 +82,7 @@ const resultOptions = computed(() => datasetOptions.value.filter((d) => d.kind =
 
 function fill(r: ProcessingRun) {
   record.value = r
+  copiedFrom.value = null
   Object.assign(form, {
     project_id: r.project.id,
     title: r.title,
@@ -89,12 +92,34 @@ function fill(r: ProcessingRun) {
     script_commit: r.script_commit,
     script_path: r.script_path,
     method_version: r.method_version,
-    params: r.params,
+    params: { ...r.params },
     environment: r.environment,
     output_dataset_id: r.output_dataset?.id ?? null,
     conclusion: r.conclusion,
   })
   scriptMode.value = r.script_repo && !r.script_dataset ? 'git' : 'dataset'
+  markSaved()
+}
+
+function prefillCopy(src: ProcessingRun) {
+  record.value = null
+  copiedFrom.value = src
+  const own = src.owner.id === auth.user?.id
+  Object.assign(form, {
+    project_id: src.project.id,
+    title: `${src.title}（复制）`,
+    input_ids: own ? src.inputs.map((d) => d.id) : [],
+    script_dataset_id: own ? (src.script_dataset?.id ?? null) : null,
+    script_repo: src.script_repo,
+    script_commit: src.script_commit,
+    script_path: src.script_path,
+    method_version: src.method_version,
+    params: { ...src.params },
+    environment: src.environment,
+    output_dataset_id: null,
+    conclusion: '',
+  })
+  scriptMode.value = src.script_repo && !src.script_dataset ? 'git' : 'dataset'
   markSaved()
 }
 
@@ -107,6 +132,24 @@ async function load(id: number) {
   } finally {
     loading.value = false
   }
+}
+
+async function loadCopy(copyId: number) {
+  loading.value = true
+  try {
+    const src = await runsApi.get(copyId)
+    prefillCopy(src)
+    ElMessage.info(`已从 ${src.code} 带入配置，请补充结果数据集后保存`)
+  } catch (e) {
+    showError(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+function copyAsDraft() {
+  if (!record.value) return
+  void router.push({ name: 'run-new', query: { copy: String(record.value.id) } })
 }
 
 async function save(): Promise<ProcessingRun | null> {
@@ -154,6 +197,30 @@ async function submit() {
   }
 }
 
+async function removeDraft() {
+  if (!record.value) return
+  try {
+    await ElMessageBox.confirm('确定删除这份草稿？删除后无法恢复。', '删除草稿', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    await runsApi.remove(record.value.id)
+    markSaved()
+    ElMessage.success('草稿已删除')
+    await router.push({ name: 'runs' })
+  } catch (e) {
+    showError(e)
+  } finally {
+    saving.value = false
+  }
+}
+
 async function returnToDraft() {
   let reason = ''
   try {
@@ -173,7 +240,24 @@ async function returnToDraft() {
   }
 }
 
+watch(
+  () => [route.params.id, route.query.copy] as const,
+  ([idParam, copyParam]) => {
+    if (idParam) {
+      const num = Number(idParam)
+      if (record.value?.id !== num) {
+        loadError.value = ''
+        load(num)
+      }
+    } else if (typeof copyParam === 'string' && Number(copyParam) > 0) {
+      loadError.value = ''
+      loadCopy(Number(copyParam))
+    }
+  },
+)
+
 if (route.params.id) load(Number(route.params.id))
+else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) loadCopy(Number(route.query.copy))
 </script>
 
 <template>
@@ -185,9 +269,11 @@ if (route.params.id) load(Number(route.params.id))
       <PageHeader :back="{ name: 'runs' }">
         <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建数据处理记录</template></template>
         <template v-if="record" #tags><StatusTag :status="record.status" /></template>
+        <IconButton v-if="record" :icon="CopyDocument" label="复制为新草稿" @click="copyAsDraft" />
         <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
         <el-button v-if="canReturn" type="warning" @click="returnToDraft">退回</el-button>
         <template v-if="editable">
+          <el-button v-if="canDelete" type="danger" plain :loading="saving" @click="removeDraft">删除草稿</el-button>
           <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
           <el-button type="primary" :loading="saving" @click="submit">提交</el-button>
         </template>

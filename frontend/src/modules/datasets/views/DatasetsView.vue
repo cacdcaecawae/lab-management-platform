@@ -3,17 +3,21 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { datasetsApi } from '@/modules/datasets/api'
 import { projectsApi } from '@/modules/projects/api'
+import { membersApi } from '@/modules/members/api'
 import type { DatasetKind } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 
+const auth = useAuthStore()
 const router = useRouter()
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
-const filters = reactive({ project: '' as number | '', kind: '', search: '' })
+const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+const filters = reactive({ project: '' as number | '', owner: '' as number | '', kind: '', search: '' })
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(datasetsApi.list, filters)
 
@@ -49,6 +53,9 @@ async function create() {
       <el-input v-model="keyword" placeholder="搜索名称" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.project" aria-label="项目" placeholder="全部项目" clearable filterable>
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+      </el-select>
+      <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="创建人" placeholder="全部成员" clearable filterable>
+        <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <el-select v-model="filters.kind" aria-label="类型" placeholder="全部类型" clearable>
         <el-option v-for="(label, value) in KIND_LABELS" :key="value" :label="label" :value="value" />

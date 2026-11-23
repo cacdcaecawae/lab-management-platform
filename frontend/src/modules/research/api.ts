@@ -8,6 +8,7 @@ function recordApi<T, W>(base: string) {
     get: (id: number) => api.get<T>(`${base}${id}/`),
     create: (body: W) => api.post<T>(base, body),
     update: (id: number, body: Partial<W>) => api.patch<T>(`${base}${id}/`, body),
+    remove: (id: number) => api.delete(`${base}${id}/`),
     submit: (id: number) => api.post<T>(`${base}${id}/submit/`),
     returnToDraft: (id: number, reason: string) => api.post<T>(`${base}${id}/return/`, { reason }),
     history: (id: number) => api.get<HistoryEntry[]>(`${base}${id}/history/`),

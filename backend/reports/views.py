@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -20,10 +21,65 @@ Status = WeeklyReport.Status
 EDITABLE = (Status.DRAFT, Status.NEEDS_REVISION)
 
 
+def _render_digest_markdown(week_start, reports, missing):
+    lines = [
+        f"# 周报汇总（{week_start.isoformat()} 这一周）",
+        "",
+        f"- 已交：{len(reports)} 份",
+        f"- 未交：{'、'.join(u.name for u in missing) if missing else '无'}",
+        "",
+    ]
+    if not reports:
+        lines.append("本周暂无已提交周报。")
+        lines.append("")
+        return "\n".join(lines)
+
+    for report in reports:
+        lines.extend([
+            "---",
+            "",
+            f"## {report.owner.name}（{report.get_status_display()}）",
+            "",
+        ])
+        for heading, value in (
+            ("本周目标", report.goals),
+            ("完成工作", report.done),
+            ("主要发现与证据", report.findings),
+            ("下周计划", report.next_plan),
+        ):
+            lines.extend([f"### {heading}", "", value.strip() or "（未填写）", ""])
+
+        exps = list(report.experiments.all())
+        ds_list = list(report.datasets.all())
+        runs = list(report.runs.all())
+        if exps or ds_list or runs:
+            lines.extend(["### 关联记录", ""])
+            for e in exps:
+                lines.append(f"- 实验：{e.code} {e.title}")
+            for d in ds_list:
+                lines.append(f"- 数据集：{d.code} {d.name}")
+            for r in runs:
+                lines.append(f"- 处理记录：{r.code} {r.title}")
+            lines.append("")
+
+        fb_list = list(report.feedback.all())
+        if fb_list:
+            lines.extend(["### 导师反馈", ""])
+            for fb in fb_list:
+                verdict = fb.get_verdict_display()
+                detail = f"：{fb.content.strip()}" if fb.content.strip() else ""
+                lines.append(f"- {fb.author.name}（{verdict}）{detail}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
 class WeeklyReportViewSet(viewsets.ModelViewSet):
     serializer_class = WeeklyReportSerializer
     permission_classes = [IsActiveMember, IsOwnerOrReadOnly]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["owner__name", "goals", "done", "findings", "next_plan"]
 
     def get_queryset(self):
         qs = scope_private(WeeklyReport.objects.all(), self.request.user)
@@ -106,3 +162,34 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
         query.is_valid(raise_exception=True)
         week_start = query.validated_data.get("week_start", current_week_start())
         return Response(UserBriefSerializer(missing_students(request.user, week_start), many=True).data)
+
+    def _digest_data(self, request):
+        query = ReportQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        week_start = query.validated_data.get("week_start", current_week_start())
+        reports = list(
+            self.get_queryset()
+            .filter(week_start=week_start)
+            .exclude(status=Status.DRAFT)
+            .order_by("owner__name", "owner_id")
+        )
+        missing = list(missing_students(request.user, week_start))
+        return week_start, reports, missing
+
+    @action(detail=False, permission_classes=[IsActiveMember, IsSupervisor])
+    def digest(self, request):
+        week_start, reports, missing = self._digest_data(request)
+        return Response({
+            "week_start": week_start.isoformat(),
+            "reports": self.get_serializer(reports, many=True).data,
+            "missing": UserBriefSerializer(missing, many=True).data,
+        })
+
+    @action(detail=False, url_path="digest/export", permission_classes=[IsActiveMember, IsSupervisor])
+    def digest_export(self, request):
+        week_start, reports, missing = self._digest_data(request)
+        md = _render_digest_markdown(week_start, reports, missing)
+        resp = HttpResponse(md, content_type="text/markdown; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="weekly-digest-{week_start.isoformat()}.md"'
+        resp["Cache-Control"] = "private, no-store"
+        return resp

@@ -1,18 +1,39 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Download } from '@element-plus/icons-vue'
 import { reportsApi } from '@/modules/reports/api'
-import type { UserBrief } from '@/api/types'
+import { membersApi } from '@/modules/members/api'
+import type { UserBrief, WeeklyReportDigest } from '@/api/types'
+import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { STATUS, formatTime, mondayOf, notMonday } from '@/utils/format'
 import { showError } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
-// Supervisors: 待反馈 / 未交名单 / 全部. Students only see their own reports (the API scopes the list).
+const router = useRouter()
+
+const DIGEST_SECTIONS = [
+  { key: 'goals', label: '本周目标' },
+  { key: 'done', label: '完成工作' },
+  { key: 'findings', label: '主要发现与证据' },
+  { key: 'next_plan', label: '下周计划' },
+] as const
+
+// Supervisors: 待反馈 / 本周汇总 / 未交名单 / 全部. Students only see their own reports (the API scopes the list).
 const tab = ref(auth.isSupervisor ? 'pending' : 'all')
-const filters = reactive({ status: auth.isSupervisor ? 'submitted' : '', week_start: '' })
+const filters = reactive({
+  status: auth.isSupervisor ? 'submitted' : '',
+  week_start: '',
+  owner: '' as number | '',
+  search: '',
+})
+const keyword = ref('')
+const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 const { items, count, page, pageSize, loading } = usePagedList(reportsApi.list, filters)
 
 const missingWeek = ref(mondayOf())
@@ -30,17 +51,52 @@ async function loadMissing() {
   }
 }
 
+const digestWeek = ref(mondayOf())
+const digest = ref<WeeklyReportDigest | null>(null)
+const digestLoading = ref(false)
+
+async function loadDigest() {
+  digestLoading.value = true
+  try {
+    digest.value = await reportsApi.digest(digestWeek.value)
+  } catch (e) {
+    showError(e)
+  } finally {
+    digestLoading.value = false
+  }
+}
+
+const openingThisWeek = ref(false)
+async function openThisWeek() {
+  openingThisWeek.value = true
+  try {
+    const res = await reportsApi.list({ week_start: mondayOf(), page_size: 1 })
+    if (res.results.length) {
+      await router.push({ name: 'report-edit', params: { id: res.results[0].id } })
+    } else {
+      await router.push({ name: 'report-new' })
+    }
+  } catch (e) {
+    showError(e)
+  } finally {
+    openingThisWeek.value = false
+  }
+}
+
 watch(tab, (t) => {
   if (t === 'missing') loadMissing()
+  else if (t === 'digest') loadDigest()
   else filters.status = t === 'pending' ? 'submitted' : ''
 })
 watch(missingWeek, loadMissing)
+watch(digestWeek, loadDigest)
 </script>
 
 <template>
   <el-card class="card">
     <el-tabs v-if="auth.isSupervisor" v-model="tab">
       <el-tab-pane label="待反馈" name="pending" />
+      <el-tab-pane label="本周汇总" name="digest" />
       <el-tab-pane label="未交名单" name="missing" />
       <el-tab-pane label="全部" name="all" />
     </el-tabs>
@@ -58,8 +114,72 @@ watch(missingWeek, loadMissing)
       </div>
     </template>
 
+    <template v-else-if="tab === 'digest'">
+      <PageToolbar :foldable="false">
+        <span>周一日期</span>
+        <el-date-picker v-model="digestWeek" type="date" value-format="YYYY-MM-DD" :disabled-date="notMonday" :clearable="false" />
+        <template #actions>
+          <IconButton :icon="Download" label="导出汇总 Markdown" tag="a" :href="reportsApi.digestExportUrl(digestWeek)" />
+        </template>
+      </PageToolbar>
+      <div v-loading="digestLoading" class="digest-wrap">
+        <template v-if="digest">
+          <div class="digest-summary">
+            <span>已交 <strong>{{ digest.reports.length }}</strong> 份</span>
+            <span class="muted">·</span>
+            <template v-if="digest.missing.length">
+              <span>未交（{{ digest.missing.length }} 人）：</span>
+              <el-tag v-for="u in digest.missing" :key="u.id" type="danger" size="small" disable-transitions>{{ u.name }}</el-tag>
+            </template>
+            <span v-else class="muted">本周全员已交</span>
+          </div>
+
+          <el-empty v-if="!digest.reports.length" description="这一周还没有已提交的周报" />
+
+          <article v-for="r in digest.reports" :key="r.id" class="digest-item">
+            <header class="digest-head">
+              <div class="actions">
+                <RouterLink class="digest-owner" :to="{ name: 'report-edit', params: { id: r.id } }">{{ r.owner.name }}</RouterLink>
+                <StatusTag :status="r.status" />
+                <span v-if="r.submitted_at" class="muted">{{ formatTime(r.submitted_at) }}</span>
+              </div>
+              <RouterLink :to="{ name: 'report-edit', params: { id: r.id } }">
+                {{ r.status === 'submitted' ? '去反馈' : '查看详情' }}
+              </RouterLink>
+            </header>
+            <template v-for="s in DIGEST_SECTIONS" :key="s.key">
+              <section v-if="r[s.key]" class="digest-section">
+                <div class="digest-label">{{ s.label }}</div>
+                <pre class="pre">{{ r[s.key] }}</pre>
+              </section>
+            </template>
+            <div v-if="!r.goals && !r.done && !r.findings && !r.next_plan" class="muted">（暂未填写正文）</div>
+            <div v-if="r.experiments.length || r.datasets.length || r.runs.length" class="digest-links">
+              <RouterLink v-for="x in r.experiments" :key="`e${x.id}`" :to="{ name: 'experiment-edit', params: { id: x.id } }">
+                实验 {{ x.code }} {{ x.title }}
+              </RouterLink>
+              <RouterLink
+                v-for="x in r.datasets"
+                :key="`d${x.id}`"
+                :to="{ name: 'dataset-detail', params: { id: x.id }, query: x.version ? { version: x.version } : {} }"
+              >
+                数据 {{ x.code }} {{ x.name }}
+              </RouterLink>
+              <RouterLink v-for="x in r.runs" :key="`r${x.id}`" :to="{ name: 'run-edit', params: { id: x.id } }">
+                处理 {{ x.code }} {{ x.title }}
+              </RouterLink>
+            </div>
+          </article>
+        </template>
+      </div>
+    </template>
+
     <template v-else>
       <PageToolbar>
+        <el-input v-model="keyword" placeholder="搜索周报内容或姓名" clearable @change="filters.search = keyword" />
+        <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="成员" placeholder="全部成员" clearable filterable>
+          <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
         <el-date-picker
           v-model="filters.week_start"
           type="date"
@@ -71,14 +191,21 @@ watch(missingWeek, loadMissing)
           <el-option v-for="s in ['draft', 'submitted', 'needs_revision', 'reviewed']" :key="s" :label="STATUS[s].label" :value="s" />
         </el-select>
         <template #actions>
-          <el-button v-if="!auth.isSupervisor" type="primary" @click="$router.push({ name: 'report-new' })">写本周周报</el-button>
+          <el-button v-if="!auth.isSupervisor" type="primary" :loading="openingThisWeek" @click="openThisWeek">写本周周报</el-button>
         </template>
       </PageToolbar>
       <el-table empty-text="暂无周报" v-loading="loading" :data="items">
         <el-table-column v-if="auth.isSupervisor" label="学生" min-width="90">
-          <template #default="{ row }">{{ row.owner.name }}</template>
+          <template #default="{ row }">
+            <RouterLink :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.owner.name }}</RouterLink>
+          </template>
         </el-table-column>
-        <el-table-column prop="week_start" label="周一日期" min-width="110" />
+        <el-table-column label="周一日期" min-width="110">
+          <template #default="{ row }">
+            <RouterLink v-if="!auth.isSupervisor" :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.week_start }}</RouterLink>
+            <template v-else>{{ row.week_start }}</template>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" min-width="90">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
@@ -104,3 +231,58 @@ watch(missingWeek, loadMissing)
     </template>
   </el-card>
 </template>
+
+<style scoped>
+.digest-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.digest-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--lab-radius);
+  background: var(--lab-bg-subtle);
+  border: 1px solid var(--lab-border);
+}
+.digest-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--lab-radius);
+  border: 1px solid var(--lab-border);
+  background: var(--lab-bg-card);
+}
+.digest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--lab-border);
+}
+.digest-owner {
+  font-weight: 600;
+}
+.digest-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.digest-label {
+  color: var(--lab-text-3);
+  font-weight: 600;
+}
+.digest-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding-top: 6px;
+  border-top: 1px solid var(--lab-border);
+}
+</style>

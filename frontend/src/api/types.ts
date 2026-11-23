@@ -169,6 +169,23 @@ export interface DataFile {
   download_url: string
 }
 
+export interface DatasetRunRef extends RunBrief {
+  roles: ('input' | 'script' | 'output')[]
+}
+
+export interface DatasetReportRef {
+  id: number
+  week_start: string
+  status: ReportStatus
+  owner: UserBrief
+}
+
+export interface DatasetReferences {
+  experiments: ExperimentBrief[]
+  runs: DatasetRunRef[]
+  reports: DatasetReportRef[]
+}
+
 // ---- experiments & processing runs ----
 
 export type RecordStatus = 'draft' | 'submitted'
@@ -302,6 +319,12 @@ export interface ReportWrite {
 export interface FeedbackWrite {
   verdict: Verdict
   content: string
+}
+
+export interface WeeklyReportDigest {
+  week_start: string
+  reports: WeeklyReport[]
+  missing: UserBrief[]
 }
 
 // ---- history & dashboard ----
