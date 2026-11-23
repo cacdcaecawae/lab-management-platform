@@ -50,6 +50,11 @@
     location ^~ /assets/ {
         root /usr/share/nginx/html;
         expires 1y;
+        # Only the bundle: it holds no secrets, so compression cannot leak one (BREACH); API replies stay uncompressed.
+        gzip on;
+        gzip_comp_level 6;
+        gzip_types text/css application/javascript text/javascript image/svg+xml;
+        gzip_vary on;
     }
 
     location = /index.html {
