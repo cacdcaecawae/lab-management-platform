@@ -1,25 +1,92 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import PhotoPicker from './PhotoPicker.vue'
 
-const global = { plugins: [ElementPlus] }
+const preparePhotoMock = vi.hoisted(() => vi.fn<(file: File) => Promise<File>>())
+vi.mock('@/utils/image', () => ({ preparePhoto: preparePhotoMock }))
+
+function pickFile(inputEl: HTMLInputElement, file: File) {
+  Object.defineProperty(inputEl, 'files', { value: [file], configurable: true })
+  inputEl.dispatchEvent(new Event('change'))
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+afterEach(() => vi.restoreAllMocks())
 
 describe('PhotoPicker', () => {
-  it('shows trigger when empty and emits selected file or null on remove', async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], 'bench.jpg', { type: 'image/jpeg' })
-    const wrapper = mount(PhotoPicker, { props: { modelValue: null }, global })
-    expect(wrapper.text()).toContain('拍照 / 选图')
+  it('toggles processing model while compressing and discards stale slower picks', async () => {
+    const resolvers: Array<(f: File) => void> = []
+    preparePhotoMock.mockImplementation(
+      () =>
+        new Promise<File>((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
 
-    const input = wrapper.find('input[type="file"]')
-    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
-    await input.trigger('change')
-    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toBeInstanceOf(File)
+    const wrapper = mount(PhotoPicker, {
+      props: { modelValue: null, processing: false },
+      global: { plugins: [ElementPlus] },
+    })
+    const input = wrapper.find('input[type="file"]').element as HTMLInputElement
 
-    await wrapper.setProps({ modelValue: file })
-    expect(wrapper.text()).toContain('bench.jpg')
-    const removeBtn = wrapper.findAll('button').find((b) => b.text() === '移除')!
-    await removeBtn.trigger('click')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBeNull()
+    const firstRaw = new File(['a'], 'first.png', { type: 'image/png' })
+    const secondRaw = new File(['b'], 'second.png', { type: 'image/png' })
+    const firstDone = new File(['a1'], 'first.jpg', { type: 'image/jpeg' })
+    const secondDone = new File(['b1'], 'second.jpg', { type: 'image/jpeg' })
+
+    pickFile(input, firstRaw)
+    await flushPromises()
+    expect(wrapper.emitted('update:processing')?.at(-1)).toEqual([true])
+
+    // Second pick supersedes the first before it finishes
+    pickFile(input, secondRaw)
+    await flushPromises()
+
+    resolvers[1](secondDone)
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[secondDone]])
+    expect(wrapper.emitted('update:processing')?.at(-1)).toEqual([false])
+
+    // Late resolution of first pick is discarded
+    resolvers[0](firstDone)
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[secondDone]])
+    wrapper.unmount()
+  })
+
+  it('resets processing and discards pending compression on unmount', async () => {
+    let resolvePending!: (f: File) => void
+    preparePhotoMock.mockImplementation(
+      () =>
+        new Promise<File>((resolve) => {
+          resolvePending = resolve
+        }),
+    )
+
+    const onProcessing = vi.fn()
+    const onModel = vi.fn()
+    const wrapper = mount(PhotoPicker, {
+      props: {
+        modelValue: null,
+        processing: false,
+        'onUpdate:processing': onProcessing,
+        'onUpdate:modelValue': onModel,
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    const input = wrapper.find('input[type="file"]').element as HTMLInputElement
+    pickFile(input, new File(['a'], 'big.png', { type: 'image/png' }))
+    await flushPromises()
+    expect(onProcessing).toHaveBeenLastCalledWith(true)
+
+    wrapper.unmount()
+    expect(onProcessing).toHaveBeenLastCalledWith(false)
+
+    resolvePending(new File(['done'], 'big.jpg', { type: 'image/jpeg' }))
+    await flushPromises()
+    expect(onModel).not.toHaveBeenCalled()
   })
 })

@@ -12,6 +12,7 @@ Status: implemented
 
 - **前端共用 `PhotoPicker` 与客户端压缩**（`frontend/src/components/PhotoPicker.vue`、`frontend/src/utils/image.ts`）：
   - 扩展 `image.ts` 增加 `resizeJpeg` / `preparePhoto`，在浏览器内将大图等比压缩为长边 ≤ 1920px 的标准 JPEG（保持不引入 Pillow 依赖），自动处理手机大体积拍照；同时支持 `Ctrl+V` 粘贴截图、上传前缩略图预览和清空/重选，且切换记录时彻底重置 DOM 文件状态。
+  - `PhotoPicker` 增加 `v-model:processing` 压缩中状态与请求序号防竞态（快速重选、移除或关闭弹窗时丢弃过期的慢速压缩结果）；试件归还弹窗（`SpecimenDetailView.vue`）与设备使用登记弹窗（`BookingsView.vue`）在照片处理期间均禁用 `FormDialog` 提交按钮并在提交函数内二次拦截，避免大图压缩未结束就提交导致漏传照片。
 - **试件归还支持可选照片与放回位置**（`backend/specimens/`、`SpecimenDetailView.vue`）：
   - `SpecimenLoan` 新增 `return_location`、`return_photo`（`specimens/<uuid>.<ext>`，JPG/PNG/WebP，≤ 10 MB）、`return_photo_size`、`return_photo_uploaded_at`（迁移 `0002_specimenloan_return_location_photo`）。
   - `POST /api/specimens/{id}/return/` 同时兼容原 JSON 与 `multipart/form-data`，全部新字段均为可选；事务内先锁 `Specimen` 再锁未归还的 `SpecimenLoan`（与 `borrow()` 和编辑保持一致的加锁顺序），保存失败回滚时清理已写入的存储文件；填写了 `return_location` 且与当前位置不同时，同步更新 `Specimen.location` 并写入修改历史原因。
@@ -33,5 +34,5 @@ Status: implemented
 - 归还试件与登记设备使用依然零强制门槛，不拍照片照常提交；拍了照片后，下一个人打开设备或试件详情页第一眼即可看到放回位置和实拍图。
 - `Specimen` 列表接口查询次数不变；详情接口多 1 次固定预取查询（与行数无关）。
 - 验证：
-  - `scripts/check.sh`：75 篇决策笔记校验通过，`makemigrations --check` 无漂移，`scripts/check_module_deps.py` 0 违规；后端 `pytest` 488 passed, 1 skipped（含试件可选照片、放回位置自动同步与历史记录、跨组 404、回滚删文件、存储统计回归测试）；前端 `vitest` 174 passed（含 `PhotoPicker.test.ts` 与更新后的 `SpecimenDetailView.test.ts` / `specimens/api.test.ts`）且 `npm run build` 通过。
-  - 浏览器（`verify-lab`）：未验证（本次在隔离 worktree 与另一会话并行开发，未占用共享 `:8100/:5273/:9222` 端口，待合并后按 `features/specimens.md` 补走）。
+  - `scripts/check.sh`：75 篇决策笔记校验通过，`makemigrations --check` 无漂移，`scripts/check_module_deps.py` 0 违规；后端 `pytest` 511 passed, 1 skipped；前端 `vitest` 51 个测试文件 178 passed（含 `PhotoPicker.test.ts`、`SpecimenDetailView.test.ts` 与 `BookingsView.test.ts` 压缩期间禁提交回归测试）且 `vue-tsc --noEmit && vite build` 通过。
+  - 浏览器（`verify-lab`）：已在隔离实例实测通过（2.88 MB PNG 压缩期间试件归还「登记归还」与设备使用登记「登记」按钮均禁用、点击不发请求，压缩为 684 KB JPEG 后提交成功并在详情页展示缩略图，`query.sh` 核对数据库与文件落盘），证据在 `backend/var/verify-evidence/2026-11-23-pr49-photo-race/`。

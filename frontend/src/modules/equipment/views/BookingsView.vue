@@ -156,8 +156,10 @@ const canReport = computed(() => !!detail.value && mine.value && detail.value.ki
 
 const reportForm = reactive({ condition: 'normal' as Condition, description: '', photo: null as File | null })
 const reportErrors = useFieldErrors(['condition', 'description', 'photo'])
+const reportPhotoBusy = ref(false)
 const busy = ref(false)
 watch(detail, () => {
+  reportPhotoBusy.value = false
   Object.assign(reportForm, { condition: 'normal', description: '', photo: null })
   reportErrors.clear()
 })
@@ -196,10 +198,10 @@ async function cancel() {
 
 async function submitReport() {
   const b = detail.value
-  if (!b) return
+  if (!b || reportPhotoBusy.value) return
   busy.value = true
   try {
-    detail.value = await bookingsApi.report(b.id, reportForm)
+    detail.value = await bookingsApi.report(b.id, { ...reportForm })
     ElMessage.success(reportForm.condition === 'abnormal' ? '已登记异常，设备转为待检查，管理员会收到提醒' : '已登记')
     api()?.refetchEvents()
   } catch (e) {
@@ -265,6 +267,7 @@ async function submitReport() {
     cancel-text="关闭"
     :readonly="!canReport"
     :loading="busy"
+    :disabled="reportPhotoBusy"
     @submit="submitReport"
   >
     <template #before>
@@ -309,7 +312,7 @@ async function submitReport() {
         <el-input v-model="reportForm.description" type="textarea" :autosize="{ minRows: 2 }" placeholder="异常时写明现象，例如 探头线接触不良" />
       </el-form-item>
       <el-form-item label="照片（可选，方便下一个人找设备）" :error="reportErrors.fe('photo')">
-        <PhotoPicker v-model="reportForm.photo" />
+        <PhotoPicker v-if="detailOpen" v-model="reportForm.photo" v-model:processing="reportPhotoBusy" :disabled="busy" />
       </el-form-item>
       <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </div>

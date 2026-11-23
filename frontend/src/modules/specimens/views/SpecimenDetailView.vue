@@ -76,12 +76,14 @@ async function borrow() {
 
 const returning = ref(false)
 const returnLoanId = ref<number | null>(null)
+const returnPhotoBusy = ref(false)
 const returnForm = reactive({ return_location: '', note: '', photo: null as File | null })
 const returnErrors = useFieldErrors(['return_location', 'note', 'photo', 'loan_id_seen'])
 
 function openReturn() {
   if (!loan.value) return
   returnLoanId.value = loan.value.id
+  returnPhotoBusy.value = false
   Object.assign(returnForm, { return_location: '', note: '', photo: null })
   returnErrors.clear()
   returning.value = true
@@ -89,7 +91,7 @@ function openReturn() {
 
 async function submitReturn() {
   const loanIdSeen = returnLoanId.value
-  if (!loanIdSeen) return
+  if (!loanIdSeen || returnPhotoBusy.value) return
   saving.value = true
   try {
     await specimensApi.giveBack(id, loanIdSeen, {
@@ -244,7 +246,15 @@ load()
       </el-form-item>
       <el-alert v-for="msg in borrowErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </FormDialog>
-    <FormDialog v-model="returning" :title="`归还 ${specimen.code}`" size="sm" confirm-text="登记归还" :loading="saving" @submit="submitReturn">
+    <FormDialog
+      v-model="returning"
+      :title="`归还 ${specimen.code}`"
+      size="sm"
+      confirm-text="登记归还"
+      :loading="saving"
+      :disabled="returnPhotoBusy"
+      @submit="submitReturn"
+    >
       <el-form-item label="放回位置（可选）" :error="returnErrors.fe('return_location')">
         <el-input v-model="returnForm.return_location" :placeholder="specimen.location ? `当前：${specimen.location}，换了位置再填` : '例如 A302 试块柜 2 层'" />
       </el-form-item>
@@ -252,7 +262,7 @@ load()
         <el-input v-model="returnForm.note" placeholder="例如 完好、表面有划痕" />
       </el-form-item>
       <el-form-item label="放回位置照片（可选）" :error="returnErrors.fe('photo')">
-        <PhotoPicker v-model="returnForm.photo" />
+        <PhotoPicker v-if="returning" v-model="returnForm.photo" v-model:processing="returnPhotoBusy" :disabled="saving" />
       </el-form-item>
       <el-alert v-for="msg in returnErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </FormDialog>

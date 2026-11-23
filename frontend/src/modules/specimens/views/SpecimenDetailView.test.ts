@@ -5,7 +5,9 @@ import type { Specimen, SpecimenLoan } from '@/api/types'
 import SpecimenDetailView from './SpecimenDetailView.vue'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), loans: vi.fn(), giveBack: vi.fn() }))
+const preparePhotoMock = vi.hoisted(() => vi.fn<(file: File) => Promise<File>>())
 vi.mock('../api', () => ({ specimensApi: api }))
+vi.mock('@/utils/image', () => ({ preparePhoto: preparePhotoMock }))
 vi.mock('@/modules/projects/api', () => ({ projectsApi: { list: () => Promise.resolve({ results: [] }) } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 }, isManager: true, isSupervisor: true }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '3' } }), useRouter: () => ({ push: vi.fn() }) }))
@@ -27,6 +29,7 @@ let block: Specimen
 
 beforeEach(() => {
   vi.clearAllMocks()
+  preparePhotoMock.mockImplementation((file) => Promise.resolve(file))
   block = {
     id: 3,
     code: 'S',
@@ -55,7 +58,7 @@ async function open() {
   const wrapper = mount(SpecimenDetailView, {
     global: {
       plugins: [ElementPlus],
-      stubs: { SpecimenFormDialog: true, HistoryDrawer: true, teleport: true },
+      stubs: { SpecimenFormDialog: true, HistoryDrawer: true },
     },
   })
   await flushPromises()
@@ -64,10 +67,18 @@ async function open() {
   return wrapper
 }
 
-function submitReturnDialog(wrapper: ReturnType<typeof mount>) {
-  // Dialog submit button is the last "登记归还" button rendered inside FormDialog
+function returnConfirmButton(wrapper: ReturnType<typeof mount>) {
   const buttons = wrapper.findAll('button').filter((b) => b.text() === '登记归还')
-  return buttons.at(-1)!.trigger('click')
+  return buttons.at(-1)!
+}
+
+function submitReturnDialog(wrapper: ReturnType<typeof mount>) {
+  return returnConfirmButton(wrapper).trigger('click')
+}
+
+function pickFile(inputEl: HTMLInputElement, file: File) {
+  Object.defineProperty(inputEl, 'files', { value: [file], configurable: true })
+  inputEl.dispatchEvent(new Event('change'))
 }
 
 it('captures the displayed loan before confirmation, not the later current loan', async () => {
@@ -80,6 +91,40 @@ it('captures the displayed loan before confirmation, not the later current loan'
   await flushPromises()
   expect(api.giveBack).toHaveBeenCalledWith(3, 11, { note: '完好', return_location: 'A302 试块柜', photo: null })
   expect(api.get).toHaveBeenCalledTimes(2)
+  wrapper.unmount()
+})
+
+it('blocks return submission until selected photo finishes compressing, then sends compressed photo', async () => {
+  let resolvePhoto!: (f: File) => void
+  preparePhotoMock.mockImplementation(
+    () =>
+      new Promise<File>((resolve) => {
+        resolvePhoto = resolve
+      }),
+  )
+  const wrapper = await open()
+  const raw = new File([new Uint8Array(2048)], 'big.png', { type: 'image/png' })
+  const compressed = new File([new Uint8Array(512)], 'big.jpg', { type: 'image/jpeg' })
+  const fileInput = wrapper.find('input[type="file"]').element as HTMLInputElement
+  pickFile(fileInput, raw)
+  await flushPromises()
+
+  // While compressing: confirm button is disabled and clicking/submitting must not fire giveBack
+  expect(preparePhotoMock).toHaveBeenCalledTimes(1)
+  expect(wrapper.text()).toContain('照片处理中')
+  expect(returnConfirmButton(wrapper).attributes()).toHaveProperty('disabled')
+  await submitReturnDialog(wrapper)
+  await wrapper.find('form').trigger('submit')
+  await flushPromises()
+  expect(api.giveBack).not.toHaveBeenCalled()
+
+  // Once compression finishes: confirm button re-enables and submits the compressed File
+  resolvePhoto(compressed)
+  await flushPromises()
+  expect(returnConfirmButton(wrapper).attributes('disabled')).toBeUndefined()
+  await submitReturnDialog(wrapper)
+  await flushPromises()
+  expect(api.giveBack).toHaveBeenCalledWith(3, 11, { note: '', return_location: '', photo: compressed })
   wrapper.unmount()
 })
 

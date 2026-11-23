@@ -8,19 +8,30 @@ import { formatSize } from '@/utils/format'
 const props = withDefaults(
   defineProps<{
     modelValue: File | null
+    processing?: boolean
     hint?: string
     disabled?: boolean
   }>(),
   {
+    processing: false,
     hint: '可选，拍一张放回位置方便下一个人找（自动压缩）',
     disabled: false,
   },
 )
-const emit = defineEmits<{ 'update:modelValue': [file: File | null] }>()
+const emit = defineEmits<{
+  'update:modelValue': [file: File | null]
+  'update:processing': [busy: boolean]
+}>()
 
 const input = ref<HTMLInputElement>()
 const previewUrl = ref<string | null>(null)
 const busy = ref(false)
+let pickSeq = 0
+
+function setBusy(next: boolean) {
+  busy.value = next
+  emit('update:processing', next)
+}
 
 function revokePreview() {
   if (previewUrl.value) {
@@ -43,17 +54,24 @@ watch(
   { immediate: true },
 )
 
-onBeforeUnmount(revokePreview)
+onBeforeUnmount(() => {
+  pickSeq++
+  if (busy.value) setBusy(false)
+  revokePreview()
+})
 
 async function acceptFile(raw: File) {
-  busy.value = true
+  const mySeq = ++pickSeq
+  setBusy(true)
   try {
     const ready = await preparePhoto(raw)
+    if (mySeq !== pickSeq) return
     emit('update:modelValue', ready)
   } catch {
+    if (mySeq !== pickSeq) return
     ElMessage.error('无法读取这张图片，请使用 JPG、PNG 或 WebP 格式')
   } finally {
-    busy.value = false
+    if (mySeq === pickSeq) setBusy(false)
   }
 }
 
@@ -75,6 +93,8 @@ async function onPaste(e: ClipboardEvent) {
 }
 
 function clear() {
+  pickSeq++
+  if (busy.value) setBusy(false)
   emit('update:modelValue', null)
 }
 </script>
@@ -85,16 +105,18 @@ function clear() {
       <img v-if="previewUrl" :src="previewUrl" :alt="modelValue.name" class="thumb" />
       <div class="info">
         <div class="name">{{ modelValue.name }}</div>
-        <div class="muted">{{ formatSize(modelValue.size) }}</div>
+        <div class="muted">{{ busy ? '正在压缩处理照片...' : formatSize(modelValue.size) }}</div>
         <div class="ops">
           <el-button link type="primary" :disabled="disabled || busy" @click="input?.click()">重新选择</el-button>
-          <el-button link type="danger" :disabled="disabled || busy" @click="clear">移除</el-button>
+          <el-button link type="danger" :disabled="disabled" @click="clear">移除</el-button>
         </div>
       </div>
     </div>
     <div v-else class="empty-row">
-      <el-button :icon="Camera" :loading="busy" :disabled="disabled" @click="input?.click()">拍照 / 选图</el-button>
-      <span class="muted">{{ hint }}</span>
+      <el-button :icon="Camera" :loading="busy" :disabled="disabled" @click="input?.click()">
+        {{ busy ? '照片处理中...' : '拍照 / 选图' }}
+      </el-button>
+      <span class="muted">{{ busy ? '正在压缩处理照片，完成后可提交' : hint }}</span>
     </div>
     <input ref="input" type="file" accept="image/jpeg,image/png,image/webp,image/*" hidden @change="onChange" />
   </div>
