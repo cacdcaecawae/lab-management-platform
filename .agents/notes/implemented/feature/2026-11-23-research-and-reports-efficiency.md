@@ -32,3 +32,4 @@ Status: implemented
   - `scripts/check_module_deps.py`：0 violation。
   - `scripts/check.sh`：决策笔记校验通过（75 notes）；`makemigrations --check` 无待生成迁移；后端 `pytest` 496 passed, 1 skipped（`DB_TEST_NAME=test_lab_reports`）；前端 `vitest` 49 个测试文件 175 passed（含 `ReportsView.test.ts` 快速切换周次中止旧请求并忽略晚到旧响应的回归测试）；`vue-tsc --noEmit && vite build` 通过。
   - 浏览器（`verify-lab`）：已在隔离实例实测通过（导师在「本周汇总」快速从暂停的 `2026-11-09` 切到 `2026-11-16`，旧请求在 Chrome 网络层被中止，日期框、周报正文与未交名单严格对应 `2026-11-16`，切回 `2026-11-09` 亦正常显示，`query.sh` 核对数据库），证据在 `backend/var/verify-evidence/2026-11-23-pr52-report-digest/`。
+  - 集成验收（`e10bbb5`）：Chrome 中验证跨年带入计划、上周缺报保留空目标、未交名单请求失败后重试。数据集可预览并打包下载，同一 CSV 解包后与上传文件逐字节相同。截图、页面快照和数据库核对见 `backend/var/verify-evidence/2026-11-23-integrated-review/`。

@@ -64,6 +64,32 @@ async function mountAsSupervisor(reportStatus = 200) {
 
 const feedbackCalls = (m: ReturnType<typeof vi.fn>) => m.mock.calls.filter(([url]) => url === '/api/reports/8/feedback/')
 
+it('carries the plan from exactly seven days earlier across New Year', async () => {
+  const previous = { ...report, week_start: '2025-12-29', next_plan: '校准仪器' }
+  const fetchMock = vi.fn(async (url: string) => {
+    const query = new URL(url, 'http://localhost')
+    const matches = query.pathname === '/api/reports/' && query.searchParams.get('owner') === '2'
+      && query.searchParams.get('week_start') === previous.week_start
+    return new Response(JSON.stringify({ results: matches ? [previous] : [] }))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { id: 2, role: 'student' } as Me
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/reports/new', name: 'report-new', component: ReportEditView },
+      { path: '/reports', name: 'reports', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/reports/new?week_start=2026-01-05')
+  const wrapper = mount(ReportEditView, { global: { plugins: [ElementPlus, pinia, router] } })
+  await wrapper.findAll('button').find((b) => b.text() === '带入上周计划')!.trigger('click')
+  await flushPromises()
+  expect(wrapper.get('textarea').element.value).toBe('校准仪器')
+  wrapper.unmount()
+})
+
 describe('ReportEditView loading', () => {
   it('shows the error, not an empty create form, when the report fails to load', async () => {
     const { wrapper } = await mountAsSupervisor(500)
