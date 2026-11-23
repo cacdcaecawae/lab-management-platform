@@ -2,7 +2,8 @@ import { expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { opsStatusApi, type StorageInfo } from '@/api/opsStatus'
-import type { VersionInfo } from '@/api/types'
+import type { Me, VersionInfo } from '@/api/types'
+import { useAuthStore } from './auth'
 import { useOpsStore } from './ops'
 
 vi.mock('@/api/opsStatus', () => ({ opsStatusApi: { storage: vi.fn(), version: vi.fn() } }))
@@ -23,4 +24,24 @@ it('asks once at a time, and again after a failure', async () => {
   await flushPromises()
   expect(opsStatusApi.version).toHaveBeenCalledTimes(2)
   expect(ops.version).toEqual(version)
+})
+
+it('forgets the last account once another one is signed in', async () => {
+  setActivePinia(createPinia())
+  vi.mocked(opsStatusApi.storage).mockClear().mockResolvedValue({ attention: true } as StorageInfo)
+  vi.mocked(opsStatusApi.version).mockClear().mockResolvedValue({ current: 'v0.1.7', update_available: true } as VersionInfo)
+  const auth = useAuthStore()
+  auth.user = { id: 9 } as Me
+  const ops = useOpsStore()
+  ops.load()
+  await flushPromises()
+  expect(ops.storage?.attention).toBe(true)
+  auth.user = null // 退出登录
+  await flushPromises()
+  expect([ops.storage, ops.version]).toEqual([null, null])
+  auth.user = { id: 9 } as Me // signed in again in the same tab: asked afresh
+  ops.load()
+  await flushPromises()
+  expect(opsStatusApi.storage).toHaveBeenCalledTimes(2)
+  expect(ops.version?.update_available).toBe(true)
 })

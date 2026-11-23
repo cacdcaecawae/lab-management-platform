@@ -120,6 +120,7 @@ async function save() {
     </el-form-item>
 
     <el-form-item label="备注" :error="errors.fe('notes')"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
   </FormDialog>
 </template>
 

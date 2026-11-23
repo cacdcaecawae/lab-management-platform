@@ -31,15 +31,24 @@ def board_milestones(queryset):
 
 
 def task_snapshot(task):
+    """What the history compares. Milestone and assignee as [id, name]: compared by id, recorded by name."""
     return {
         "title": task.title, "description": task.description, "status": task.status,
-        "milestone": task.milestone_id, "assignee": task.assignee_id,
+        "milestone": [task.milestone_id, task.milestone.title if task.milestone_id else None],
+        "assignee": [task.assignee_id, task.assignee_name or None],
         "due_date": task.due_date.isoformat() if task.due_date else None,
     }
 
 
+def recorded(value):
+    return value[1] if isinstance(value, list) else value
+
+
 def record_change(task, user, before, after):
-    changes = {key: {"before": before.get(key), "after": value} for key, value in after.items() if key not in before or before[key] != value}
+    changes = {
+        key: {"before": recorded(before.get(key)), "after": recorded(value)}
+        for key, value in after.items() if key not in before or before[key] != value
+    }
     if changes:
         task.history.create(actor_name=user.display_name, changes=changes)
 

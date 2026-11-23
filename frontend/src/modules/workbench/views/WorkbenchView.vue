@@ -84,10 +84,13 @@ const kinds = computed<Kind[]>(() => {
     },
     {
       type: '行动项', count: my.action_items.length, to: { name: 'meetings' }, alert: my.action_items.some((a) => a.due_date && a.due_date < todayStr),
-      rows: my.action_items.map((a) => ({
-        key: a.id, to: { name: 'meeting-detail', params: { id: a.meeting.id } }, text: a.content,
-        hint: a.due_date ? `${a.due_date} 截止` : `${a.meeting.date} 组会`, late: !!a.due_date && a.due_date < todayStr,
-      })),
+      rows: my.action_items.map((a) => {
+        const late = !!a.due_date && a.due_date < todayStr
+        return {
+          key: a.id, to: { name: 'meeting-detail', params: { id: a.meeting.id } }, text: a.content,
+          hint: a.due_date ? `${a.due_date} 截止${late ? '，已逾期' : ''}` : `${a.meeting.date} 组会`, late,
+        }
+      }),
     },
     {
       type: '任务', count: my.tasks?.length ?? 0, to: { name: 'projects' },
@@ -114,7 +117,8 @@ const kinds = computed<Kind[]>(() => {
       {
         type: '校准到期', count: m.calibration_due_count, to: { name: 'equipment', query: { calibration_within: '30' } },
         rows: m.calibration_due.map((e) => ({
-          key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name, hint: `${e.calibration_due} 到期`,
+          key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name,
+          hint: `${e.calibration_due} ${e.calibration_due < todayStr ? '已过期' : '到期'}`,
           late: e.calibration_due < todayStr,
         })),
       },
@@ -292,7 +296,7 @@ function drag(e: PointerEvent) {
                   <span v-if="r.hint" class="detail">{{ r.hint }}</span>
                 </span>
                 <StatusTag v-if="r.status" :status="r.status" />
-                <el-tag v-if="r.danger" type="danger" disable-transitions>{{ r.danger }}</el-tag>
+                <el-tag v-if="r.danger" class="status-tag" type="danger" disable-transitions>{{ r.danger }}</el-tag>
               </RouterLink>
             </li>
           </ul>

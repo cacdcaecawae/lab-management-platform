@@ -79,7 +79,11 @@ watch(
   },
 )
 
+// Opening another record makes answers for the one before stale: they must not land on this one.
+let dialogGen = 0
+
 function open(a: Achievement | null) {
+  dialogGen++
   current.value = a
   Object.assign(form, blank(), a && { ...a, member_ids: a.members.map((m) => m.id) })
   errors.clear()
@@ -87,16 +91,20 @@ function open(a: Achievement | null) {
 }
 
 async function save() {
+  const gen = dialogGen
   saving.value = true
   try {
     const { type, title, authors, member_ids, venue, date, status, link, notes } = form
     const body = { type, title, authors, member_ids, venue, date, status, link, notes }
-    current.value = current.value ? await achievementsApi.update(current.value.id, body) : await achievementsApi.create(body)
-    ElMessage.success(current.value.fulltext_name ? '已保存' : '已保存，可以上传全文')
-    errors.clear()
+    const saved = current.value ? await achievementsApi.update(current.value.id, body) : await achievementsApi.create(body)
+    ElMessage.success(saved.fulltext_name ? '已保存' : '已保存，可以上传全文')
     load()
+    if (gen !== dialogGen) return
+    current.value = saved
+    errors.clear()
   } catch (e) {
-    errors.handle(e)
+    if (gen === dialogGen) errors.handle(e)
+    else showError(e)
   } finally {
     saving.value = false
   }
@@ -127,11 +135,13 @@ async function onPick(e: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || !current.value) return
+  const gen = dialogGen
   uploading.value = true
   try {
-    current.value = await achievementsApi.uploadFulltext(current.value.id, file)
+    const saved = await achievementsApi.uploadFulltext(current.value.id, file)
     ElMessage.success('全文已上传')
     load()
+    if (gen === dialogGen) current.value = saved
   } catch (err) {
     showActionError(err) // e.g. 只支持 PDF
   } finally {
@@ -140,10 +150,11 @@ async function onPick(e: Event) {
 }
 
 async function removeFulltext() {
+  const gen = dialogGen
   try {
     await ElMessageBox.confirm('删除已上传的全文？', '删除全文', { type: 'warning' })
     await achievementsApi.removeFulltext(current.value!.id)
-    current.value = { ...current.value!, fulltext_name: '', fulltext_url: null }
+    if (gen === dialogGen) current.value = { ...current.value!, fulltext_name: '', fulltext_url: null }
     load()
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') showError(e)
@@ -183,11 +194,11 @@ async function removeFulltext() {
       </template>
     </PageToolbar>
     <el-table v-loading="loading" :data="items" empty-text="没有符合条件的成果">
-      <el-table-column label="类型" min-width="70">
-        <template #default="{ row }">{{ ACHIEVEMENT_TYPE_LABELS[row.type] }}</template>
-      </el-table-column>
       <el-table-column label="标题" min-width="240">
         <template #default="{ row }"><el-button link type="primary" class="title" @click="open(row as Achievement)">{{ row.title }}</el-button></template>
+      </el-table-column>
+      <el-table-column label="类型" min-width="70">
+        <template #default="{ row }">{{ ACHIEVEMENT_TYPE_LABELS[row.type] }}</template>
       </el-table-column>
       <el-table-column prop="authors" label="作者" min-width="160" show-overflow-tooltip />
       <el-table-column prop="venue" label="出处 / 编号" min-width="160" show-overflow-tooltip />

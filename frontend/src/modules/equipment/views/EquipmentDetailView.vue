@@ -6,7 +6,7 @@ import { docsApi } from '@/modules/knowledge/api'
 import type { Doc, EquipmentDetail } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { CONDITION_LABELS, DOC_CATEGORY_LABELS, formatPeriod, formatTime } from '@/utils/format'
-import { errorMessage } from '@/utils/errors'
+import { errorMessage, showError } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import EquipmentFormDialog from '../components/EquipmentFormDialog.vue'
@@ -29,10 +29,15 @@ const latestPhotoUsage = computed(() => equipment.value?.recent_usage.find((u) =
 async function load() {
   try {
     equipment.value = await equipmentApi.get(id)
+  } catch (e) {
+    loadError.value = errorMessage(e)
+    return
+  }
+  try {
     // the device's SDKs, manuals, procedures... from the knowledge base (shortcut: the latest 20)
     docs.value = (await docsApi.list({ equipment: id })).results
   } catch (e) {
-    loadError.value = errorMessage(e)
+    showError(e) // the device is still shown, without its 资料
   }
 }
 

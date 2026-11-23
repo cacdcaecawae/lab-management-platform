@@ -4,12 +4,19 @@ import { ElMessageBox } from 'element-plus'
 import { projectsApi } from '@/modules/projects/api'
 import type { MilestoneWrite, Project, ProjectMilestone, ProjectTask, TaskStatus, TaskWrite } from '@/api/types'
 import { errorMessage } from '@/utils/errors'
-import { toDateStr } from '@/utils/format'
+import { formatTime, toDateStr } from '@/utils/format'
 import FormDialog from '@/components/FormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 
 const props = defineProps<{ project: Project; sessionUserId?: number; canManage: boolean; tab: string }>()
 const cols = [{ key: 'todo', name: '待办' }, { key: 'doing', name: '进行中' }, { key: 'done', name: '完成' }] as const
+const CHANGE_LABELS: Record<string, string> = {
+  title: '标题', description: '说明', status: '状态', assignee: '负责人', milestone: '里程碑', due_date: '截止日期',
+}
+const STATUS_NAMES: Record<string, string> = Object.fromEntries(cols.map((c) => [c.key, c.name]))
+// A status by its column's name; an id (entries from before the history kept names) as 编号 n.
+const shown = (field: string, v: unknown) =>
+  v == null || v === '' ? '无' : field === 'status' ? (STATUS_NAMES[String(v)] ?? v) : typeof v === 'number' ? `编号 ${v}` : v
 const canEdit = computed(() => props.canManage || props.project.members.some(m => m.id === props.sessionUserId))
 const canDelete = (task: ProjectTask) => props.canManage || task.created_by === props.sessionUserId
 const mine = ref(false)
@@ -191,7 +198,7 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
           <strong>{{ task.title }}</strong>
           <p v-if="task.description" class="pre">{{ task.description }}</p>
           <p>{{ task.assignee?.name || '未分配' }}<span v-if="task.assignee && !task.assignee.current">（已不在项目中）</span></p>
-          <p v-if="task.due_date" :class="{ late: late(task) }">截止 {{ task.due_date }}</p>
+          <p v-if="task.due_date" :class="{ late: late(task) }">截止 {{ task.due_date }}<template v-if="late(task)">，已逾期</template></p>
           <p v-if="task.milestone">里程碑：{{ task.milestone.title }}</p>
           <div class="actions">
             <template v-if="canEdit">
@@ -206,10 +213,9 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
             <summary>修改历史</summary>
             <ul>
               <li v-for="(entry, i) in task.history" :key="i">
-                {{ entry.actor }} · {{ new Date(entry.created_at).toLocaleString() }}
+                {{ entry.actor }} · {{ formatTime(entry.created_at) }}
                 <div v-for="(change, field) in entry.changes" :key="field">
-                  {{ ({ title: '标题', description: '说明', status: '状态', assignee: '负责人编号', milestone: '里程碑编号', due_date: '截止日期' })[field as string] || field }}：
-                  {{ change.before ?? '无' }} → {{ change.after ?? '无' }}
+                  {{ CHANGE_LABELS[field as string] ?? field }}：{{ shown(field as string, change.before) }} → {{ shown(field as string, change.after) }}
                 </div>
               </li>
             </ul>
@@ -227,7 +233,7 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
       </template>
     </PageToolbar>
     <el-empty v-if="!milestones.length" description="暂无里程碑" />
-    <el-card v-for="item in milestones" :key="item.id" class="task" shadow="never">
+    <el-card v-for="item in milestones" :key="item.id" class="task milestone" shadow="never">
       <strong>{{ item.title }}</strong>
       <p>{{ item.due_date ?? '无截止日期' }} · {{ item.done_at ? '已完成' : '未完成' }} · 任务 {{ item.task_done }} / {{ item.task_total }}</p>
       <el-button v-if="canManage" link :disabled="busy" @click="editMilestone(item)">编辑</el-button>
@@ -276,4 +282,6 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
 .board h3 { margin: 10px 0 4px; font-size: 15px; }
 .task { margin: 10px 0; overflow-wrap: anywhere; }
 .late { color: var(--el-color-danger); }
+/* on the page's white card, not a grey lane like the tasks: an edge of its own */
+.milestone { --el-card-border-color: var(--lab-border); }
 </style>

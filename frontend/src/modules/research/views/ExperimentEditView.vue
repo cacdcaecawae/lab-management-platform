@@ -255,7 +255,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
   <el-card v-else v-loading="loading" class="card">
     <template #header>
       <PageHeader :back="{ name: 'experiments' }">
-        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建实验记录</template></template>
+        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else-if="isNew">新建实验记录</template></template>
         <template v-if="record" #tags><StatusTag :status="record.status" /></template>
         <IconButton v-if="record" :icon="CopyDocument" label="复制为新草稿" @click="copyAsDraft" />
         <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
@@ -269,7 +269,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
     </template>
     <el-alert v-if="readonlyHint" :title="readonlyHint" type="info" :closable="false" class="notice" />
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" class="notice" />
-    <el-form class="form-page" :disabled="!editable" label-position="top">
+    <el-form v-if="record || isNew" class="form-page" :disabled="!editable" label-position="top">
       <div class="form-grid">
         <el-form-item class="span-2" label="项目" :error="errors.fe('project_id')" required>
           <el-select v-model="form.project_id" filterable placeholder="选择项目">

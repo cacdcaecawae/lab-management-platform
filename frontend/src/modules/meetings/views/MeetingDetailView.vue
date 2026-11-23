@@ -11,7 +11,7 @@ import type { ActionItem, Meeting, MeetingWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime, mergeById, toDateStr } from '@/utils/format'
-import { isNotFound, showActionError, showError, useFieldErrors } from '@/utils/errors'
+import { errorMessage, showActionError, showError, useFieldErrors } from '@/utils/errors'
 import AttachmentList from '@/components/AttachmentList.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -106,14 +106,17 @@ async function remove() {
   }
 }
 
+const isNew = !route.params.id
+const loading = ref(false)
 async function load() {
-  const id = Number(route.params.id)
-  if (!id) return startEdit() // /meetings/new
+  if (isNew) return startEdit() // /meetings/new
+  loading.value = true
   try {
-    meeting.value = await meetingsApi.get(id)
+    meeting.value = await meetingsApi.get(Number(route.params.id))
   } catch (e) {
-    if (isNotFound(e)) loadError.value = '记录不存在或无权查看'
-    else showError(e)
+    loadError.value = errorMessage(e)
+  } finally {
+    loading.value = false
   }
 }
 load()
@@ -137,11 +140,13 @@ async function reload() {
 </script>
 
 <template>
-  <div v-if="loadError" class="card"><el-empty :description="loadError" /></div>
+  <el-result v-if="loadError" icon="warning" :title="loadError">
+    <template #extra><el-button @click="router.push({ name: 'meetings' })">返回组会列表</el-button></template>
+  </el-result>
   <template v-else>
-    <el-card class="card">
+    <el-card v-loading="loading" class="card">
       <template #header>
-        <PageHeader :back="{ name: 'meetings' }" :title="meeting ? `${meeting.date} ${meeting.title}` : '新建组会'">
+        <PageHeader :back="{ name: 'meetings' }" :title="meeting ? `${meeting.date} ${meeting.title}` : isNew ? '新建组会' : ''">
           <template v-if="editing">
             <el-button v-if="meeting" type="danger" plain @click="remove">删除组会</el-button>
             <el-button @click="meeting ? (editing = false) : router.push({ name: 'meetings' })">取消</el-button>
@@ -209,6 +214,10 @@ async function reload() {
       </el-card>
       <el-card class="card" header="行动项">
         <el-table :data="meeting.actions" empty-text="暂无行动项">
+          <el-table-column prop="content" label="事项" min-width="220" />
+          <el-table-column label="负责人" min-width="90">
+            <template #default="{ row }">{{ row.owner.name }}</template>
+          </el-table-column>
           <el-table-column label="完成" width="70">
             <template #default="{ row }">
               <el-checkbox
@@ -219,10 +228,6 @@ async function reload() {
               />
             </template>
           </el-table-column>
-          <el-table-column label="负责人" min-width="90">
-            <template #default="{ row }">{{ row.owner.name }}</template>
-          </el-table-column>
-          <el-table-column prop="content" label="事项" min-width="220" />
           <el-table-column label="截止" min-width="110">
             <template #default="{ row }">
               <span :class="{ overdue: overdue(row as ActionItem) }">{{ row.due_date ?? '' }}{{ overdue(row as ActionItem) ? '（已过期）' : '' }}</span>

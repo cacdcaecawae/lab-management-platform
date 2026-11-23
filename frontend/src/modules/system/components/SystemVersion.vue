@@ -31,7 +31,11 @@ const PERCENT = [5, 20, 45, 75]
 const status = ref<Status | null>(null)
 const siteUp = ref(true)
 let timer = 0
-onBeforeUnmount(() => clearTimeout(timer))
+let stopped = false // left the page: no more checks, and no reload over whatever is open now
+onBeforeUnmount(() => {
+  stopped = true
+  clearTimeout(timer)
+})
 
 async function update() {
   const { current, latest } = info.value! // its button shows only with an update available
@@ -63,6 +67,7 @@ async function poll(target: string, since: number) {
   } catch {
     // Nginx restarts with the new release.
   }
+  if (stopped) return
   if (status.value?.state === 'failed') {
     siteUp.value = await systemApi.version().then(
       (v) => ((info.value = v), true),
@@ -74,6 +79,7 @@ async function poll(target: string, since: number) {
 
 async function reloadWhenRunning(target: string) {
   const v = await systemApi.version().catch(() => null)
+  if (stopped) return
   if (v?.current === target) window.location.reload()
   else timer = window.setTimeout(() => reloadWhenRunning(target), 2000)
 }

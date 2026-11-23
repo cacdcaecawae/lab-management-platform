@@ -96,13 +96,17 @@ function openReset(a: Account) {
   resetVisible.value = true
 }
 
+const resetting = ref(false)
 async function doReset() {
+  resetting.value = true
   try {
     await systemApi.resetPassword(resetTarget.value!.id, newPassword.value)
     ElMessage.success('密码已重置，对方下次登录时需修改密码')
     resetVisible.value = false
   } catch (e) {
     resetErrors.handle(e)
+  } finally {
+    resetting.value = false
   }
 }
 </script>
@@ -191,7 +195,7 @@ async function doReset() {
     <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
   </FormDialog>
 
-  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" @submit="doReset">
+  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" :loading="resetting" @submit="doReset">
     <template #before>
       <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
     </template>

@@ -65,3 +65,40 @@ it('交财务 saves an edit made in the dialog before handing it in', async () =
   ])
   wrapper.unmount()
 })
+
+it('a save answering after another record was opened leaves that record on screen', async () => {
+  const other = { ...record, id: 8, code: 'RB-2026-0008', description: '差旅' } as Reimbursement
+  let answer!: (r: Response) => void
+  vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+    if (init.method === 'PATCH') return new Promise<Response>((resolve) => (answer = resolve))
+    const results = url.startsWith('/api/reimbursements/') ? [record, other] : []
+    return Promise.resolve(new Response(JSON.stringify({ count: results.length, next: null, previous: null, results }), { status: 200 }))
+  }))
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { ...me, role: 'student', is_supervisor: false } as Me
+  const wrapper = mount(ReimbursementsView, { global: { plugins: [ElementPlus, pinia] }, attachTo: document.body })
+  await flushPromises()
+  const open = async (code: string) => {
+    await wrapper.findAll('button').find((b) => b.text() === code)!.trigger('click')
+    await flushPromises()
+  }
+  const dialogButton = (text: string) =>
+    [...document.querySelectorAll('.el-dialog button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement
+
+  await open(record.code)
+  const description = document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!
+  description.value = '耦合剂 3 瓶'
+  description.dispatchEvent(new Event('input'))
+  await flushPromises()
+  dialogButton('保存').click() // slow
+  await flushPromises()
+  await open(other.code) // jsdom lets the list be clicked under the dialog: the dialog now shows the other record
+  answer(new Response(JSON.stringify({ ...record, description: '耦合剂 3 瓶' }), { status: 200 }))
+  await flushPromises()
+
+  // still open, on the record opened last (the old code closed it)
+  const shown = [...document.querySelectorAll<HTMLElement>('.el-overlay')].filter((o) => o.style.display !== 'none')
+  expect(shown.map((o) => o.querySelector('.el-dialog__title')?.textContent)).toEqual([`报销 ${other.code}`])
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!.value).toBe('差旅')
+  wrapper.unmount()
+})

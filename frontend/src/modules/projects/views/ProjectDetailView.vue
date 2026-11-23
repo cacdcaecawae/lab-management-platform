@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { projectsApi } from '@/modules/projects/api'
@@ -20,7 +20,13 @@ const id = Number(route.params.id)
 const project = ref<Project | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const editing = ref(false)
-const boardTab = ref(route.query.tab === "tasks" ? "tasks" : "progress")
+// ?tab= (the workbench links to 任务) is followed while the page stays open, and kept in the address.
+const tabOf = (tab: unknown) => (tab === 'tasks' || tab === 'milestones' ? tab : 'progress')
+const boardTab = ref(tabOf(route.query.tab))
+watch(() => route.query.tab, (tab) => (boardTab.value = tabOf(tab)))
+watch(boardTab, (tab) => {
+  if (tab !== tabOf(route.query.tab)) void router.replace({ query: { ...route.query, tab: tab === 'progress' ? undefined : tab } })
+})
 const canEdit = computed(() => !!project.value && (auth.isSupervisor || project.value.leader.id === auth.user?.id))
 
 async function load() {

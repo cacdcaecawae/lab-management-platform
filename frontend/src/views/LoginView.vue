@@ -89,7 +89,7 @@ onBeforeUnmount(() => bar?.disconnect())
     <footer>Phase · 仅限课题组成员使用</footer>
 
     <!-- native dialog: Esc, keeping focus inside and the blurred backdrop come with it -->
-    <dialog ref="sheet" aria-labelledby="login-title" @click="outside">
+    <dialog ref="sheet" aria-labelledby="login-title" @click="outside" @close="error = ''">
       <div class="sheet">
         <button class="x" type="button" aria-label="关闭" @click="sheet?.close()">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
@@ -363,6 +363,11 @@ dialog[open] {
 }
 .field input:focus + label,
 .field input:not(:placeholder-shown) + label {
+  top: 6px;
+  font-size: 12px;
+}
+/* a saved password the browser filled in: on a rule of its own, as a selector a browser does not know drops the rule */
+.field input:-webkit-autofill + label {
   top: 6px;
   font-size: 12px;
 }

@@ -9,7 +9,7 @@ import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { DEFECT_KIND_LABELS, SPECIMEN_KIND_LABELS, formatTime, toDateStr } from '@/utils/format'
 import { ApiError } from '@/api/client'
-import { errorMessage, useFieldErrors } from '@/utils/errors'
+import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import SpecimenFormDialog from '../components/SpecimenFormDialog.vue'
@@ -36,9 +36,14 @@ const historyOpen = ref(false)
 async function load() {
   try {
     specimen.value = await specimensApi.get(id)
-    loans.value = (await specimensApi.loans(id)).results // shortcut: the latest 20 loans
   } catch (e) {
     loadError.value = errorMessage(e)
+    return
+  }
+  try {
+    loans.value = (await specimensApi.loans(id)).results // shortcut: the latest 20 loans
+  } catch (e) {
+    showError(e) // the specimen is still shown, without its loan history
   }
 }
 

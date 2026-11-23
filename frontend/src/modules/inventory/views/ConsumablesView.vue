@@ -26,9 +26,11 @@ const filters = reactive({ item: routeItem(), search: '', low: routeLow(), expir
 watch(routeLow, (low) => { filters.low = low })
 watch(routeExpiry, (days) => { filters.expiring_within = days })
 const dates = (d: string) => new Date(d + 'T00:00:00')
-const expiryTone = (d: string) => {
+const expiry = (d: string) => {
   const remaining = Math.round((+dates(d) - +dates(toDateStr(new Date()))) / 86_400_000)
-  return remaining < 0 ? 'danger' : remaining <= 30 ? 'warning' : 'info'
+  if (remaining < 0) return { type: 'danger', note: '已过期' } as const
+  if (remaining <= 30) return { type: 'warning', note: remaining ? `${remaining} 天后到期` : '今天到期' } as const
+  return { type: 'info', note: '' } as const
 }
 const keyword = ref('')
 watch(routeItem, (item) => { filters.item = item })
@@ -173,14 +175,18 @@ const txns = ref<StockTxn[]>([])
 const txnPage = ref(1)
 const hasMore = ref(false)
 
+let txnSeq = 0
 async function loadTxns(c: Consumable, reset: boolean) {
-  txnPage.value = reset ? 1 : txnPage.value + 1
+  const mine = ++txnSeq // another item's drawer, or 加载更多 clicked again: an earlier answer is stale
+  const page = reset ? 1 : txnPage.value + 1
   try {
-    const res = await consumablesApi.txns(c.id, { page: txnPage.value })
+    const res = await consumablesApi.txns(c.id, { page })
+    if (mine !== txnSeq) return
+    txnPage.value = page
     txns.value = reset ? res.results : [...txns.value, ...res.results]
     hasMore.value = !!res.next
   } catch (e) {
-    showError(e)
+    if (mine === txnSeq) showError(e)
   }
 }
 
@@ -223,7 +229,9 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       </el-table-column>
       <el-table-column label="最近到期" min-width="115">
         <template #default="{ row }">
-          <el-tag v-if="row.nearest_expiry" :type="expiryTone(row.nearest_expiry)">{{ row.nearest_expiry }}</el-tag>
+          <el-tag v-if="row.nearest_expiry" class="status-tag" :type="expiry(row.nearest_expiry).type" disable-transitions>
+            {{ row.nearest_expiry }}<template v-if="expiry(row.nearest_expiry).note"> · {{ expiry(row.nearest_expiry).note }}</template>
+          </el-tag>
           <span v-else>{{ row.tracks_batches ? '—' : '未按批次' }}</span>
         </template>
       </el-table-column>
@@ -284,7 +292,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     <template v-else-if="batchTarget && batchTarget.stock > 0">
       <p>现有库存 {{ batchTarget.stock }} {{ batchTarget.unit }} 将全部分配到此批次，总数不变。</p>
       <el-form-item label="期初批号" required><el-input v-model="openingBatch.batch_no" maxlength="50" /></el-form-item>
-      <el-form-item label="期初批次有效期"><el-input v-model="openingBatch.expires_on" type="date" /></el-form-item>
+      <el-form-item label="期初批次有效期"><el-date-picker v-model="openingBatch.expires_on" type="date" value-format="YYYY-MM-DD" placeholder="可不填" /></el-form-item>
     </template>
     <el-alert v-if="batchModeError" type="error" :title="batchModeError" :closable="false" />
   </FormDialog>
@@ -303,7 +311,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       <template v-if="txnTarget.tracks_batches">
         <template v-if="txnForm.kind === 'in'">
           <el-form-item label="批号" :error="txnErrors.fe('batch_no')" required><el-input v-model="txnForm.batch_no" maxlength="50" /></el-form-item>
-          <el-form-item label="有效期至" :error="txnErrors.fe('expires_on')"><el-input v-model="txnForm.expires_on" type="date" /></el-form-item>
+          <el-form-item label="有效期至" :error="txnErrors.fe('expires_on')"><el-date-picker v-model="txnForm.expires_on" type="date" value-format="YYYY-MM-DD" placeholder="可不填" /></el-form-item>
         </template>
         <el-form-item v-else label="批次" :error="txnErrors.fe('batch_id')" required>
           <el-select v-model="txnForm.batch_id" placeholder="选择批次" @change="resetCounted">

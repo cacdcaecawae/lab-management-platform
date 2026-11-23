@@ -18,7 +18,10 @@ const filters = reactive({ status: '', search: '', mine: '' as 1 | '', todo: (re
 const keyword = ref('')
 const { items, count, page, pageSize, loading } = usePagedList(purchasesApi.list, filters)
 
-watch(reviewing, (r) => Object.assign(filters, { todo: r ? 1 : '', status: '', mine: '' }))
+watch(reviewing, (r) => {
+  Object.assign(filters, { todo: r ? 1 : '', status: '', mine: '', search: '' })
+  keyword.value = ''
+})
 
 // from=reviews: the detail page's back button returns to 我的审批
 const detail = (id: number) => ({ name: 'purchase-detail', params: { id }, query: reviewing.value ? { from: 'reviews' } : {} })

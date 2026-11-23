@@ -12,13 +12,16 @@ const router = useRouter()
 const route = useRoute()
 const form = reactive({ old: '', next: '', confirm: '' })
 const errors = ref<string[]>([])
+const loading = ref(false)
 
 async function submit() {
+  if (loading.value) return // a second request would fail: the old password is no longer valid
   errors.value = []
   if (form.next !== form.confirm) {
     errors.value = ['两次输入的新密码不一致']
     return
   }
+  loading.value = true
   try {
     await auth.changePassword(form.old, form.next)
     ElMessage.success('密码已修改')
@@ -26,6 +29,8 @@ async function submit() {
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
     errors.value = e.body.errors ? Object.values(e.body.errors).flat() : [e.message]
+  } finally {
+    loading.value = false
   }
 }
 </script>
@@ -41,7 +46,7 @@ async function submit() {
         <el-form-item label="新密码"><el-input v-model="form.next" type="password" show-password /></el-form-item>
         <el-form-item label="确认新密码"><el-input v-model="form.confirm" type="password" show-password /></el-form-item>
         <el-alert v-for="msg in errors" :key="msg" :title="msg" type="error" :closable="false" class="auth-alert" />
-        <el-button type="primary" native-type="submit" class="auth-submit">确认修改</el-button>
+        <el-button type="primary" native-type="submit" :loading="loading" class="auth-submit">确认修改</el-button>
       </el-form>
     </div>
   </div>

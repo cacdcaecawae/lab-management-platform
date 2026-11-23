@@ -46,12 +46,14 @@
 | [procurement.md](./procurement.md) | 经费来源、采购申请、附件、初审退回、过期审批被拒（409）、两级审批、手机宽度终审、批准后改价重审、已采购 / 已到货、设备和入库关联、外组和同组隔离 | 2026-11-17，代码 `4692d22`（走查中修的问题已包含在内）；`total-limit` 在 `b136cfa`、`attachments-after-review` 在 `c38b47a` 上单独走过 |
 | [system.md](./system.md) | 运维账号侧栏六页：存储与备份（含用量）、账号、课题组、邮件、版本、登录记录，管理员可改本组财务邮箱 | 2026-11-22 拆页时走过 `ops-landing`、`backup-status`（菜单"需处理"随重新检查出现和消失）、`not-for-others`、`storage-usage`（只有 0 B 的合成数据）；2026-11-17 验证邮件与账号（`74595d4`）；集成 Chromium 已打开存储与备份、容量和登录记录标签；2026-11-20 验证备份状态 `backup-status`（基于 `fdb4524` 的改动，逾期只有自动化测试）；学校 SMTP 待验证 |
 | [knowledge.md](./knowledge.md) | 知识库：新建文档、多版本与 SHA256、PDF 打开 / 其他下载、按设备编号和名称搜索、其他学生只读、只有管理员能删、设备页"资料"、外组隔离 | 2026-11-17，代码 `3c45126`；证据在 `2026-11-17-phase4/`；2026-11-23 `e10bbb5` 实测GB18030 中文附件预览 |
-| [project-tasks.md](./project-tasks.md) | 项目任务、里程碑、历史、权限和工作台 | 未走过 |
+| [project-tasks.md](./project-tasks.md) | 项目任务、里程碑、历史、权限和工作台 | 2026-11-23 issue #48 B8/U1/U3 分支走过历史显示名字、里程碑边框和 `?tab=`；其余未走过 |
 | [meetings.md](./meetings.md) | 组会：新建、汇报人上传 PPT、其他学生只读、工作台"我的行动项"、负责人勾选完成、外组隔离 | 2026-11-17，代码 `e4786ff`（走查中看到上传提示和文件选择框只列 PDF / JPG / PNG，改为任意类型后重走；`upload_file` 不受 `accept` 限制，`accept` 没有读回）；证据在 `2026-11-17-phase4/` |
 | [achievements.md](./achievements.md) | 成果：登记、上传全文、按类型 / 年份 / "已录用（含已发表）"筛选、导出清单加全文、外组隔离 | 2026-11-17，代码 `e4786ff`；第一篇论文走的表单，另外 4 条对照记录是用同一接口直接建的；外组导出只看了状态码，内容由后端测试核对；证据在 `2026-11-17-phase4/`；成果统计：待真实浏览器走查 |
 | [reimbursements.md](./reimbursements.md) | 登记报销、没有发票不能交财务、交财务后只读、管理员退回、到账、修改历史、统计与 Excel 导出、财务提醒提示、导师和其他学生的权限 | 2026-11-17，代码 `4692d22`；交财务后不能上传在 `c38b47a` 上走过；对话框里改了不存直接交财务、财务提醒先确认、手机表单一列在 2026-11-23 issue #48 分支上走过；真实发信未验证 |
 | [phone.md](./phone.md) | 手机骨架：底部标签栏、列表页顶栏和按钮、列表变卡片、筛选收起、全屏弹窗、详情字段一行一对、电脑不受影响 | 2026-11-21，本地 390×844 走过成员、设备台账和详情、新建设备、报销（两组按钮）、工作台、菜单抽屉；1440 宽对比设备台账 |
 
+
+2026-11-23 在 issue #48 B8/U1/U3 分支（`fix/issue-48-b8-u1-u3`）上走过：equipment 的 `mobile`、`booking-link`；achievements `phone-title`；meetings `not-found` 和行动项手机卡片；consumables 到期文字；reports `reports-week-fixed`、`reports-feedback-guard`；system `mail-unsaved`；login `login-wrong`（重开不留红字）、`login-first-change`（连点只发一次）；knowledge 菜单清掉设备筛选；phone `phone-two-tags`；首页图标在 375 / 490px 不出卡片。证据在 `backend/var/verify-evidence/2026-11-23-issue48-b8/`。
 开发计划里"未在浏览器验证"的项目（导师角色、退回、修改历史抽屉、处理记录完整提交、窄屏等）还没有对应的功能文件或尚未走过；做这些功能时按上面的格式补齐。
 
 耗材批次新增流程：未走过，隔离 Chromium 启动受环境限制。

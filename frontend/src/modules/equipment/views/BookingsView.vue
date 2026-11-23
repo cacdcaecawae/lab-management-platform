@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import FullCalendar from '@fullcalendar/vue3'
@@ -43,6 +43,13 @@ const shown = ref<number[]>([])
 watch(equipment, (list) => (shown.value = list.some((e) => e.id === linked) ? [linked as number] : list.map((e) => e.id)), {
   once: true,
 })
+// Phones: the page opens on the working day, 08:00 at the top (the night and the device list are above it); once,
+// after the device list has its height.
+if (window.matchMedia('(max-width: 768px)').matches) {
+  watch(equipment, () => nextTick(() => document.querySelector('.calendar .fc-timegrid-slot[data-time="08:00:00"]')?.scrollIntoView({ block: 'start' })), {
+    once: true,
+  })
+}
 const allShown = computed(() => equipment.value.length > 0 && shown.value.length === equipment.value.length)
 const toggleAll = (on: boolean | string | number) => (shown.value = on ? equipment.value.map((e) => e.id) : [])
 const mineOnly = ref<1 | ''>('')
@@ -158,18 +165,29 @@ const reportForm = reactive({ condition: 'normal' as Condition, description: '',
 const reportErrors = useFieldErrors(['condition', 'description', 'photo'])
 const reportPhotoBusy = ref(false)
 const busy = ref(false)
-watch(detail, () => {
+watch(detail, (b) => {
   reportPhotoBusy.value = false
   Object.assign(reportForm, { condition: 'normal', description: '', photo: null })
   reportErrors.clear()
+  if (!b && route.query.booking) {
+    // closed: the same link opens it again
+    const { booking: _, ...query } = route.query
+    void router.replace({ query })
+  }
 })
-// Links from the workbench: /bookings?booking=<id> opens that booking on its week.
-if (route.query.booking) {
-  bookingsApi.get(Number(route.query.booking)).then((b) => {
-    detail.value = b
-    api()?.gotoDate(b.start_at)
-  }, showError)
-}
+// Links from the workbench and notices: /bookings?booking=<id> opens that booking on its week, also when this page is
+// already open (the view is reused).
+watch(
+  () => route.query.booking,
+  (id) => {
+    if (typeof id !== 'string' || !id) return
+    bookingsApi.get(Number(id)).then((b) => {
+      detail.value = b
+      api()?.gotoDate(b.start_at)
+    }, showError)
+  },
+  { immediate: true },
+)
 
 async function cancel() {
   const b = detail.value
@@ -401,6 +419,21 @@ async function submitReport() {
 @media (max-width: 768px) {
   .view-switch {
     margin-left: 0;
+  }
+  /* the devices above the calendar, not after its 24 hours; jumping to a date is the 月 view's */
+  .side {
+    order: -1;
+  }
+  .mini {
+    display: none;
+  }
+  .side-head {
+    padding-top: 0;
+    border-top: 0;
+  }
+  /* scrolled to 08:00 (script): stop under the top bar (52px) and the sticky day header (53px) */
+  .calendar :deep(.fc-timegrid-slot) {
+    scroll-margin-top: 106px;
   }
 }
 .status-alert {

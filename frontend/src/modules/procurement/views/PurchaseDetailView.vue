@@ -94,7 +94,9 @@ function handleErrors(e: unknown) {
   clearErrors()
   const items: unknown = e instanceof ApiError ? e.body.errors?.items : undefined
   if (Array.isArray(items) && items.every((m) => typeof m === 'string')) itemsMessage.value = items.join('；')
-  else if (items && typeof items === 'object') rowErrors.value = items as Record<number, Record<string, string[]>>
+  // numbered by the items sent: back to the form's rows, which may include blank ones left out
+  else if (items && typeof items === 'object')
+    rowErrors.value = Object.fromEntries(Object.entries(items).map(([k, v]) => [sentRows[Number(k)] ?? Number(k), v]))
   errors.handle(e)
 }
 
@@ -114,9 +116,17 @@ async function load(id: number) {
   }
 }
 
+// The form row of each item sent (blank rows are not sent).
+let sentRows: number[] = []
+
+function removeRow(i: number) {
+  form.items.splice(i, 1)
+  rowErrors.value = {} // numbered by the rows before
+}
+
 function body(): PurchaseWrite {
-  const rows = form.items.filter((r) => r.name.trim() || r.spec.trim() || r.link.trim() || r.unit_price != null)
-  const items = rows.map((r) => ({
+  sentRows = form.items.flatMap((r, i) => (r.name.trim() || r.spec.trim() || r.link.trim() || r.unit_price != null ? [i] : []))
+  const items = sentRows.map((i) => form.items[i]).map((r) => ({
     name: r.name.trim(),
     spec: r.spec.trim(),
     quantity: r.quantity,
@@ -242,7 +252,7 @@ if (route.params.id) load(Number(route.params.id))
     <el-card class="card">
       <template #header>
         <PageHeader :back="{ name: backTo }">
-          <template #title><span :class="{ code: record }">{{ record ? record.code : '新建采购申请' }}</span></template>
+          <template #title><span :class="{ code: record }">{{ record ? record.code : isNew ? '新建采购申请' : '' }}</span></template>
           <template v-if="record" #tags>
             <StatusTag :status="record.status" />
             <el-tag v-if="record.returned" class="status-tag" type="danger" disable-transitions>被退回</el-tag>
@@ -302,7 +312,7 @@ if (route.params.id) load(Number(route.params.id))
         <div class="total"><span>合计</span><span class="amount">¥ {{ formatMoney(record.total) }}</span></div>
       </template>
 
-      <el-form v-else class="form-page" label-position="top" @submit.prevent>
+      <el-form v-else-if="editable" class="form-page" label-position="top" @submit.prevent>
         <div class="form-grid">
           <el-form-item class="span-2" label="经费来源" :error="errors.fe('fund_id')" required>
             <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
@@ -334,7 +344,7 @@ if (route.params.id) load(Number(route.params.id))
                   class="price"
                 />
                 <el-input v-model="row.link" placeholder="购买链接（可不填）" aria-label="链接" />
-                <el-button :icon="Delete" text aria-label="删除这一行" :disabled="form.items.length === 1" @click="form.items.splice(i, 1)" />
+                <el-button :icon="Delete" text aria-label="删除这一行" :disabled="form.items.length === 1" @click="removeRow(i)" />
               </div>
               <div v-if="rowError(i)" class="row-error">{{ rowError(i) }}</div>
             </template>

@@ -9,6 +9,7 @@ import { formatTime } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
 import { Clock } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 
 const SECURITY: Record<MailSecurity, { label: string; port: number }> = {
   ssl: { label: 'SSL', port: 465 },
@@ -38,10 +39,12 @@ const testErrors = useFieldErrors(['to'])
 const testing = ref(false)
 
 const dirty = computed(() => !!saved.value && keys.some((k) => form[k] !== (k === 'mail_password' ? '' : saved.value![k])))
+const { markSaved } = useUnsavedGuard(form, () => !!saved.value)
 
 function fill(s: MailSettings) {
   saved.value = s
   Object.assign(form, Object.fromEntries(keys.map((k) => [k, k === 'mail_password' ? '' : s[k]])))
+  markSaved()
 }
 
 onMounted(async () => {

@@ -120,7 +120,7 @@ class MilestoneViewSet(BoardDetailViewSet):
             raise PermissionDenied("仅项目负责人、管理员、导师可操作")
         TaskChange.objects.bulk_create([
             TaskChange(task_id=task_id, actor_name=request.user.display_name,
-                       changes={"milestone": {"before": milestone.pk, "after": None}})
+                       changes={"milestone": {"before": milestone.title, "after": None}})
             for task_id in milestone.tasks.values_list("pk", flat=True)
         ])
         milestone.delete()

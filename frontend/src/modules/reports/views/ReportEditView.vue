@@ -56,8 +56,12 @@ const isNew = computed(() => !route.params.id)
 const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew.value))
 const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew.value))
 const canDelete = computed(() => record.value?.status === 'draft' && isOwner.value)
-// Ask before leaving with unsaved changes (fill() takes the snapshot).
-const { markSaved } = useUnsavedGuard(form, () => editable.value)
+// Ask before leaving with unsaved changes (fill() takes the snapshot), the owner's report or a supervisor's feedback.
+const { markSaved } = useUnsavedGuard(
+  form,
+  () => editable.value || canFeedback.value,
+  () => canFeedback.value && !!fb.content.trim(),
+)
 const canFeedback = computed(() => record.value?.status === 'submitted' && auth.isSupervisor && !isOwner.value)
 const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)))
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
@@ -261,7 +265,7 @@ if (route.params.id) load(Number(route.params.id))
   <template v-else>
     <el-card v-loading="loading" class="card">
       <template #header>
-        <PageHeader :back="{ name: 'reports' }" :title="record ? `${record.owner.name} · ${record.week_start} 这一周` : '写周报'">
+        <PageHeader :back="{ name: 'reports' }" :title="record ? `${record.owner.name} · ${record.week_start} 这一周` : isNew ? '写周报' : ''">
           <template v-if="record" #tags><StatusTag :status="record.status" /></template>
           <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <el-button v-if="nextPendingId" type="primary" @click="goNextPending">下一份待反馈</el-button>
@@ -296,6 +300,7 @@ if (route.params.id) load(Number(route.params.id))
             value-format="YYYY-MM-DD"
             :disabled-date="notMonday"
             :clearable="false"
+            :disabled="!!record"
           />
         </el-form-item>
         <el-form-item v-for="s in SECTIONS" :key="s.key" :label="s.label" :error="errors.fe(s.key)">

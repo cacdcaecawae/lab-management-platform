@@ -69,7 +69,11 @@ const purchaseOptions = computed(() => {
   return mergeById<PurchaseBrief>(purchases.value, [current.value?.purchase]).filter((p) => p.owner.id === owner)
 })
 
+// Opening another record makes answers for the one before stale: they must not land on this one.
+let dialogGen = 0
+
 function openDialog(r: Reimbursement | null) {
+  dialogGen++
   current.value = r
   Object.assign(form, blank(), r && {
     fund_id: r.fund.id, purchase_id: r.purchase?.id ?? null, category: r.category, amount: Number(r.amount),
@@ -96,6 +100,7 @@ function body(): Partial<ReimbursementWrite> {
 }
 
 async function save() {
+  const gen = dialogGen
   saving.value = true
   try {
     const isNew = !current.value
@@ -106,7 +111,9 @@ async function save() {
         ? await reimbursementsApi.update(current.value!.id, data)
         : current.value!
     load()
-    if (isNew) {
+    if (gen !== dialogGen || !dialogOpen.value) {
+      ElMessage.success(isNew ? '已登记' : '已保存') // the dialog was closed or shows another record by now
+    } else if (isNew) {
       // Stay open: the invoice is uploaded next, onto the record that now exists.
       openDialog(saved)
       ElMessage.success('已登记，请上传发票')
@@ -115,7 +122,8 @@ async function save() {
       ElMessage.success('已保存')
     }
   } catch (e) {
-    errors.handle(e)
+    if (gen === dialogGen) errors.handle(e)
+    else showError(e)
   } finally {
     saving.value = false
   }
@@ -123,8 +131,10 @@ async function save() {
 
 async function refreshCurrent() {
   if (!current.value) return
+  const gen = dialogGen
   try {
-    current.value = await reimbursementsApi.get(current.value.id)
+    const fresh = await reimbursementsApi.get(current.value.id)
+    if (gen === dialogGen) current.value = fresh
   } catch (e) {
     showError(e)
   }
@@ -141,9 +151,10 @@ const NEXT: Record<string, { to: ReimbursementStatus; label: string; confirm: st
 async function saveEdits() {
   const data = body()
   if (!Object.keys(data).length) return true
+  const gen = dialogGen
   try {
     await reimbursementsApi.update(current.value!.id, data)
-    opened = { ...form }
+    if (gen === dialogGen) opened = { ...form }
     return true
   } catch (e) {
     errors.handle(e)
@@ -268,7 +279,7 @@ async function editFinanceEmail() {
         <el-table v-loading="loading" :data="items" empty-text="暂无报销记录">
           <el-table-column label="编号" min-width="120">
             <template #default="{ row }">
-              <el-button link class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
+              <el-button link type="primary" class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
             </template>
           </el-table-column>
           <el-table-column v-if="auth.isSupervisor" label="报销人" min-width="80">

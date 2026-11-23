@@ -23,8 +23,10 @@ const route = useRoute()
 const router = useRouter()
 
 // ?equipment=<id> comes from the equipment page ("资料"), ?doc=<id> opens one document.
-const initialEquipment = Number(route.query.equipment) || ''
-const filters = reactive({ search: '', category: '', equipment: initialEquipment as number | '' })
+const routeEquipment = () => (Number(route.query.equipment) || '') as number | ''
+const filters = reactive({ search: '', category: '', equipment: routeEquipment() })
+// another device's 资料, or 知识库 in the menu (no device), while the page is open: the view is reused
+watch(() => route.query.equipment, () => (filters.equipment = routeEquipment()))
 const keyword = ref('')
 const { items, count, page, pageSize, loading, load } = usePagedList(docsApi.list, filters)
 // shortcut: the first 100 devices; switch to remote search if the ledger grows past that.
