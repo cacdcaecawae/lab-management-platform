@@ -54,13 +54,13 @@ class SpecimenViewSet(
             Prefetch("defects", queryset=defects),
             Prefetch("loans", queryset=open_loans().select_related("borrower", "project"), to_attr="open_loans"),
         ]
-        if self.action != "list":
+        if self.action in ("retrieve", "partial_update"):
             prefetches.append(
                 Prefetch(
                     "loans",
                     queryset=SpecimenLoan.objects.exclude(return_photo="")
                     .select_related("returned_by")
-                    .order_by("-returned_at", "-id"),
+                    .order_by("-returned_at", "-id")[:1],
                     to_attr="photo_loans",
                 )
             )
