@@ -85,13 +85,20 @@ function isAbortError(e: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (e instanceof DOMException && e.name === 'AbortError')
 }
 
+function decodePreviewText(bytes: Uint8Array, truncated: boolean) {
+  for (const encoding of ['utf-8', 'gb18030']) {
+    try {
+      return new TextDecoder(encoding, { fatal: true }).decode(bytes, { stream: truncated })
+    } catch {
+      // Try the next encoding for instrument exports.
+    }
+  }
+  return new TextDecoder().decode(bytes, { stream: truncated })
+}
+
 async function readCappedStream(response: Response, signal: AbortSignal, maxBytes = 256 * 1024, maxLines = 200) {
   const reader = response.body?.getReader()
-  if (!reader) {
-    const full = await response.text()
-    const lines = full.split(/\r?\n/)
-    return { content: lines.slice(0, maxLines).join('\n'), truncated: lines.length > maxLines }
-  }
+  if (!reader) return { content: '', truncated: false }
   activeReader = reader
   const chunks: Uint8Array[] = []
   let total = 0
@@ -125,7 +132,7 @@ async function readCappedStream(response: Response, signal: AbortSignal, maxByte
     buf.set(c, offset)
     offset += c.byteLength
   }
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(buf)
+  const text = decodePreviewText(buf, byteTruncated)
   const lines = text.split(/\r?\n/)
   const clipped = byteTruncated && lines.length > 1 ? lines.slice(0, -1) : lines
   const lineTruncated = clipped.length > maxLines

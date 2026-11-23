@@ -36,6 +36,8 @@
 - **外组。** `x_mgr` 打开组会地址：显示"记录不存在或无权查看"；组会和附件接口 404，`/api/meetings/` 的 `count` 为 0。截图。
 - **第二视角。** query.sh 读 `meetings.models` 的 `Meeting`、`AgendaItem`、`ActionItem`（`done_at` 有值）、`MeetingFile`（上传人 `s_a`，存储名为随机名）。
 
+- 上传 GB18030 编码的中文 TXT 或 CSV 作为组会附件，点文件名打开预览，核对中文与原文一致，关闭后再从下载入口取原文件。
+
 ## Gotchas
 
 - "汇报人""负责人"是可搜索的下拉框，选项不出现在无障碍快照里；先 `click` 下拉框，再用 `evaluate_script` 点可见的 `.el-select-dropdown__item`。

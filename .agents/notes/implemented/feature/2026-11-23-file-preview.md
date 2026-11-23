@@ -18,7 +18,7 @@ Status: implemented
 - **前端共用 `FilePreviewDialog.vue` 与 `utils/preview.ts`**：
   - 图片直接以 `<el-image>` 展示并支持全屏缩放/旋转灯箱；
   - PDF 通过同源 `fetch` 拿字节流转为本地 `blob:` URL 渲染在 `<iframe>` 中（天然不受 Nginx `X-Frame-Options: DENY` 拦截，关闭弹窗与组件卸载时主动 `URL.revokeObjectURL`），设置 20 MB 弹窗预览上限（同时校验 `target.size`、`Content-Length` 与流式累加字节数，超限立即中止流并回退「新窗口打开 / 下载文件」，避免大 PDF 整份读入内存）；所有预览请求绑定 `AbortController` 与流 `reader.cancel()`，关闭弹窗或切换文件立即取消下载；
-  - CSV/TSV 使用零依赖单趟 RFC-4180 状态机解析器（支持带引号跨行单元格、转义双引号 `""` 与 CRLF/LF，表格单元格 `white-space: pre-wrap` 保留换行），提供"表格 / 原文"分段切换；非数据集的直链文本文件（知识库、组会）通过 `ReadableStream` 读满 256 KB 即主动 `cancel()` 截断流，避免缓冲大文件。
+  - CSV/TSV 使用零依赖单趟 RFC-4180 状态机解析器（支持带引号跨行单元格、转义双引号 `""` 与 CRLF/LF，表格单元格 `white-space: pre-wrap` 保留换行），提供"表格 / 原文"分段切换；非数据集的直链文本文件（知识库、组会）通过 `ReadableStream` 读满 256 KB 即主动 `cancel()` 截断流，避免缓冲大文件。直链附件与数据集使用同一解码顺序；截断落在多字节字符中间时，只显示完整字符。
   - 接入全站入口：`AttachmentList.vue`（同时覆盖采购申请、报销与组会，图片附件显示小缩略图）、`DatasetDetailView.vue`、`KnowledgeView.vue`、`AchievementsView.vue`。
 
 ## Alternatives considered

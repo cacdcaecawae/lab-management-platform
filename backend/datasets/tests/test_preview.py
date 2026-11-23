@@ -35,6 +35,12 @@ def test_dataset_file_preview_text_csv_image_pdf_and_xss_blocks(api, tmp_path, s
     assert api(student_b).get(csv_file["preview_url"]).status_code == 404
     assert api(other_manager).get(csv_file["preview_url"]).status_code == 404
 
+    # The byte cap can split a UTF-8 character without changing the encoding of earlier lines.
+    text = ("中" * 87382).encode()
+    split = _upload(api, student_a, ds, "split.txt", text)
+    prefix = api(student_a).get(split["preview_url"]).json()
+    assert prefix["truncated"] and prefix["content"] == "中" * 87381
+
     # 2) Image raw inline preview with nosniff + CSP sandbox
     png = _upload(api, student_a, ds, "scan.png", b"\x89PNG\r\n\x1a\nfake", "image/png")
     assert png["preview_kind"] == "image"

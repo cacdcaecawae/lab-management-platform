@@ -42,6 +42,8 @@
 - **导师、其他学生。** `adv` 打开页面：有 "统计" 和 "导出 Excel"，没有 "发送财务提醒"，行里只有 "历史"。`s_b` 打开页面：只有"报销记录"且为空；`evaluate_script` 读 `/api/reimbursements/1/`、`/api/attachments/<发票 id>/file/` 为 404，`/api/reimbursements/stats/`、`/api/reimbursements/export/` 为 403。
 - **数据库。** query.sh 读 `Reimbursement`：RB-2026-0001 `paid`，`submitted_at`、`paid_at` 有值，`purchase` 为 1；RB-2026-0002 `pending`。
 
+- 打开带 PDF 附件的报销单并点文件名，确认弹窗显示对应票据且可下载。
+
 ## Gotchas
 
 - 状态推进前都有确认框，点 "确定" 之后才发请求。确认框是页面内的 `.el-message-box`，不是浏览器原生弹窗。

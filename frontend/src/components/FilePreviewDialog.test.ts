@@ -45,6 +45,17 @@ describe('preview utils', () => {
 })
 
 describe('FilePreviewDialog', () => {
+  it('decodes GB18030 text from a regular attachment', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(Uint8Array.of(0xd6, 0xd0, 0xce, 0xc4))))
+    const wrapper = mount(FilePreviewDialog, {
+      props: { modelValue: true, target: { name: 'notes.txt', url: '/api/docs/1/download/' } },
+      global: { plugins: [ElementPlus], stubs: { teleport: true } },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('中文')
+    wrapper.unmount()
+  })
+
   it('renders a multiline quoted CSV record as a single table row', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ content: '名称,备注\n试件A,"第一行\n第二行"', truncated: false }), {

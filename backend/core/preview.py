@@ -3,6 +3,7 @@
 SVG, HTML, XML and scripts are never served inline here so uploaded files cannot execute in this origin.
 """
 
+import codecs
 from pathlib import Path
 
 from django.http import FileResponse
@@ -43,10 +44,10 @@ def preview_kind(name: str) -> str:
     return "other"
 
 
-def _decode_text(raw: bytes) -> str:
+def _decode_text(raw: bytes, truncated: bool) -> str:
     for encoding in ("utf-8-sig", "gb18030"):
         try:
-            return raw.decode(encoding)
+            return codecs.getincrementaldecoder(encoding)().decode(raw, final=not truncated)
         except UnicodeDecodeError:
             continue
     return raw.decode("utf-8", errors="replace")
@@ -62,7 +63,7 @@ def read_text_preview(field_file, name: str, size=None, max_bytes=MAX_PREVIEW_BY
     byte_truncated = len(raw) > max_bytes
     if byte_truncated:
         raw = raw[:max_bytes]
-    text = _decode_text(raw)
+    text = _decode_text(raw, byte_truncated)
     all_lines = text.splitlines()
     # If truncated mid-line by the byte cap, drop the partial trailing line when multiple lines exist.
     if byte_truncated and len(all_lines) > 1:
