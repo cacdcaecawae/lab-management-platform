@@ -78,9 +78,9 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.load()
   if (to.meta.public) {
-    return auth.user && to.name === 'login'
-      ? postAuthTarget(router, to.query.next) ?? { name: 'workbench' }
-      : true
+    // Signed in, a page to return to opens at once; otherwise the home page, whose button then goes in (the sidebar's
+    // Phase leads there).
+    return (auth.user && to.name === 'login' && postAuthTarget(router, to.query.next)) || true
   }
   if (!auth.user) {
     const next = postAuthTarget(router, to.name === 'password' ? to.query.next : to.fullPath)

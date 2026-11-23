@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +21,9 @@ const loading = ref(false)
 const sheet = ref<HTMLDialogElement>()
 const enter = ref<HTMLButtonElement>()
 const scrolled = ref(false) // the big 登录 has scrolled away: the bar offers one
+// Signed in (the sidebar's Phase leads here): the button goes in instead of opening the sheet; ops has only 系统管理.
+const enterLabel = computed(() => (!auth.user ? '登录' : auth.user.group ? '进入工作台' : '进入系统管理'))
+const enterOrSignIn = () => (auth.user ? void router.push({ name: 'workbench' }) : sheet.value?.showModal())
 
 async function submit() {
   error.value = ''
@@ -54,14 +57,14 @@ onBeforeUnmount(() => bar?.disconnect())
     <header class="top" :class="{ scrolled }">
       <span class="brand"><img :src="icon" alt="" />Phase</span>
       <!-- inert while hidden: neither focus nor a screen reader should find a second, invisible 登录 -->
-      <button class="dark" type="button" :inert="!scrolled" @click="sheet?.showModal()">登录</button>
+      <button class="dark" type="button" :inert="!scrolled" @click="enterOrSignIn">{{ enterLabel }}</button>
     </header>
 
     <main>
       <section class="hero">
         <GlassRing />
         <h1>Phase</h1>
-        <button ref="enter" class="dark" type="button" @click="sheet?.showModal()">登录</button>
+        <button ref="enter" class="dark" type="button" @click="enterOrSignIn">{{ enterLabel }}</button>
         <p class="say">科研资料存得住，<br />课题组日常管得清。</p>
       </section>
 

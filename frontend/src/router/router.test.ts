@@ -76,6 +76,14 @@ describe('route guard', () => {
     expect(router.currentRoute.value.query.next).toBe('/equipment/21')
   })
 
+  it('shows a signed-in user the home page, unless there is a page to go back to', async () => {
+    me.mockResolvedValue({ ...student })
+    await router.push('/login')
+    expect(router.currentRoute.value.fullPath).toBe('/login')
+    await router.push('/login?next=/equipment/3')
+    expect(router.currentRoute.value.fullPath).toBe('/equipment/3')
+  })
+
   it('admits only managers to the label preview, including after login', async () => {
     me.mockResolvedValue({ ...student })
     await router.push('/labels?type=equipment&ids=1')

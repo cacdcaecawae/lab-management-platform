@@ -1,4 +1,4 @@
-import { computed, reactive, watch, type Component } from 'vue'
+import { computed, reactive, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter, type RouteLocationNormalizedLoaded } from 'vue-router'
 import {
   Bell, Box, ChatDotRound, Collection, House, Key, Memo, Message, Monitor, Notebook, OfficeBuilding, Promotion, Setting, User,
@@ -156,6 +156,11 @@ export function pinGroup(key: string, open: boolean) {
   else pinnedGroups.delete(key)
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...pinnedGroups]))
 }
+
+// The computer's sidebar folded down to its icons (DESIGN.md), kept per browser.
+const FOLDED_KEY = 'lab.sidebar.folded'
+export const sidebarFolded = ref(localStorage.getItem(FOLDED_KEY) === '1')
+watch(sidebarFolded, (v) => localStorage.setItem(FOLDED_KEY, v ? '1' : '0'))
 
 export function useNav() {
   const auth = useAuthStore()

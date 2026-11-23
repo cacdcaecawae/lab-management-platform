@@ -1,18 +1,30 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowUp } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import icon from '@/assets/phase-icon.png'
+import IconButton from '@/components/IconButton.vue'
 import SiteSearch from '@/components/SiteSearch.vue'
 import AccountCard from './AccountCard.vue'
 import AppMenu from './AppMenu.vue'
 import ProfileDialog from './ProfileDialog.vue'
 import { leavePage } from '@/composables/useUnsavedGuard'
-import { clearTabs } from './nav'
+import { clearTabs, sidebarFolded } from './nav'
 
-// The sidebar (DESIGN.md): who is signed in, search, then the menu. Used by the desktop sidebar and the phone drawer.
+// The sidebar (DESIGN.md): Phase (back to the home page), search and fold on top, the menu, who is signed in at the
+// bottom. Folded, the logo opens it again. Used by the computer's sidebar (foldable) and the phone drawer.
+const props = defineProps<{ foldable?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
+const folded = computed(() => !!props.foldable && sidebarFolded.value)
+const fold = () => (sidebarFolded.value = !sidebarFolded.value)
+// A panel with its side bar, like Gemini's: Element Plus has no such icon.
+const PanelIcon = () =>
+  h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8, 'stroke-linejoin': 'round' }, [
+    h('rect', { x: 3.5, y: 4.5, width: 17, height: 15, rx: 3 }),
+    h('path', { d: 'M9.5 4.5v15' }),
+  ])
 const auth = useAuthStore()
 const router = useRouter()
 const name = computed(() => auth.user?.name || auth.user?.username || '')
@@ -37,16 +49,32 @@ async function logout() {
 </script>
 
 <template>
-  <div class="side-nav">
-    <!-- drops down under the button like Feishu's, over the search box and menu; a click outside closes it -->
-    <el-dropdown trigger="click" placement="bottom-start" :show-arrow="false" :offset="4" popper-class="me-popper" class="me-menu">
-      <button type="button" class="me">
+  <div class="side-nav" :class="{ folded }">
+    <div class="head">
+      <!-- folded, the logo opens the sidebar (showing the panel icon on hover); open, Phase goes to the home page -->
+      <el-tooltip v-if="folded" content="展开侧栏" placement="right" :show-after="300">
+        <button type="button" class="brand" aria-label="展开侧栏" @click="fold">
+          <img :src="icon" alt="" /><el-icon class="open"><PanelIcon /></el-icon>
+        </button>
+      </el-tooltip>
+      <RouterLink v-else :to="{ name: 'login' }" class="brand" aria-label="Phase 首页" @click="emit('close')">
+        <img :src="icon" alt="" /><span>Phase</span>
+      </RouterLink>
+      <SiteSearch v-if="auth.user?.group && !auth.user.must_change_password" />
+      <IconButton v-if="foldable && !folded" :icon="PanelIcon" label="收起侧栏" @click="fold" />
+    </div>
+    <div class="menu-scroll"><AppMenu :collapse="folded" /></div>
+    <!-- pops up above the button, over the menu; a click outside closes it -->
+    <el-dropdown trigger="click" placement="top-start" :show-arrow="false" :offset="4" popper-class="me-popper" class="me-menu">
+      <button type="button" class="me" :aria-label="folded ? name : undefined">
         <el-avatar :size="32" :src="auth.user?.avatar_url ?? undefined" aria-hidden="true">{{ name.slice(0, 1) }}</el-avatar>
-        <span class="who">
-          <span class="name">{{ name }}</span>
-          <span v-if="auth.user?.group" class="group">{{ auth.user.group.name }}</span>
-        </span>
-        <el-icon class="caret"><ArrowDown /></el-icon>
+        <template v-if="!folded">
+          <span class="who">
+            <span class="name">{{ name }}</span>
+            <span v-if="auth.user?.group" class="group">{{ auth.user.group.name }}</span>
+          </span>
+          <el-icon class="caret"><ArrowUp /></el-icon>
+        </template>
       </button>
       <template #dropdown>
         <el-dropdown-menu>
@@ -58,20 +86,94 @@ async function logout() {
       </template>
     </el-dropdown>
     <ProfileDialog v-model="profile" />
-    <SiteSearch v-if="auth.user?.group && !auth.user.must_change_password" class="side-search" />
-    <AppMenu />
   </div>
 </template>
 
 <style scoped>
+/* Fills the sidebar's height: the top row and the account stay put, only the menu scrolls. */
 .side-nav {
   display: flex;
   flex-direction: column;
-  padding: 12px 0 24px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); /* the phone drawer: clear of the home indicator */
+}
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 10px 12px;
+}
+.brand {
+  min-width: 0;
+  margin-right: auto; /* search and fold to the right; the hover covers only the logo and its name */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--lab-radius);
+  color: var(--lab-text);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.brand:hover {
+  background: var(--lab-bg-hover);
+  text-decoration: none;
+}
+.brand:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.brand img {
+  width: 24px;
+  height: 24px;
+}
+/* Folded (64px): the logo, then search under it. */
+.folded .head {
+  flex-direction: column;
+  gap: 4px;
+}
+.folded .brand {
+  flex: none;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.folded .brand:hover {
+  background: var(--lab-bg-hover);
+}
+.brand .open {
+  display: none;
+  color: var(--lab-text-2);
+  font-size: 20px;
+}
+.folded .brand:is(:hover, :focus-visible) img {
+  display: none;
+}
+.folded .brand:is(:hover, :focus-visible) .open {
+  display: inline-flex;
+}
+.menu-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* the menu is taller than a laptop screen: scroll it, but show the bar only while the pointer is over it */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.menu-scroll:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 .me-menu {
+  flex: none;
   display: block;
-  margin: 0 10px 10px;
+  margin: 8px 10px 0;
 }
 .me {
   display: flex;
@@ -119,8 +221,9 @@ async function logout() {
   flex: none;
   color: var(--lab-text-3);
 }
-.side-search {
-  margin: 0 10px 8px;
+.folded .me {
+  justify-content: center;
+  padding: 6px 0;
 }
 /* Top of the account menu: who you are (not clickable), like Feishu's card above its menu items. */
 .me-card {
