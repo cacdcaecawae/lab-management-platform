@@ -93,7 +93,7 @@ id=$(rt snapshots --json --host lab "$snap" | verify snapshot)
 [[ "$id" =~ ^[0-9a-f]{64}$ ]] || { echo "无法固定快照 ID" >&2; exit 1; }
 echo "恢复演练：快照 $id，后端镜像 $version"
 # Compose uses a separate database with no host port. Stop before importing if readiness fails.
-dc up -d --wait --wait-timeout 120 db
+dc up -d --wait --wait-timeout 300 db
 rt dump "$id" /dump/lab.dump | dc exec -T db pg_restore --no-owner --no-privileges \
   --exit-on-error --single-transaction -U lab_drill -d lab_drill
 # Use a new deterministic sample each month for the same snapshot, without printing names or paths.
