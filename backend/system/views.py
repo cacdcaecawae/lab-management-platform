@@ -182,6 +182,8 @@ class AccountViewSet(ResetPasswordMixin, mixins.ListModelMixin, mixins.CreateMod
             accounts = accounts.filter(group_id=params["group"]) if plain_int(params["group"]) else accounts.none()
         if params.get("role"):
             accounts = accounts.filter(role=params["role"]) if params["role"] in User.Role.values else accounts.none()
+        if params.get("flag"):  # 管理员 / 终审人, as on the member list
+            accounts = accounts.filter(**{f"is_{params['flag']}": True}) if params["flag"] in ("manager", "approver") else accounts.none()
         if params.get("is_active"):
             accounts = accounts.filter(is_active=serializers.BooleanField().to_internal_value(params["is_active"]))
         return accounts

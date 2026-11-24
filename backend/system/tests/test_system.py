@@ -190,6 +190,10 @@ def test_accounts(api, ops, group, other_group, student_a, manager):
     advisor_id = r.data["id"]
     assert [a["username"] for a in api(ops).get("/api/system/accounts/", {"role": "advisor"}).data["results"]] == ["t_adv2"]
     assert api(ops).get("/api/system/accounts/", {"group": other_group.id}).data["count"] == 0
+    # 权限: the 管理员 / 终审人 tags (the page offered the filter; the list ignored it)
+    assert [a["username"] for a in api(ops).get("/api/system/accounts/", {"flag": "manager"}).data["results"]] == ["mgr"]
+    assert api(ops).get("/api/system/accounts/", {"flag": "approver"}).data["count"] == 0
+    assert api(ops).get("/api/system/accounts/", {"flag": "x"}).data["count"] == 0
 
     # the group is fixed once created: moving someone changes who can see their records
     # ops sets the base role and both tags
