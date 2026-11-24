@@ -5,6 +5,7 @@
 (*   create  BookingViewSet.perform_create        backend/equipment/views.py *)
 (*   report  BookingViewSet.report                backend/equipment/views.py *)
 (*   cancel  BookingViewSet.cancel                backend/equipment/views.py *)
+(*   end     BookingViewSet.end_now (提前结束)    backend/equipment/views.py *)
 (*   edit    EquipmentViewSet.partial_update -> EquipmentSerializer.update *)
 (*           (serializers.py), sent by EquipmentFormDialog.vue             *)
 (* One action = one SQL statement on a shared row; the Python checks on   *)
@@ -14,7 +15,7 @@ EXTENDS Naturals
 
 CONSTANTS
     Procs,         \* concurrent requests, e.g. {1, 2, 3}; each process makes one request
-    RequestKinds,  \* subset of {"create", "report", "cancel", "edit"}
+    RequestKinds,  \* subset of {"create", "report", "cancel", "end", "edit"}
     EditBodies,    \* status values an edit PATCH may carry: "omit" (no status in the body) and/or Statuses
     Slots,         \* booking times, abstracted: two bookings overlap iff same slot; must contain 1 and 2
     Mutant         \* "none" = the code as it is; otherwise one named break (see the Mutant = ... branches)
@@ -39,6 +40,8 @@ VARIABLES
     bCancelled, \* cancelled_at set, committed
     bCancelBy,  \* process with an uncommitted UPDATE of cancelled_at, or None
     bLock,      \* holder of the booking row lock, or None
+    bEnded,     \* ended early (end_at moved to now), committed: the rest of its slot is free
+    bEndBy,     \* process with an uncommitted UPDATE of end_at, or None
     rCount,     \* committed usage reports of the booking
     rInsBy,     \* process with an uncommitted INSERT of a usage report for the booking, or None
     pc,         \* per process: next step
@@ -47,7 +50,7 @@ VARIABLES
     bookedWhileFlagged  \* ghost, per booking: a use booking committed while flagged
 
 eqVars == <<eStatus, eLock, eNewBy, eNewVal>>
-bkVars == <<bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bLock>>
+bkVars == <<bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bLock, bEnded, bEndBy>>
 rVars == <<rCount, rInsBy>>
 ghost == <<flagged, bookedWhileFlagged>>
 vars == <<eqVars, bkVars, rVars, pc, loc, ghost>>
@@ -66,6 +69,8 @@ Init ==
     /\ bCancelled = [b \in Bookings |-> FALSE]
     /\ bCancelBy = [b \in Bookings |-> None]
     /\ bLock = [b \in Bookings |-> None]
+    /\ bEnded = [b \in Bookings |-> FALSE]
+    /\ bEndBy = [b \in Bookings |-> None]
     /\ rCount = [b \in Bookings |-> 0]
     /\ rInsBy = [b \in Bookings |-> None]
     /\ pc = [p \in Procs |-> "idle"]
@@ -86,10 +91,11 @@ Rollback(p, o) ==
     /\ bInsBy' = Release(bInsBy, p)
     /\ bCancelBy' = Release(bCancelBy, p)
     /\ bLock' = Release(bLock, p)
+    /\ bEndBy' = Release(bEndBy, p)
     /\ rInsBy' = Release(rInsBy, p)
     /\ pc' = [pc EXCEPT ![p] = "done"]
     /\ loc' = [loc EXCEPT ![p].out = o]
-    /\ UNCHANGED <<eStatus, bExists, bKind, bSlot, bStarted, bCancelled, rCount, ghost>>
+    /\ UNCHANGED <<eStatus, bExists, bKind, bSlot, bStarted, bCancelled, bEnded, rCount, ghost>>
 
 \* A manager handles the abnormal report: the edit form showed "needs_check" and the PATCH sets another status.
 Handles(p) == loc[p].req = "edit" /\ loc[p].formSeen = "needs_check" /\ loc[p].sent \notin {"omit", "needs_check"}
@@ -105,6 +111,8 @@ Commit(p) ==
     /\ bCancelled' = [b \in Bookings |-> bCancelled[b] \/ bCancelBy[b] = p]
     /\ bCancelBy' = Release(bCancelBy, p)
     /\ bLock' = Release(bLock, p)
+    /\ bEnded' = [b \in Bookings |-> bEnded[b] \/ bEndBy[b] = p]
+    /\ bEndBy' = Release(bEndBy, p)
     /\ rCount' = [b \in Bookings |-> rCount[b] + (IF rInsBy[b] = p THEN 1 ELSE 0)]
     /\ rInsBy' = Release(rInsBy, p)
     /\ flagged' = CASE loc[p].req = "report" /\ eNewBy = p -> TRUE
@@ -140,11 +148,15 @@ CreateLockEquipment(p) ==
             /\ UNCHANGED <<eStatus, eNewBy, eNewVal, bkVars, rVars, loc, ghost>>
 
 \* serializer.save(): INSERT INTO booking. The exclusion constraint no_overlapping_bookings first waits for any
-\* other open transaction that is inserting or cancelling an overlapping booking, then rejects a live overlap:
-\* IntegrityError, which perform_create turns into Conflict (409).
+\* other open transaction that is inserting, cancelling or ending early an overlapping booking, then rejects a live
+\* overlap: IntegrityError, which perform_create turns into Conflict (409). A booking ended early keeps only the part
+\* before now, and a new booking cannot start before now, so it no longer overlaps one in its slot.
 Overlaps(p, b) == b # NewBooking(p) /\ bSlot[b] = loc[p].slot
-Undecided(p, b) == bInsBy[b] \notin {None, p} \/ (bExists[b] /\ bCancelBy[b] \notin {None, p})
-Live(b) == bExists[b] /\ ~bCancelled[b]
+Undecided(p, b) ==
+    \/ bInsBy[b] \notin {None, p}
+    \/ (bExists[b] /\ bCancelBy[b] \notin {None, p})
+    \/ (bExists[b] /\ bEndBy[b] \notin {None, p})
+Live(b) == bExists[b] /\ ~bCancelled[b] /\ ~bEnded[b]
 
 CreateInsertBooking(p) ==
     LET nb == NewBooking(p) IN
@@ -156,7 +168,7 @@ CreateInsertBooking(p) ==
             /\ bKind' = [bKind EXCEPT ![nb] = loc[p].bk]
             /\ bSlot' = [bSlot EXCEPT ![nb] = loc[p].slot]
             /\ Goto(p, "create_commit")
-            /\ UNCHANGED <<eqVars, bExists, bStarted, bCancelled, bCancelBy, bLock, rVars, loc, ghost>>
+            /\ UNCHANGED <<eqVars, bExists, bStarted, bCancelled, bCancelBy, bLock, bEnded, bEndBy, rVars, loc, ghost>>
 
 CreateCommit(p) == pc[p] = "create_commit" /\ Commit(p)
 
@@ -187,7 +199,7 @@ ReportLockBooking(p) ==
        THEN Rollback(p, "409")
        ELSE /\ bLock' = IF noLock THEN bLock ELSE [bLock EXCEPT ![b] = p]
             /\ Goto(p, "report_insert")
-            /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, rVars, loc, ghost>>
+            /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bEnded, bEndBy, rVars, loc, ghost>>
 
 \* report.save(): INSERT INTO usage report (photo metadata is outside the model). UsageReport.booking is a OneToOneField (unique): the
 \* insert waits for another open transaction inserting a report for the same booking; a duplicate raises
@@ -239,14 +251,14 @@ CancelLockBooking(p) ==
        THEN Rollback(p, "409")
        ELSE /\ bLock' = [bLock EXCEPT ![b] = p]
             /\ Goto(p, "cancel_update")
-            /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, rVars, loc, ghost>>
+            /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bEnded, bEndBy, rVars, loc, ghost>>
 
 \* booking.save(update_fields=["cancelled_at"]): UPDATE booking (the row is already locked).
 CancelUpdate(p) ==
     /\ pc[p] = "cancel_update"
     /\ bCancelBy' = [bCancelBy EXCEPT ![loc[p].tgt] = p]
     /\ Goto(p, IF Mutant = "cancel_then_lock_equipment" THEN "cancel_lock_equipment" ELSE "cancel_commit")
-    /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bLock, rVars, loc, ghost>>
+    /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bLock, bEnded, bEndBy, rVars, loc, ghost>>
 
 \* Break only: the equipment row is locked after the booking was updated (the opposite order to create).
 CancelLockEquipment(p) ==
@@ -257,6 +269,43 @@ CancelLockEquipment(p) ==
     /\ UNCHANGED <<eStatus, eNewBy, eNewVal, bkVars, rVars, loc, ghost>>
 
 CancelCommit(p) == pc[p] = "cancel_commit" /\ Commit(p)
+
+-----------------------------------------------------------------------------
+(* end: POST /api/bookings/{id}/end-now/ by the booking's user or a       *)
+(* manager (anyone else gets a 403 under the lock, with nothing written).  *)
+
+EndStart(p) ==
+    /\ pc[p] = "idle" /\ "end" \in RequestKinds
+    /\ \E b \in Bookings :
+          /\ bExists[b]
+          /\ loc' = [loc EXCEPT ![p].req = "end", ![p].tgt = b]
+    /\ Goto(p, "end_lock_booking")
+    /\ UNCHANGED <<eqVars, bkVars, rVars, ghost>>
+
+\* transaction.atomic(); lock_booking(); then 409 unless: kind is "use", not cancelled, and under way (started, not
+\* yet ended: start_at <= now < end_at).
+EndLockBooking(p) ==
+    LET b == loc[p].tgt IN
+    /\ pc[p] = "end_lock_booking"
+    /\ Free(bLock[b], p)
+    /\ IF \/ bKind[b] # "use"
+          \/ bCancelled[b]
+          \/ (~bStarted[b] /\ Mutant # "end_skips_started_check")   \* break: check removed
+          \/ bEnded[b]
+       THEN Rollback(p, "409")
+       ELSE /\ bLock' = [bLock EXCEPT ![b] = p]
+            /\ Goto(p, "end_update")
+            /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bEnded, bEndBy, rVars, loc, ghost>>
+
+\* booking.save(update_fields=["end_at", "planned_end_at"]): UPDATE booking (the row is already locked); end_at only
+\* moves earlier.
+EndUpdate(p) ==
+    /\ pc[p] = "end_update"
+    /\ bEndBy' = [bEndBy EXCEPT ![loc[p].tgt] = p]
+    /\ Goto(p, "end_commit")
+    /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bStarted, bCancelled, bCancelBy, bEnded, bLock, rVars, loc, ghost>>
+
+EndCommit(p) == pc[p] = "end_commit" /\ Commit(p)
 
 -----------------------------------------------------------------------------
 (* edit: a manager changes the equipment. EquipmentFormDialog.vue fills   *)
@@ -308,7 +357,7 @@ EditCommit(p) == pc[p] = "edit_commit" /\ Commit(p)
 \* Time passes: a booking's start time arrives (BookingSerializer.validate keeps new start times from the past).
 Tick ==
     /\ \E b \in Bookings : bExists[b] /\ ~bStarted[b] /\ bStarted' = [bStarted EXCEPT ![b] = TRUE]
-    /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bCancelled, bCancelBy, bLock, rVars, pc, loc, ghost>>
+    /\ UNCHANGED <<eqVars, bExists, bInsBy, bKind, bSlot, bCancelled, bCancelBy, bLock, bEnded, bEndBy, rVars, pc, loc, ghost>>
 
 \* Every request has finished: a normal end, not a deadlock.
 Done == (\A p \in Procs : pc[p] = "done") /\ UNCHANGED vars
@@ -320,6 +369,7 @@ Next ==
         \/ CreateStart(p) \/ CreateLockEquipment(p) \/ CreateInsertBooking(p) \/ CreateCommit(p)
         \/ ReportStart(p) \/ ReportLockBooking(p) \/ ReportInsert(p) \/ ReportMarkEquipment(p) \/ ReportCommit(p)
         \/ CancelStart(p) \/ CancelLockBooking(p) \/ CancelUpdate(p) \/ CancelLockEquipment(p) \/ CancelCommit(p)
+        \/ EndStart(p) \/ EndLockBooking(p) \/ EndUpdate(p) \/ EndCommit(p)
         \/ EditOpenForm(p) \/ EditRead(p) \/ EditUpdate(p) \/ EditCommit(p)
 
 Spec == Init /\ [][Next]_vars
@@ -332,6 +382,7 @@ TypeOK ==
     /\ bKind \in [Bookings -> {"use", "maintenance"}] /\ bSlot \in [Bookings -> Slots]
     /\ bStarted \in [Bookings -> BOOLEAN] /\ bCancelled \in [Bookings -> BOOLEAN]
     /\ bCancelBy \in [Bookings -> Holder] /\ bLock \in [Bookings -> Holder]
+    /\ bEnded \in [Bookings -> BOOLEAN] /\ bEndBy \in [Bookings -> Holder]
     /\ rCount \in [Bookings -> Nat] /\ rInsBy \in [Bookings -> Holder]
     /\ flagged \in BOOLEAN /\ bookedWhileFlagged \in [Bookings -> BOOLEAN]
 
@@ -350,4 +401,13 @@ OneReportNo500 ==
     /\ \A p \in Procs : loc[p].out # "500"
 
 \* 5. No cycle of lock waits: TLC's deadlock check (on by default; Done marks the normal end).
+
+\* 6. Live bookings of the equipment never overlap; one ended early no longer holds the rest of its slot.
+NoOverlap ==
+    \A b1, b2 \in Bookings :
+        (b1 # b2 /\ bExists[b1] /\ bExists[b2] /\ ~bCancelled[b1] /\ ~bCancelled[b2] /\ bSlot[b1] = bSlot[b2])
+            => (bEnded[b1] \/ bEnded[b2])
+
+\* 7. Only a use booking that has started is ended early (otherwise end_at would fall before start_at).
+EndsOnlyStartedUse == \A b \in Bookings : bEnded[b] => (bStarted[b] /\ bKind[b] = "use")
 =============================================================================

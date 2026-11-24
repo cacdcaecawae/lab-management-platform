@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { searchSite, type SearchGroup } from '@/api/search'
 import IconButton from '@/components/IconButton.vue'
 
 const route = useRoute()
+const router = useRouter()
 const root = ref<HTMLElement>()
 const open = ref(false)
 const input = ref<HTMLInputElement>()
@@ -15,11 +16,27 @@ const status = ref('')
 let generation = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
+// ↑ / ↓ move through the results, Enter opens the one marked (the input stays focused: a combobox and its listbox).
+const flat = computed(() => groups.value.flatMap((g) => g.items.map((item) => ({ ...item, key: `${g.module}-${item.id}` }))))
+const active = ref(-1)
+function move(step: number) {
+  if (!flat.value.length) return
+  active.value = (active.value + step + flat.value.length) % flat.value.length
+  void nextTick(() => document.getElementById(`search-${flat.value[active.value]!.key}`)?.scrollIntoView({ block: 'nearest' }))
+}
+function enter() {
+  const item = flat.value[active.value]
+  if (!item) return search()
+  close()
+  void router.push(item.link)
+}
+
 function reset() {
   clearTimeout(timer)
   ++generation
   groups.value = []
   status.value = ''
+  active.value = -1
 }
 
 function close() {
@@ -85,19 +102,41 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div v-if="open" class="search-mask" @click.self="close" @keydown.esc.stop="close">
         <section class="search-panel" role="dialog" aria-label="全站搜索">
-          <form role="search" class="search-box" @submit.prevent="search">
+          <form role="search" class="search-box" @submit.prevent="enter">
             <el-icon><Search /></el-icon>
-            <input ref="input" v-model="query" type="search" aria-label="搜索关键词" placeholder="输入关键词，至少 2 个字" />
+            <input
+              ref="input"
+              v-model="query"
+              type="search"
+              role="combobox"
+              aria-label="搜索关键词"
+              aria-autocomplete="list"
+              aria-controls="search-results"
+              :aria-expanded="groups.length > 0"
+              :aria-activedescendant="flat[active] ? `search-${flat[active]!.key}` : undefined"
+              placeholder="输入关键词，至少 2 个字"
+              @keydown.down.prevent="move(1)"
+              @keydown.up.prevent="move(-1)"
+            />
           </form>
           <div v-if="status || groups.length" class="search-results">
             <p v-if="status" role="status" class="search-status">{{ status }}</p>
-            <div v-for="group in groups" :key="group.module">
-              <h3>{{ group.label }}</h3>
-              <ul>
-                <li v-for="item in group.items" :key="item.id">
-                  <RouterLink :to="item.link" @click="close">{{ item.title }} <small v-if="item.subtitle">{{ item.subtitle }}</small></RouterLink>
-                </li>
-              </ul>
+            <div id="search-results" role="listbox" aria-label="搜索结果">
+              <div v-for="group in groups" :key="group.module" role="group" :aria-label="group.label">
+                <h3>{{ group.label }}</h3>
+                <ul>
+                  <li
+                    v-for="item in group.items"
+                    :id="`search-${group.module}-${item.id}`"
+                    :key="item.id"
+                    role="option"
+                    :aria-selected="flat[active]?.key === `${group.module}-${item.id}`"
+                    :class="{ active: flat[active]?.key === `${group.module}-${item.id}` }"
+                  >
+                    <RouterLink :to="item.link" tabindex="-1" @click="close">{{ item.title }} <small v-if="item.subtitle">{{ item.subtitle }}</small></RouterLink>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         </section>
@@ -175,7 +214,8 @@ a {
   overflow-wrap: anywhere;
 }
 a:hover,
-a:focus-visible {
+a:focus-visible,
+.active a {
   background: var(--lab-bg);
   text-decoration: none;
 }

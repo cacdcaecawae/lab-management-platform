@@ -10,6 +10,7 @@ class Consumable(models.Model):
     name = models.CharField("名称", max_length=100)
     spec = models.CharField("规格", max_length=100, blank=True)
     unit = models.CharField("单位", max_length=20, default="个")
+    category = models.CharField("分类", max_length=50, blank=True, db_default="")  # old binaries' INSERTs leave it out
     location = models.CharField("存放位置", max_length=200, blank=True)
     safety_stock = models.PositiveIntegerField("安全库存", default=0)
     tracks_batches = models.BooleanField("按批次管理", default=False, db_default=False)

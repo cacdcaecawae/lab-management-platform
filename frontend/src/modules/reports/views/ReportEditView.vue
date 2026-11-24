@@ -8,9 +8,9 @@ import { datasetsApi } from '@/modules/datasets/api'
 import { experimentsApi, runsApi } from '@/modules/research/api'
 import { reportsApi } from '@/modules/reports/api'
 import type { DatasetBrief, ExperimentBrief, ReportWrite, RunBrief, Verdict, WeeklyReport } from '@/api/types'
-import { useOptions } from '@/composables/useOptions'
+import { useRemoteOptions } from '@/composables/useRemoteOptions'
 import { useAuthStore } from '@/stores/auth'
-import { formatTime, mergeById, mondayOf, notMonday, toDateStr } from '@/utils/format'
+import { formatTime, mondayOf, notMonday, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
@@ -67,13 +67,13 @@ const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) 
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
 
 // Links are limited to the report owner's own records; whoever can edit is the owner.
-const mine = { owner: auth.user?.id, page_size: 100 }
-const experiments = useOptions(() => experimentsApi.list(mine))
-const datasets = useOptions(() => datasetsApi.list(mine))
-const runs = useOptions(() => runsApi.list(mine))
-const experimentOptions = computed(() => mergeById<ExperimentBrief>(experiments.value, record.value?.experiments ?? []))
-const datasetOptions = computed(() => mergeById<DatasetBrief>(datasets.value, record.value?.datasets ?? []))
-const runOptions = computed(() => mergeById<RunBrief>(runs.value, record.value?.runs ?? []))
+const mine = (search: string) => ({ owner: auth.user?.id, search, page_size: 20 })
+const experiments = useRemoteOptions<ExperimentBrief>((search) => experimentsApi.list(mine(search)))
+const datasets = useRemoteOptions<DatasetBrief>((search) => datasetsApi.list(mine(search)))
+const runs = useRemoteOptions<RunBrief>((search) => runsApi.list(mine(search)))
+const experimentOptions = computed(() => experiments.options([...form.experiment_ids, ...(record.value?.experiments ?? [])]))
+const datasetOptions = computed(() => datasets.options([...form.dataset_ids, ...(record.value?.datasets ?? [])]))
+const runOptions = computed(() => runs.options([...form.run_ids, ...(record.value?.runs ?? [])]))
 
 function fill(r: WeeklyReport) {
   record.value = r
@@ -307,17 +307,17 @@ if (route.params.id) load(Number(route.params.id))
           <el-input v-model="form[s.key]" type="textarea" :autosize="{ minRows: 4 }" />
         </el-form-item>
         <el-form-item label="关联实验记录" :error="errors.fe('experiment_ids')">
-          <el-select v-model="form.experiment_ids" multiple filterable placeholder="选择自己的实验记录">
+          <el-select v-model="form.experiment_ids" multiple filterable remote :remote-method="experiments.search" :loading="experiments.loading.value" placeholder="选择自己的实验记录">
             <el-option v-for="x in experimentOptions" :key="x.id" :label="`${x.code} ${x.title}`" :value="x.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="关联数据集" :error="errors.fe('dataset_ids')">
-          <el-select v-model="form.dataset_ids" multiple filterable placeholder="选择自己的数据集">
+          <el-select v-model="form.dataset_ids" multiple filterable remote :remote-method="datasets.search" :loading="datasets.loading.value" placeholder="选择自己的数据集">
             <el-option v-for="x in datasetOptions" :key="x.id" :label="`${x.code} ${x.name}`" :value="x.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="关联数据处理记录" :error="errors.fe('run_ids')">
-          <el-select v-model="form.run_ids" multiple filterable placeholder="选择自己的数据处理记录">
+          <el-select v-model="form.run_ids" multiple filterable remote :remote-method="runs.search" :loading="runs.loading.value" placeholder="选择自己的数据处理记录">
             <el-option v-for="x in runOptions" :key="x.id" :label="`${x.code} ${x.title}`" :value="x.id" />
           </el-select>
         </el-form-item>

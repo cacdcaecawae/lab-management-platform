@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
@@ -37,15 +38,21 @@ class ActionItemSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)  # an existing item when the meeting is edited
     owner = UserBriefSerializer(read_only=True)
     owner_id = AnyGroupMemberField(source="owner", write_only=True)
+    # A new item copied from an open item of an earlier meeting: that one is marked as carried over here.
+    carried_from = serializers.IntegerField(min_value=1, required=False, write_only=True)
+    carried_to = serializers.SerializerMethodField()
 
     def validate(self, attrs):
         if "id" not in attrs:
             return require_item_fields(self, attrs, ("owner_id", "content"))
         return attrs
 
+    def get_carried_to(self, item):
+        return {"id": item.carried_to_id, "date": item.carried_to.date.isoformat()} if item.carried_to_id else None
+
     class Meta:
         model = ActionItem
-        fields = ["id", "owner", "owner_id", "content", "due_date", "done_at"]
+        fields = ["id", "owner", "owner_id", "content", "due_date", "done_at", "carried_from", "carried_to"]
         read_only_fields = ["done_at"]
 
 
@@ -95,8 +102,10 @@ class MeetingSerializer(serializers.ModelSerializer):
         agenda, actions = validated_data.pop("agenda", []), validated_data.pop("actions", [])
         meeting = super().create(validated_data)
         self._write_agenda(meeting, agenda)
+        self._notify_presenters(meeting, {a["presenter"].pk for a in agenda})
+        carried = self._carry(meeting, actions)
         ActionItem.objects.bulk_create(ActionItem(meeting=meeting, **a) for a in actions)
-        self._notify_assignees(meeting, {a["owner"].pk for a in actions})
+        self._notify_assignees(meeting, {a["owner"].pk for a in actions} - carried)
         return meeting
 
     @transaction.atomic
@@ -104,14 +113,17 @@ class MeetingSerializer(serializers.ModelSerializer):
         agenda, actions = validated_data.pop("agenda", None), validated_data.pop("actions", None)
         meeting = super().update(meeting, validated_data)
         if agenda is not None:  # the list replaces the agenda
+            presenting = set(meeting.agenda.values_list("presenter_id", flat=True))
             meeting.agenda.all().delete()
             self._write_agenda(meeting, agenda)
+            self._notify_presenters(meeting, {a["presenter"].pk for a in agenda} - presenting)
         if actions is not None:
             # Matched by id so an item keeps its "done" state; items left out are removed.
             kept = {a["id"] for a in actions if "id" in a}
             # The meeting save locks its row until commit, so another edit cannot run before this read.
             previous_owners = dict(meeting.actions.filter(pk__in=kept).values_list("pk", "owner_id"))
             assigned = set()
+            carried = self._carry(meeting, actions)
             meeting.actions.exclude(id__in=kept).delete()
             for a in actions:
                 fields = {k: v for k, v in a.items() if k != "id"}
@@ -122,13 +134,34 @@ class MeetingSerializer(serializers.ModelSerializer):
                 else:
                     ActionItem.objects.create(meeting=meeting, **fields)
                     assigned.add(a["owner"].pk)
-            self._notify_assignees(meeting, assigned)
+            self._notify_assignees(meeting, assigned - carried)
         return meeting
+
+    @staticmethod
+    def _carry(meeting, actions):
+        """Mark the earlier items that new rows were copied from as carried over to this meeting (done there). Returns
+        the owners of those rows: their work is not new, so they are not notified again."""
+        sources = {a.pop("carried_from") for a in actions if "carried_from" in a}
+        if not sources:
+            return set()
+        earlier = ActionItem.objects.filter(
+            pk__in=sources, meeting__group_id=meeting.group_id, done_at__isnull=True
+        ).exclude(meeting=meeting)
+        owners = set(earlier.values_list("owner_id", flat=True))
+        earlier.update(done_at=timezone.now(), carried_to=meeting)
+        return owners
 
     @staticmethod
     def _notify_assignees(meeting, owner_ids):
         if owner_ids:
             notify(meeting.group_id, "有新的组会行动项分配给你", f"/meetings/{meeting.pk}", recipient_ids=owner_ids)
+
+    def _notify_presenters(self, meeting, presenter_ids):
+        request = self.context.get("request")
+        exclude = [request.user.pk] if request else []
+        if presenter_ids:
+            notify(meeting.group_id, "你在组会上有汇报", f"/meetings/{meeting.pk}", recipient_ids=presenter_ids,
+                   exclude_ids=exclude, body=f"{meeting.date} {meeting.title}")
 
     @staticmethod
     def _write_agenda(meeting, agenda):

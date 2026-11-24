@@ -5,26 +5,34 @@ from pathlib import Path
 from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
-from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from accounts.models import User
 from core import mail
 from core.exceptions import Conflict
 from core.files import download
+from core.filters import Ordering, Search, equal
 from core.history import serialize_history
 from core.notifications import notify
+from core.pagination import Pagination
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
 
 from .models import Booking, Equipment, UsageReport
-from .queries import calibration_within
+from .queries import awaiting_report, calibration_within
 from .serializers import BookingSerializer, EquipmentSerializer, UsageReportSerializer
 
 logger = logging.getLogger(__name__)
+
+
+def parse_day(text):
+    try:
+        return parse_date(text)
+    except ValueError:  # 2026-13-45: the right shape, not a date
+        return None
 
 RECENT_USAGE = 20
 MAX_WINDOW = timedelta(days=62)  # the calendar asks for one week; a month view fits too
@@ -73,8 +81,9 @@ class EquipmentViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = EquipmentSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [Search, Ordering]
     search_fields = ["code", "name", "model", "category", "location"]
+    ordering_fields = ["code", "calibration_due"]
 
     def get_permissions(self):
         if self.action in ("create", "partial_update"):
@@ -98,7 +107,9 @@ class EquipmentViewSet(
             equipment = calibration_within(equipment, days).order_by("calibration_due", "id")
         if status_filter := params.get("status"):
             equipment = equipment.filter(status=status_filter) if status_filter in Equipment.Status.values else equipment.none()
-        return equipment
+        if params.get("idle") == "1":
+            equipment = equipment.filter(in_use=False)
+        return equal(equipment, params, category="category", location="location", custodian="custodian_id")
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)
@@ -128,7 +139,7 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         bookings = scope_group(
             Booking.objects.select_related("equipment", "user", "project", "report"), self.request.user, "equipment__group"
         )
-        if self.action != "list":
+        if self.action != "list":  # every_page has its own filters; details and actions see the group's bookings
             return bookings
         params = self.request.query_params
         start, end = parse_time(params, "from"), parse_time(params, "to")
@@ -159,6 +170,53 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         except IntegrityError:  # the exclusion constraint: another booking overlaps this time
             raise Conflict("该时段已被预约，请换一个时间") from None
 
+    @action(detail=False, url_path="all")
+    def every_page(self, request):
+        """The bookings page's list view: all bookings, newest first, paged, without the calendar's 62-day window.
+        mine=1; pending=1 (ended, no usage report yet: as on the workbench); reportable=1 (also under way);
+        equipment=<id>; project=<id>; from / to = YYYY-MM-DD (start date, inclusive, local time)."""
+        params = request.query_params
+        now = timezone.now()
+        bookings = self.get_queryset().filter(cancelled_at__isnull=True)
+        if params.get("mine") == "1":
+            bookings = bookings.filter(user=request.user)
+        if params.get("pending") == "1" or params.get("reportable") == "1":
+            bookings = awaiting_report(bookings, now, ongoing=params.get("reportable") == "1")
+        bookings = equal(bookings, params, equipment="equipment_id", project="project_id")
+        for name, lookup in (("from", "start_at__date__gte"), ("to", "start_at__date__lte")):
+            if params.get(name):
+                day = parse_day(params[name])
+                if day is None:
+                    raise ValidationError({name: ["格式为 YYYY-MM-DD"]})
+                bookings = bookings.filter(**{lookup: day})
+        paginator = Pagination()
+        page = paginator.paginate_queryset(bookings.order_by("-start_at", "-id"), request, view=self)
+        return paginator.get_paginated_response(self.get_serializer(page, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="end-now")
+    def end_now(self, request, pk=None):
+        """End a use booking that is under way: the rest of its time is free for others at once. It only ever gets
+        shorter, so it cannot come to overlap another booking (the exclusion constraint still guards the row)."""
+        user = request.user
+        with transaction.atomic():
+            booking = self.lock_booking()
+            if booking.user_id != user.id and not is_manager(user):
+                raise PermissionDenied("只能提前结束自己的预约")
+            now = timezone.now()
+            if booking.kind != Booking.Kind.USE:
+                raise Conflict("维护时段不能提前结束", code="invalid_state")
+            if booking.cancelled_at:
+                raise Conflict("预约已取消", code="invalid_state")
+            # Once only: ended in its first minute it still runs until start + 1 min, and a second end would overwrite
+            # planned_end_at with the already shortened end.
+            if booking.planned_end_at or not booking.start_at <= now < booking.end_at:
+                raise Conflict("只有正在进行的预约可以提前结束", code="invalid_state")
+            # Whole minutes, at least one after the start (the end must stay after it), never later than before.
+            end = max(now.replace(second=0, microsecond=0), booking.start_at + timedelta(minutes=1))
+            booking.planned_end_at, booking.end_at = booking.end_at, min(end, booking.end_at)
+            booking.save(update_fields=["end_at", "planned_end_at"])
+        return Response(self.get_serializer(self.get_object()).data)
+
     def lock_booking(self):
         # get_object() applies the group scope (404); lock separately, FOR UPDATE cannot follow nullable outer joins.
         return Booking.objects.select_for_update().get(pk=self.get_object().pk)
@@ -179,6 +237,9 @@ class BookingViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
                 raise Conflict("已登记使用结果的预约不能取消", code="invalid_state")
             booking.cancelled_at = timezone.now()
             booking.save(update_fields=["cancelled_at"])
+            if booking.user_id != user.id:
+                notify(booking.equipment.group_id, "你的设备预约被管理员取消", "/bookings", recipient_ids=[booking.user_id],
+                       body=f"{booking.equipment.code} {booking.equipment.name}，{timezone.localtime(booking.start_at):%m-%d %H:%M} 开始")
         return Response(self.get_serializer(self.get_object()).data)
 
     @action(detail=True, methods=["post"])

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { equipmentApi } from '../api'
+import { bookingsApi, equipmentApi } from '../api'
 import { docsApi } from '@/modules/knowledge/api'
-import type { Doc, EquipmentDetail } from '@/api/types'
+import type { Booking, Doc, EquipmentDetail } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { CONDITION_LABELS, DOC_CATEGORY_LABELS, formatPeriod, formatTime } from '@/utils/format'
 import { errorMessage, showError } from '@/utils/errors'
@@ -24,6 +24,8 @@ const editing = ref(false)
 const historyOpen = ref(false)
 
 const docs = ref<Doc[]>([])
+// Scanned at the bench: my booking of this device that is under way or ended lately without a usage report.
+const toReport = ref<Booking | null>(null)
 const latestPhotoUsage = computed(() => equipment.value?.recent_usage.find((u) => u.report?.photo_url) ?? null)
 
 async function load() {
@@ -33,6 +35,10 @@ async function load() {
     loadError.value = errorMessage(e)
     return
   }
+  bookingsApi.page({ equipment: id, mine: 1, reportable: 1, page_size: 1 }).then(
+    (page) => (toReport.value = page.results[0] ?? null),
+    () => undefined, // only a shortcut: the bookings page still has it
+  )
   try {
     // the device's SDKs, manuals, procedures... from the knowledge base (shortcut: the latest 20)
     docs.value = (await docsApi.list({ equipment: id })).results
@@ -56,7 +62,8 @@ load()
           <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" @click="router.push({ name: 'labels', query: { type: 'equipment', ids: String(equipment.id) } })" />
           <IconButton v-if="auth.isManager" :icon="Edit" label="编辑设备" @click="editing = true" />
-          <el-button type="primary" @click="router.push({ name: 'bookings', query: { equipment: equipment.id } })">预约</el-button>
+          <el-button :type="toReport ? 'default' : 'primary'" @click="router.push({ name: 'bookings', query: { equipment: equipment.id } })">预约</el-button>
+          <el-button v-if="toReport" type="primary" @click="router.push({ name: 'bookings', query: { booking: toReport.id } })">登记本次使用</el-button>
         </PageHeader>
       </template>
       <el-descriptions :column="2" border>

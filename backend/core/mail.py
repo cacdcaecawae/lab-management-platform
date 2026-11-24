@@ -74,10 +74,10 @@ def hint(exc):
     return ""
 
 
-def send(subject, body, recipients, *, test=False):
+def send(subject, body, recipients, *, test=False, bcc=False):
     """Send one message; False (nothing sent) while mail is off or there is no recipient. A test mail is sent even
     while mail is off, so the account can be tried before switching it on. SMTP errors are recorded as the last
-    failure (shown in 系统管理) and raised."""
+    failure (shown in 系统管理) and raised. bcc: the recipients do not see each other's addresses."""
     config = _config()
     recipients = list(recipients)
     if not recipients or config is None or not (config.mail_enabled or test):
@@ -92,7 +92,9 @@ def send(subject, body, recipients, *, test=False):
         timeout=TIMEOUT,
     )
     try:
-        sent = django_mail.send_mail(subject, body, config.sender, recipients, connection=connection)
+        sent = django_mail.EmailMessage(
+            subject, body, config.sender, [] if bcc else recipients, bcc=recipients if bcc else None, connection=connection
+        ).send()
     except Exception as exc:
         # update(), not save(): a failure is not a settings change and must not show in the settings history
         SiteSettings.objects.filter(pk=config.pk).update(last_mail_error=describe(exc), last_mail_error_at=timezone.now())
@@ -102,11 +104,11 @@ def send(subject, body, recipients, *, test=False):
     return bool(sent)
 
 
-def send_quietly(subject, body, recipients, what):
+def send_quietly(subject, body, recipients, what, *, bcc=False):
     """For notifications after a commit: a failure is logged and recorded, never raised, so it cannot undo the
     change that triggered it."""
     try:
-        return send(subject, body, recipients)
+        return send(subject, body, recipients, bcc=bcc)
     except Exception:  # SMTP, DNS, timeouts: any of them must not turn a saved change into a 500
         logger.exception("%s邮件发送失败：%s", what, subject)
         return False

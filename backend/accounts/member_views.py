@@ -13,6 +13,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from core.export import xlsx_bytes
+from core.filters import Ordering
 from core.params import plain_int
 from core.permissions import IsApprover, IsManager, is_supervisor, scope_group
 
@@ -40,7 +41,8 @@ class MemberViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = MemberSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, Ordering]
+    ordering_fields = ["name", "enrollment_year"]
 
     @property
     def search_fields(self):

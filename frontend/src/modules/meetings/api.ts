@@ -1,5 +1,6 @@
 import { api, type Page } from '@/api/client'
-import type { ActionItem, HistoryEntry, ListQuery, Meeting, MeetingFile, MeetingWrite } from '@/api/types'
+import { uploadForm } from '@/modules/datasets/api'
+import type { ActionItem, HistoryEntry, ListQuery, Meeting, MeetingFile, MeetingWrite, MyActionItem } from '@/api/types'
 
 export const meetingsApi = {
   list: (q?: ListQuery) => api.get<Page<Meeting>>('/api/meetings/', q),
@@ -8,11 +9,12 @@ export const meetingsApi = {
   update: (id: number, body: Partial<MeetingWrite>) => api.patch<Meeting>(`/api/meetings/${id}/`, body),
   remove: (id: number) => api.delete(`/api/meetings/${id}/`),
   history: (id: number) => api.get<HistoryEntry[]>(`/api/meetings/${id}/history/`),
-  upload: (id: number, file: File) => {
+  upload: (id: number, file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()
     form.append('file', file)
-    return api.post<MeetingFile>(`/api/meetings/${id}/files/`, form)
+    return uploadForm<MeetingFile>(`/api/meetings/${id}/files/`, form, onProgress) // slides can be large: show progress
   },
   removeFile: (fileId: number) => api.delete(`/api/meeting-files/${fileId}/`),
   setDone: (itemId: number, done: boolean) => api.post<ActionItem>(`/api/action-items/${itemId}/done/`, { done }),
+  actions: (q?: ListQuery) => api.get<Page<MyActionItem>>('/api/action-items/', q),
 }

@@ -7,11 +7,11 @@ from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
-from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.files import download
+from core.filters import Ordering, Search, equal
 from core.history import serialize_history
 from core.notifications import notify
 from core.permissions import IsActiveMember, IsManager, is_manager, is_supervisor, scope_group
@@ -21,6 +21,20 @@ from .queries import open_loans, overdue_loans
 from .serializers import LoanSerializer, ReturnSerializer, SpecimenSerializer
 
 logger = logging.getLogger(__name__)
+
+
+class LoanViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """GET /api/specimen-loans/?project=&open=1: the group's loans, newest first (a project's page lists them)."""
+
+    serializer_class = LoanSerializer
+
+    def get_queryset(self):
+        loans = scope_group(SpecimenLoan.objects.select_related("specimen", "borrower", "project", "returned_by"),
+                            self.request.user, "specimen__group")
+        params = self.request.query_params
+        if params.get("open") == "1":
+            loans = loans.filter(returned_at__isnull=True)
+        return equal(loans, params, project="project_id", specimen="specimen_id").order_by("-borrowed_at", "-id")
 
 
 class SpecimenViewSet(
@@ -35,7 +49,8 @@ class SpecimenViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = SpecimenSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [Search, Ordering]
+    ordering_fields = ["code"]
     # Not the defects: searching them would let a student test guesses at a blind test's answer.
     search_fields = ["code", "name", "material", "location"]
 
@@ -83,7 +98,9 @@ class SpecimenViewSet(
             loans = loans.filter(borrower=self.request.user)
         if any(params.get(key) == "1" for key in ("on_loan", "mine", "overdue")):
             specimens = specimens.filter(Exists(loans))
-        return specimens
+        if (public := params.get("defects_public")) in ("1", "0"):
+            specimens = specimens.filter(defects_public=public == "1")
+        return equal(specimens, params, material="material", location="location")
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)
@@ -94,7 +111,7 @@ class SpecimenViewSet(
 
     @action(detail=True)
     def loans(self, request, pk=None):
-        loans = self.get_object().loans.select_related("borrower", "project", "returned_by")
+        loans = self.get_object().loans.select_related("specimen", "borrower", "project", "returned_by")
         page = self.paginate_queryset(loans)
         return self.get_paginated_response(LoanSerializer(page, many=True).data)
 

@@ -221,6 +221,11 @@ class AdvanceSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Reimbursement.Status.choices)
 
 
+class BatchAdvanceSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.IntegerField(min_value=1, max_value=2**63 - 1), min_length=1, max_length=100)
+    status = serializers.ChoiceField(choices=[Reimbursement.Status.SUBMITTED, Reimbursement.Status.PAID])
+
+
 class ArrivedPurchaseField(serializers.PrimaryKeyRelatedField):
     """An arrived purchase request of the requesting manager's group (equipment and stock-in forms link one)."""
 

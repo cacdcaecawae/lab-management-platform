@@ -31,15 +31,16 @@
 | 文件 | 内容 | 实际走通 |
 |---|---|---|
 | [navigation.md](./navigation.md) | 可收起的侧栏分组、模块颜色、共用的顶栏标签、离开前提醒 | 2026-11-21，PR #39 分支（mgr，1440 宽） |
-| [search.md](./search.md) | 分组搜索、角色范围、导航、窄屏 | 未走过：环境限制 Chromium 启动 |
+| [search.md](./search.md) | 分组搜索、角色范围、导航、窄屏 | 2026-11-23 issue #48 其余提案分支走过新增类别（成员、经费、报销、任务、行动项、文件）、编号搜索和 ↑ / ↓ / Enter；里程碑、角色范围、窄屏未走 |
+| [lists.md](./lists.md) | 即时搜索、按列排序、新筛选、编号搜索、远程下拉、填写提示、上传中离开先问 | 2026-11-23 issue #48 其余提案分支走过设备、采购、任务看板；上传中离开先问、知识库标签筛选未走 |
 | [datasets.md](./datasets.md) | 新建数据集、上传、同名拒绝、下载与 SHA256、跨账号隔离 | 2026-11-17，代码 `d01c121`（界面改版后重走）；2026-11-23 `e10bbb5` 实测单文件预览与整包下载逐字节比对 |
-| [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 未走过（组件与 PostgreSQL 回归已通过；需隔离真实浏览器） |
+| [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 2026-11-23 issue #48 其余提案分支走过按模块筛选、单条标为已读和新增的几类通知；账号隔离未走 |
 | [login.md](./login.md) | 首页、登录弹窗、首次登录改密、退出 | 2026-11-22 首页改版时走过 `home`、`home-next`、`login-ok`、`login-wrong`（见 login.md 顶部）；改版前没按本文件的步骤走过；2026-11-17 在本机试用栈（`scripts/trial.ps1`，不是 verify-lab 实例）上走过 `login-ok`、`login-wrong`、`login-first-change`（运维、管理员、学生各一次），`login-logout` 未走 |
 | [experiments.md](./experiments.md) | 新建实验记录、提交锁定、导师退回、修改历史 | 未走过 |
 | [reports.md](./reports.md) | 写周报、提交、需补充、重新提交、已阅 | 其余流程待复验；2026-11-23 `e10bbb5` 实测跨年带入、上周缺报、未交名单失败后重试；`reports-manager-not-advisor` 在 R1 分支上走过 |
 | [signup.md](./signup.md) | 学生用注册链接申请、待审核不能登录、管理员通过 / 拒绝 / 全部通过、换链接后旧链接失效 | 2026-11-20，基于 `c22694e` 的改动：全部子功能走通（`signup-hidden` 用学生丙的视角看）；"复制链接"没有读回剪贴板 |
 | [members.md](./members.md) | 管理员新建学生、角色和标签、身份与花名册、重置密码 | 2026-11-17 在本机试用栈上走过 `members-create`、`members-no-edit-supervisors`；2026-11-23 在 R1 分支上走过 `members-identity`、`members-filters`、`members-manager-tag`（另外走过取消管理员、导师给自己加管理员），其余未走 |
-| [equipment.md](./equipment.md) | 设备台账、拖选预约、重叠与并发拒绝、使用登记与照片、待检查、编辑不覆盖待检查、取消、实验记录选设备、修改历史显示名字、维护预约、导师只读、外组隔离、手机日视图 | 2026-11-17，代码 `e6d92a7`；"编辑不覆盖待检查"在 F1 修复后单独走过；修改历史显示名字、维护预约、导师只读在第二期收尾时走过；`booking-max` 在 `c38b47a` 上走过；集成实例中管理员已打开使用统计页；Excel 下载仍以自动测试为据 |
+| [equipment.md](./equipment.md) | 设备台账、拖选预约、提前结束、预约列表、扫码登记、重叠与并发拒绝、使用登记与照片、待检查、编辑不覆盖待检查、取消、实验记录选设备、修改历史显示名字、维护预约、导师只读、外组隔离、手机日视图 | 2026-11-17，代码 `e6d92a7`；"编辑不覆盖待检查"在 F1 修复后单独走过；修改历史显示名字、维护预约、导师只读在第二期收尾时走过；`booking-max` 在 `c38b47a` 上走过；集成实例中管理员已打开使用统计页；Excel 下载仍以自动测试为据 |
 | [labels.md](./labels.md) | 设备与试件二维码标签、批量或单件打印、扫码登录与首次改密回跳 | 集成实例已核对设备与试件的打印入口、首次改密回跳；纸质标签和实体扫码待验证 |
 | [consumables.md](./consumables.md) | 耗材新增、入库、领用与超量拒绝、低库存提醒、盘点、流水、退回、导师只读、外组隔离 | 2026-11-17，代码 `e6d92a7`；退回、导师只读在第二期收尾时走过 |
 | [specimens.md](./specimens.md) | 试样与标准件：新增与缺陷参数、盲测时学生看不到（页面和接口）、借用与逾期、别人借不了、归还、公开缺陷参数、修改历史不记数值、实验记录选台账试件 | 2026-11-18，分支 `feat/specimens`（走查中发现详情地址直接打开是"页面不存在"，修好路由后重走）；集成 Chromium 已走借用筛选、外组隔离及点击侧栏清除逾期筛选；2026-11-23 `e10bbb5` 实测两次带照片归还后展示最新位置 |
@@ -54,6 +55,8 @@
 
 
 2026-11-23 在 issue #48 B8/U1/U3 分支（`fix/issue-48-b8-u1-u3`）上走过：equipment 的 `mobile`、`booking-link`；achievements `phone-title`；meetings `not-found` 和行动项手机卡片；consumables 到期文字；reports `reports-week-fixed`、`reports-feedback-guard`；system `mail-unsaved`；login `login-wrong`（重开不留红字）、`login-first-change`（连点只发一次）；knowledge 菜单清掉设备筛选；phone `phone-two-tags`；首页图标在 375 / 490px 不出卡片。证据在 `backend/var/verify-evidence/2026-11-23-issue48-b8/`。
+
+2026-11-23 在 issue #48 其余提案分支（`feat/issue-48-rest`）上走过：procurement、reimbursements、consumables 的采购到货链（入库、登记为设备、发起报销、低库存发起采购、批量交财务）；consumables 标签扫码领用和流水；equipment 提前结束、预约列表、"登记本次使用"；meetings 导师新建、带入行动项、行动项标签页；reports 提醒未交的人；project-tasks 资产标签页、成员写进展、看板按负责人筛选；datasets 拖入上传（合成 drop 事件）；experiments 关联数据集按编号远程搜索；工作台新待办。证据和没走的部分在 `backend/var/verify-evidence/2026-11-23-issue48-rest/README.md`。
 开发计划里"未在浏览器验证"的项目（导师角色、退回、修改历史抽屉、处理记录完整提交、窄屏等）还没有对应的功能文件或尚未走过；做这些功能时按上面的格式补齐。
 
 耗材批次新增流程：未走过，隔离 Chromium 启动受环境限制。

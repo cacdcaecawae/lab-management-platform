@@ -34,8 +34,12 @@ def test_used_migration_refuses_reverse_and_preserves_mode_history(api, manager)
     active = client.post(url, {"tracks_batches": True, "stock_version_seen": 0}).data
     assert active["tracks_batches"]
     assert client.post(url, {"tracks_batches": False, "stock_version_seen": active["stock_version"]}).status_code == 200
-    with pytest.raises(IrreversibleError, match="不能自动降级"):
-        MigrationExecutor(connection).migrate([PREVIOUS])
+    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    try:
+        with pytest.raises(IrreversibleError, match="不能自动降级"):
+            MigrationExecutor(connection).migrate([PREVIOUS])
+    finally:  # later migrations were unapplied before the refusal: put them back for the tests that follow
+        MigrationExecutor(connection).migrate(leaves)
     # Even a once-enabled then disabled item retains its revision history.
     assert not Consumable.objects.get(pk=item.pk).tracks_batches
     assert list(item.txns.order_by("pk").values_list("kind", "quantity")) == [("batch_mode", 0), ("batch_mode", 0)]

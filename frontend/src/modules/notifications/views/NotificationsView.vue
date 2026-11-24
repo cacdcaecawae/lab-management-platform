@@ -12,7 +12,9 @@ import IconButton from '@/components/IconButton.vue'
 
 const router = useRouter()
 const store = useNotificationsStore()
-const filters = reactive({ unread: '' as 1 | '' })
+const filters = reactive({ unread: '' as 1 | '', module: '' })
+// the sidebar's groups (backend core/notification_views.py MODULE_PATHS)
+const MODULES = { projects: '项目', research: '科研记录', reports: '周报组会', lab: '设备耗材', money: '采购经费', members: '成员' }
 const busy = ref(false)
 const { items, count, page, pageSize, loading, load } = usePagedList(notificationsApi.list, filters)
 
@@ -27,6 +29,15 @@ async function open(item: SiteNotification) {
     showError(err)
   } finally {
     busy.value = false
+  }
+}
+
+async function markRead(item: SiteNotification) {
+  try {
+    Object.assign(item, await notificationsApi.read(item.id))
+    void store.refresh()
+  } catch (err) {
+    showError(err)
   }
 }
 
@@ -49,6 +60,9 @@ async function readAll() {
 <template>
   <el-card v-loading="loading" class="card">
     <PageToolbar>
+      <el-select v-model="filters.module" placeholder="全部模块" aria-label="模块" clearable>
+        <el-option v-for="(label, key) in MODULES" :key="key" :label="label" :value="key" />
+      </el-select>
       <el-checkbox v-model="filters.unread" :true-value="1" false-value="">仅未读</el-checkbox>
       <template #actions>
         <IconButton :icon="Finished" label="全部标为已读" :loading="busy" @click="readAll" />
@@ -60,6 +74,7 @@ async function readAll() {
         <el-button link type="primary" :disabled="busy" @click="open(item)">{{ item.title }}</el-button>
         <el-tag v-if="!item.read_at" class="status-tag" type="primary" disable-transitions>未读</el-tag>
         <span>{{ formatTime(item.created_at) }}</span>
+        <el-button v-if="!item.read_at" link class="mark" @click="markRead(item)">标为已读</el-button>
         <p v-if="item.body">{{ item.body }}</p>
       </li>
     </ul>
@@ -71,4 +86,5 @@ async function readAll() {
 .notifications { list-style: none; margin: 0; padding: 0; }
 .notifications li { border-bottom: 1px solid var(--lab-border); padding: 12px 0; }
 .notifications span { margin-left: 10px; color: var(--el-text-color-secondary); }
+.notifications .mark { margin-left: 10px; }
 </style>

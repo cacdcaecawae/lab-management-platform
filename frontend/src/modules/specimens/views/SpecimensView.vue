@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { specimensApi } from '../api'
 import type { Specimen } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { useSuggestions } from '@/api/suggestions'
 import { useAuthStore } from '@/stores/auth'
 import { SPECIMEN_KIND_LABELS, SPECIMEN_STATUSES, STATUS } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
@@ -25,11 +27,16 @@ const filters = reactive({
   search: '',
   kind: '',
   status: '',
+  material: '',
+  location: '',
+  defects_public: '' as '1' | '0' | '',
   ...routeFilters(),
 })
 watch(() => route.query, () => Object.assign(filters, routeFilters()))
-const keyword = ref('')
-const { items, count, page, pageSize, loading } = usePagedList(specimensApi.list, filters)
+const keyword = useLiveSearch(filters)
+const materials = useSuggestions('specimen.material')
+const locations = useSuggestions('specimen.location')
+const { items, count, page, pageSize, loading, sort } = usePagedList(specimensApi.list, filters)
 const creating = ref(false)
 const selected = ref<number[]>([])
 const selectLabels = (rows: Specimen[]) => { selected.value = rows.map((row) => row.id) }
@@ -48,6 +55,16 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
       <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
         <el-option v-for="s in SPECIMEN_STATUSES" :key="s" :label="STATUS[s].label" :value="s" />
       </el-select>
+      <el-select v-model="filters.material" aria-label="材料" placeholder="全部材料" clearable filterable remote :remote-method="materials.search">
+        <el-option v-for="v in materials.values.value" :key="v" :label="v" :value="v" />
+      </el-select>
+      <el-select v-model="filters.location" aria-label="存放位置" placeholder="全部位置" clearable filterable remote :remote-method="locations.search">
+        <el-option v-for="v in locations.values.value" :key="v" :label="v" :value="v" />
+      </el-select>
+      <el-select v-if="auth.isSupervisor" v-model="filters.defects_public" aria-label="缺陷参数" placeholder="缺陷参数" clearable>
+        <el-option label="对学生公开" value="1" />
+        <el-option label="盲测（不公开）" value="0" />
+      </el-select>
       <el-checkbox v-model="filters.on_loan" :true-value="1" false-value="">只看借出的</el-checkbox>
       <el-checkbox v-model="filters.mine" :true-value="1" false-value="">我借的</el-checkbox>
       <el-checkbox v-model="filters.overdue" :true-value="1" false-value="">逾期未还</el-checkbox>
@@ -56,9 +73,9 @@ const onCreated = (s: Specimen) => router.push({ name: 'specimen-detail', params
         <el-button v-if="auth.isManager" type="primary" @click="creating = true">新建试件</el-button>
       </template>
     </PageToolbar>
-    <el-table empty-text="暂无试件" v-loading="loading" :data="items" @selection-change="selectLabels">
+    <el-table empty-text="暂无试件" v-loading="loading" :data="items" @selection-change="selectLabels" @sort-change="sort">
       <el-table-column v-if="auth.isManager" type="selection" width="44" />
-      <el-table-column label="编号" min-width="110">
+      <el-table-column label="编号" prop="code" sortable="custom" min-width="110">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'specimen-detail', params: { id: row.id } }">{{ row.code }}</RouterLink>
         </template>

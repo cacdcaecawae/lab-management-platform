@@ -138,10 +138,27 @@ const queue = ref<UploadItem[]>([])
 const uploading = ref(false)
 const picker = ref<HTMLInputElement>()
 
-async function onPick(e: Event) {
+function onPick(e: Event) {
   const input = e.target as HTMLInputElement
   const picked = Array.from(input.files ?? [])
   input.value = '' // allow picking the same file again after an error
+  void upload(picked)
+}
+
+// Files dragged onto the 文件 card go the same way as picked ones (progress, same-name refusal, SHA256, disk space).
+const dragging = ref(false)
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  if (!isOwner.value || uploading.value) return
+  const entries = Array.from(e.dataTransfer?.items ?? []).map((item) => item.webkitGetAsEntry?.())
+  if (entries.some((entry) => entry?.isDirectory)) {
+    ElMessage.error('不支持拖入文件夹，请把文件夹里的文件拖进来')
+    return
+  }
+  void upload(Array.from(e.dataTransfer?.files ?? []))
+}
+
+async function upload(picked: File[]) {
   if (!picked.length) return
   const start = queue.value.length
   queue.value.push(...picked.map((f) => ({ name: f.name, size: f.size, progress: 0, status: 'waiting' as const, error: '' })))
@@ -199,7 +216,14 @@ load()
       </el-descriptions>
     </el-card>
 
-    <el-card class="card">
+    <el-card
+      class="card files-card"
+      :class="{ dropping: dragging }"
+      @dragover.prevent="dragging = isOwner && !uploading"
+      @dragleave.self="dragging = false"
+      @drop.prevent="onDrop"
+    >
+      <div v-if="dragging" class="drop-hint">松开上传</div>
       <template #header>
         <div class="actions">
           <span>文件</span>
@@ -320,6 +344,24 @@ load()
 <style scoped>
 .notice {
   margin-bottom: 12px;
+}
+.files-card {
+  position: relative;
+}
+.files-card.dropping {
+  outline: 2px dashed var(--el-color-primary);
+  outline-offset: -8px;
+}
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--el-color-primary);
+  pointer-events: none;
 }
 .upload-item {
   margin-bottom: 12px;

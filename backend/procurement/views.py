@@ -1,7 +1,7 @@
 import re
 
 from django.db import transaction
-from django.db.models import Count, F, ProtectedError, Q, Sum
+from django.db.models import Count, F, OuterRef, ProtectedError, Q, Subquery, Sum
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -12,7 +12,6 @@ from openpyxl import Workbook
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.filters import SearchFilter
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
@@ -21,15 +20,18 @@ from core import mail
 from core.exceptions import Conflict, MailFailed
 from core.export import xlsx_bytes
 from core.files import delete_on_commit, download
+from core.filters import Ordering, Search, equal
 from core.history import serialize_history
+from core.notifications import notify as notify_group
 from core.params import plain_int
 from core.permissions import IsActiveMember, IsFinance, IsManager, is_approver, is_manager, scope_finance, scope_group
 
 from .mail import notify, send_finance_reminder
 from .notifications import notify_purchase
-from .models import Approval, Attachment, Fund, PurchaseRequest, Reimbursement
+from .models import Approval, Attachment, Fund, PurchaseItem, PurchaseRequest, Reimbursement
 from .queries import awaiting_review, returned_flag
 from .serializers import (
+    BatchAdvanceSerializer,
     AdvanceSerializer,
     AttachmentSerializer,
     FinanceEmailSerializer,
@@ -120,7 +122,7 @@ class FundViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = FundSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [Search]
     search_fields = ["code", "name"]
 
     def get_permissions(self):
@@ -132,7 +134,7 @@ class FundViewSet(
         funds = scope_group(Fund.objects.select_related("owner"), self.request.user)
         if self.action == "list" and self.request.query_params.get("active") == "1":
             funds = funds.filter(active=True)
-        return funds
+        return equal(funds, self.request.query_params, owner="owner_id") if self.action == "list" else funds
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group)
@@ -143,8 +145,10 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     Every state change locks the row first, then checks the state (see the proposal note's concurrency rules)."""
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-    filter_backends = [SearchFilter]
+    filter_backends = [Search, Ordering]
     search_fields = ["purpose", "items__name", "owner__name"]
+    code_prefix = "PR"
+    ordering_fields = ["submitted_at", "total_amount"]
 
     def get_serializer_class(self):
         return PurchaseSerializer if self.action == "list" else PurchaseDetailSerializer
@@ -156,7 +160,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             .prefetch_related("items")
             .annotate(returned=returned_flag())
         )
-        if self.action != "list":  # list filters must not turn detail URLs into 404s
+        if self.action not in ("list", "export"):  # list filters must not turn detail URLs into 404s
             return purchases.prefetch_related("approvals__reviewer", "attachments__uploaded_by")
         params = self.request.query_params
         if params.get("status"):
@@ -167,11 +171,36 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchases = purchases.filter(owner=user)
         if params.get("todo") == "1":
             purchases = awaiting_review(purchases, user)
-        return purchases
+        # the total is not stored (PurchaseRequest.total); a subquery, so that joins from the search cannot multiply it
+        line_totals = PurchaseItem.objects.filter(request=OuterRef("pk")).values("request")
+        purchases = purchases.annotate(
+            total_amount=Subquery(line_totals.annotate(sum=Sum(F("quantity") * F("unit_price"))).values("sum"))
+        )
+        return equal(purchases, params, fund="fund_id", owner="owner_id")
 
     def lock(self):
         # get_object() applies the scope (404); lock separately so FOR UPDATE stays on this one row.
         return PurchaseRequest.objects.select_for_update().get(pk=self.get_object().pk)
+
+    @action(detail=False)
+    def export(self, request):
+        """The list as .xlsx: the same scope, filters, search and order as the page."""
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "采购申请"
+        sheet.append(["编号", "申请人", "经费号", "经费名称", "用途", "明细", "合计（元）", "状态", "提交时间"])
+        for p in self.filter_queryset(self.get_queryset()):
+            lines = "；".join(f"{i.name} {i.spec} × {i.quantity}".replace("  ", " ") for i in p.items.all())
+            sheet.append([
+                p.code, p.owner.display_name, p.fund.code if p.fund else "", p.fund.name if p.fund else "", p.purpose, lines,
+                p.total, p.get_status_display(), local_day(p.submitted_at),
+            ])
+        for cell in sheet["G"][1:]:
+            cell.number_format = "0.00"
+        response = HttpResponse(xlsx_bytes(book), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        filename = f"采购申请-{timezone.localdate():%Y%m%d}.xlsx"
+        response["Content-Disposition"] = content_disposition_header(as_attachment=True, filename=filename)
+        return response
 
     def respond(self, pk, code=status.HTTP_200_OK):
         return Response(self.get_serializer(self.get_queryset().get(pk=pk)).data, status=code)
@@ -448,6 +477,13 @@ def summarize(queryset, by):
     return rows, overall
 
 
+def first_message(detail):
+    """The first readable message of a DRF error detail (a string, a list or a dict of lists)."""
+    while isinstance(detail, (list, dict)):
+        detail = next(iter(detail.values() if isinstance(detail, dict) else detail), "")
+    return str(detail)
+
+
 def local_day(value):
     return timezone.localtime(value).strftime("%Y-%m-%d") if value else ""
 
@@ -458,6 +494,11 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = ReimbursementSerializer
+    # The list, the statistics and the export share these (filter_queryset), so their totals agree.
+    filter_backends = [Search, Ordering]
+    search_fields = ["description", "owner__name"]
+    code_prefix = "RB"
+    ordering_fields = ["occurred_on", "amount"]
 
     def get_permissions(self):
         if self.action in ("stats", "export"):
@@ -512,27 +553,59 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
     def advance(self, request, pk=None):
         target = AdvanceSerializer(data=request.data)
         target.is_valid(raise_exception=True)
-        target = target.validated_data["status"]
         with transaction.atomic():
-            reimbursement = self.lock()
-            self.check_writer(reimbursement)
-            current = reimbursement.status
-            if (current, target) not in {(R.PENDING, R.SUBMITTED), (R.SUBMITTED, R.PAID), (R.SUBMITTED, R.PENDING)}:
-                raise Conflict(f"不能从“{R(current).label}”改为“{R(target).label}”", code="invalid_state")
-            if target == R.PENDING and not is_manager(request.user):
-                raise PermissionDenied("只有管理员可以退回")
-            if target == R.SUBMITTED and not reimbursement.attachments.filter(kind=Attachment.Kind.INVOICE).exists():
-                raise ValidationError({"attachments": ["交财务前请先上传发票"]})
-            reimbursement.status = target
-            if target == R.SUBMITTED:
-                reimbursement.submitted_at = timezone.now()
-            elif target == R.PAID:
-                reimbursement.paid_at = timezone.now()
-            else:
-                reimbursement.submitted_at = None
-                reimbursement._change_reason = f"{request.user.display_name} 退回待提交"
-            reimbursement.save()
+            reimbursement = self.move(self.lock(), target.validated_data["status"])
         return Response(self.get_serializer(self.get_queryset().get(pk=reimbursement.pk)).data)
+
+    @action(detail=False, methods=["post"], url_path="batch-advance")
+    def batch_advance(self, request):
+        """{ids, status}: hand several to finance (submitted) or mark them paid (managers). Each row is locked and moved on
+        its own: one that cannot (no invoice, wrong state, not yours) is listed with the reason and the others still go."""
+        body = BatchAdvanceSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        target = body.validated_data["status"]
+        if target == R.PAID and not is_manager(request.user):
+            raise PermissionDenied("只有管理员可以批量标到账")
+        done, failed = [], []
+        for pk in dict.fromkeys(body.validated_data["ids"]):
+            if not self.scoped().filter(pk=pk).exists():
+                failed.append({"id": pk, "code": "", "reason": "不存在或无权查看"})
+                continue
+            try:
+                with transaction.atomic():
+                    self.move(Reimbursement.objects.select_for_update().get(pk=pk), target)
+                done.append(pk)
+            except (PermissionDenied, Conflict, ValidationError) as exc:
+                code = Reimbursement.objects.get(pk=pk).code
+                failed.append({"id": pk, "code": code, "reason": first_message(exc.detail)})
+        return Response({"done": done, "failed": failed})
+
+    def move(self, reimbursement, target):
+        """Check and apply one status change to a locked row; notify its owner when someone else did it."""
+        request = self.request
+        self.check_writer(reimbursement)
+        current = reimbursement.status
+        if (current, target) not in {(R.PENDING, R.SUBMITTED), (R.SUBMITTED, R.PAID), (R.SUBMITTED, R.PENDING)}:
+            raise Conflict(f"不能从“{R(current).label}”改为“{R(target).label}”", code="invalid_state")
+        if target == R.PENDING and not is_manager(request.user):
+            raise PermissionDenied("只有管理员可以退回")
+        if target == R.SUBMITTED and not reimbursement.attachments.filter(kind=Attachment.Kind.INVOICE).exists():
+            raise ValidationError({"attachments": ["交财务前请先上传发票"]})
+        reimbursement.status = target
+        if target == R.SUBMITTED:
+            reimbursement.submitted_at = timezone.now()
+        elif target == R.PAID:
+            reimbursement.paid_at = timezone.now()
+        else:
+            reimbursement.submitted_at = None
+            reimbursement._change_reason = f"{request.user.display_name} 退回待提交"
+        reimbursement.save()
+        if target in (R.PAID, R.PENDING) and reimbursement.owner_id != request.user.id:
+            notify_group(
+                reimbursement.owner.group_id, "报销已到账" if target == R.PAID else "报销被退回待提交", "/reimbursements",
+                recipient_ids=[reimbursement.owner_id], body=f"{reimbursement.code} {reimbursement.description}".strip(),
+            )
+        return reimbursement
 
     @action(detail=True, methods=["post"], parser_classes=[MultiPartParser])
     def attachments(self, request, pk=None):
@@ -555,7 +628,7 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
     @action(detail=False)
     def stats(self, request):
         by = request.query_params.get("by", "category")
-        rows, overall = summarize(filter_reimbursements(self.scoped(), request.query_params), by)
+        rows, overall = summarize(self.filter_queryset(filter_reimbursements(self.scoped(), request.query_params)), by)
         # Amounts as "123.40" strings, like the serializers' DecimalField.
         return Response(
             {
@@ -569,7 +642,9 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
     @action(detail=False)
     def export(self, request):
         by = request.query_params.get("by", "category")
-        reimbursements = filter_reimbursements(self.scoped(), request.query_params)
+        reimbursements = self.filter_queryset(filter_reimbursements(self.scoped(), request.query_params))
+        if not request.query_params.get("ordering"):
+            reimbursements = reimbursements.order_by("occurred_on", "id")
         rows, overall = summarize(reimbursements, by)
         book = Workbook()
         summary = book.active
@@ -580,7 +655,7 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
         summary.append(["合计", overall["count"], overall["total"]])
         details = book.create_sheet("明细")
         details.append(["编号", "报销人", "经费号", "经费名称", "类别", "金额（元）", "发生日期", "状态", "交财务", "到账", "关联采购", "说明"])
-        for r in reimbursements.select_related("owner", "fund", "purchase").order_by("occurred_on", "id"):
+        for r in reimbursements.select_related("owner", "fund", "purchase"):
             details.append([
                 r.code, r.owner.display_name, r.fund.code, r.fund.name, r.get_category_display(), r.amount, r.occurred_on,
                 r.get_status_display(), local_day(r.submitted_at), local_day(r.paid_at),

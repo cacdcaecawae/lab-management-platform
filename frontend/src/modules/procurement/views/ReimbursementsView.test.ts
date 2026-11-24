@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import type { Me, Reimbursement } from '@/api/types'
+import { routeLocationKey } from 'vue-router'
 import ReimbursementsView from './ReimbursementsView.vue'
 
 vi.mock('element-plus', async (original) => ({
@@ -101,4 +102,23 @@ it('a save answering after another record was opened leaves that record on scree
   expect(shown.map((o) => o.querySelector('.el-dialog__title')?.textContent)).toEqual([`报销 ${other.code}`])
   expect(document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!.value).toBe('差旅')
   wrapper.unmount()
+})
+
+it('发起报销 from a purchase request opens a new one linked to it and filled in', async () => {
+  const purchase = { id: 5, code: 'PR-2026-0005', owner: me, purpose: '探头', status: 'arrived', total: '2400.00', items: [],
+    fund: { id: 2, code: 'HX-002', name: '横向', active: true } }
+  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(
+    url === '/api/purchases/5/' ? purchase : { count: 0, next: null, previous: null, results: [] },
+  ), { status: 200 }))))
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { ...me, role: 'student', is_supervisor: false } as Me
+  const wrapper = mount(ReimbursementsView, {
+    global: { plugins: [ElementPlus, pinia], provide: { [routeLocationKey as symbol]: { query: { purchase: '5' } } } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!.value).toBe('探头')
+  expect(document.querySelector<HTMLInputElement>('.amount-input input')!.value).toBe('2400.00')
+  wrapper.unmount()
+  document.body.innerHTML = ''
 })

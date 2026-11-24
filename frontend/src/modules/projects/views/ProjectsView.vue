@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { projectsApi } from '@/modules/projects/api'
 import type { Project } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
@@ -13,7 +14,7 @@ import PageToolbar from '@/components/PageToolbar.vue'
 const auth = useAuthStore()
 const router = useRouter()
 const filters = reactive({ status: '', search: '', mine: '' as number | '' })
-const keyword = ref('')
+const keyword = useLiveSearch(filters)
 const { items, count, page, pageSize, loading } = usePagedList(projectsApi.list, filters)
 const creating = ref(false)
 

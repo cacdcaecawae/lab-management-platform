@@ -54,10 +54,10 @@ cp "$SKILL/spec/EquipmentBooking.tla" "$RUN/"   # an ASCII path for Java; the re
 RUN_W=$(winpath "$RUN")
 JAR_W="$(winpath "$(dirname "$JAR")")/$(basename "$JAR")"
 
-ALL='"create", "report", "cancel", "edit"'
-NO_EDIT='"create", "report", "cancel"'
+ALL='"create", "report", "cancel", "end", "edit"'
+NO_EDIT='"create", "report", "cancel", "end"'
 BODIES='"omit", "available", "needs_check", "repair"'
-INVARIANTS="NoUseBookingWhileFlagged NoSilentRevert NotCancelledAndReported OneReportNo500"
+INVARIANTS="NoUseBookingWhileFlagged NoSilentRevert NotCancelledAndReported OneReportNo500 NoOverlap EndsOnlyStartedUse"
 failed=0
 
 # run <name> <request kinds> <edit bodies> <mutant> <expected: pass | invariant name | deadlock> <invariants...>
@@ -104,6 +104,7 @@ run break-cancel-skips-report-check     "$NO_EDIT" "$BODIES" cancel_skips_report
 run break-report-skips-cancelled-check  "$NO_EDIT" "$BODIES" report_skips_cancelled_check NotCancelledAndReported NotCancelledAndReported
 run break-report-without-booking-lock   "$NO_EDIT" "$BODIES" report_without_booking_lock OneReportNo500 OneReportNo500
 run break-cancel-then-lock-equipment    "$NO_EDIT" "$BODIES" cancel_then_lock_equipment deadlock
+run break-end-skips-started-check       "$NO_EDIT" "$BODIES" end_skips_started_check EndsOnlyStartedUse EndsOnlyStartedUse
 # The edit guards: F1 (an omitted status keeps the latest value) and R1 (a sent status is checked against status_seen).
 run break-edit-writes-stale-status      "$ALL" '"omit"' edit_writes_stale_status NoSilentRevert NoSilentRevert
 run break-edit-skips-status-seen-check  "$ALL" "$BODIES" edit_skips_status_seen_check NoSilentRevert NoSilentRevert

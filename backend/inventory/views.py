@@ -1,22 +1,28 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Exists, F, Max, OuterRef, Sum
+from django.db.models import Exists, F, Max, OuterRef, Subquery, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date
+from django.utils.http import content_disposition_header
+from openpyxl import Workbook
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
+from core.export import xlsx_bytes
+from core.filters import Ordering, Search, equal
+from core.notifications import notify
 from core.params import plain_int
-from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
+from core.permissions import IsActiveMember, IsManager, is_manager, is_supervisor, scope_group
 
 from .models import Batch, Consumable, StockTxn
 from .queries import batch_details, batches_with_balance
-from .serializers import BatchModeSerializer, ConsumableSerializer, StockTxnSerializer
+from .serializers import BatchModeSerializer, ConsumableSerializer, LedgerTxnSerializer, StockTxnSerializer
 
 MANAGER_ONLY = {StockTxn.Kind.IN, StockTxn.Kind.ADJUST}
 
@@ -55,8 +61,9 @@ class ConsumableViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = ConsumableSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ["name", "spec", "location"]
+    filter_backends = [Search, Ordering]
+    search_fields = ["name", "spec", "category", "location"]
+    ordering_fields = ["name", "stock", "nearest_expiry_on"]
 
     def get_permissions(self):
         if self.action in ("create", "partial_update", "batch_mode"):
@@ -71,6 +78,10 @@ class ConsumableViewSet(
             .order_by("name", "spec", "id")
             .prefetch_related(batch_details())
         )
+        if self.action == "list":  # for sorting by 最近到期: the earliest expiry among batches still in stock
+            nearest = batches_with_balance().filter(consumable=OuterRef("pk"), stock__gt=0, expires_on__isnull=False)
+            consumables = consumables.annotate(nearest_expiry_on=Subquery(nearest.values("expires_on")[:1]))
+            consumables = equal(consumables, self.request.query_params, category="category", location="location")
         if self.action == "list" and (item := self.request.query_params.get("item")):
             return consumables.filter(pk=item) if plain_int(item) else consumables.none()
         if self.action == "list" and self.request.query_params.get("low") == "1":
@@ -178,4 +189,61 @@ class ConsumableViewSet(
             if stock + data["quantity"] < 0:
                 raise ValidationError({"quantity": [f"库存不足：当前 {stock} {locked.unit}"]})
             serializer.save(consumable=locked, handler=request.user, batch=batch)
+            # Only the step across the line: it is said once, and again only after a restock lifted it above.
+            if stock >= locked.safety_stock > stock + data["quantity"]:
+                notify(locked.group_id, "耗材低于安全库存", "/consumables", role="manager",
+                       body=f"{locked} 剩 {stock + data['quantity']} {locked.unit}，安全库存 {locked.safety_stock}")
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+def local_day(text, name):
+    try:
+        day = parse_date(text)
+    except ValueError:  # 2026-13-45: the right shape, not a date
+        day = None
+    if day is None:
+        raise ValidationError({name: ["格式为 YYYY-MM-DD"]})
+    return day
+
+
+class StockTxnViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """The group's ledger across consumables, newest first: advisors and managers see every entry, others only what
+    they handled themselves. Filters: consumable, kind, handler, project, from / to (YYYY-MM-DD, local). The export
+    holds exactly what the list shows."""
+
+    serializer_class = LedgerTxnSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        txns = scope_group(
+            StockTxn.objects.select_related("consumable", "batch", "handler", "project", "purchase"), user, "consumable__group"
+        )
+        if not is_supervisor(user):
+            txns = txns.filter(handler=user)
+        params = self.request.query_params
+        if kind := params.get("kind"):
+            txns = txns.filter(kind=kind) if kind in StockTxn.Kind.values else txns.none()
+        txns = equal(txns, params, consumable="consumable_id", handler="handler_id", project="project_id")
+        if params.get("from"):
+            txns = txns.filter(created_at__date__gte=local_day(params["from"], "from"))
+        if params.get("to"):
+            txns = txns.filter(created_at__date__lte=local_day(params["to"], "to"))
+        return txns.order_by("-created_at", "-id")
+
+    @action(detail=False)
+    def export(self, request):
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "耗材流水"
+        sheet.append(["时间", "耗材", "规格", "类型", "批号", "数量", "单位", "经手人", "项目", "采购申请", "备注"])
+        for txn in self.get_queryset():
+            sheet.append([
+                timezone.localtime(txn.created_at).strftime("%Y-%m-%d %H:%M"), txn.consumable.name, txn.consumable.spec,
+                txn.get_kind_display(), txn.batch.batch_no if txn.batch else "", txn.quantity, txn.consumable.unit,
+                txn.handler.display_name, txn.project.name if txn.project else "", txn.purchase.code if txn.purchase else "",
+                txn.note,
+            ])
+        response = HttpResponse(xlsx_bytes(book), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        filename = f"耗材流水-{timezone.localdate():%Y%m%d}.xlsx"
+        response["Content-Disposition"] = content_disposition_header(as_attachment=True, filename=filename)
+        return response

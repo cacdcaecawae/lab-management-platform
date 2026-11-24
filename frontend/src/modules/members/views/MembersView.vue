@@ -5,6 +5,8 @@ import { membersApi } from '@/modules/members/api'
 import type { Identity, MemberListItem, MemberStatus } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { suggest } from '@/api/suggestions'
 import { useAuthStore } from '@/stores/auth'
 import { IDENTITY_LABELS, MEMBER_STATUS, ROLE_LABELS, renamedMessage, roleText } from '@/utils/format'
 import { authApi } from '@/api/auth'
@@ -23,8 +25,8 @@ const storageOpen = ref(false)
 const isManager = computed(() => auth.isManager)
 
 const filters = reactive({ search: '', role: '', identity: '', flag: '', tag: '', year: '' as number | '', status: 'active' })
-const keyword = ref('')
-const { items, count, page, pageSize, loading, load } = usePagedList(membersApi.list, filters)
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading, load, sort } = usePagedList(membersApi.list, filters)
 // shortcut: the 词条 and years offered come from the first 100 members; a group has fewer.
 const everyone = useOptions(() => membersApi.list({ page_size: 100 }))
 const tagOptions = computed(() => [...new Set(everyone.value.flatMap((m) => m.tags))].sort())
@@ -171,8 +173,8 @@ async function doReset() {
         <el-button v-if="isManager" type="primary" @click="openForm(null)">新建成员</el-button>
       </template>
     </PageToolbar>
-    <el-table :empty-text="filters.status || filters.identity || filters.role || filters.flag || filters.year || filters.tag || filters.search ? '没有符合条件的成员' : '暂无成员'" v-loading="loading" :data="items">
-      <el-table-column prop="name" label="姓名" min-width="100" />
+    <el-table @sort-change="sort" :empty-text="filters.status || filters.identity || filters.role || filters.flag || filters.year || filters.tag || filters.search ? '没有符合条件的成员' : '暂无成员'" v-loading="loading" :data="items">
+      <el-table-column prop="name" label="姓名" sortable="custom" min-width="100" />
       <el-table-column v-if="auth.isSupervisor" prop="username" label="学号 / 工号" min-width="120" />
       <el-table-column label="角色" min-width="120">
         <template #default="{ row }">{{ roleText(row as MemberListItem) }}</template>
@@ -180,7 +182,7 @@ async function doReset() {
       <el-table-column label="身份" min-width="80">
         <template #default="{ row }">{{ IDENTITY_LABELS[row.identity] ?? '' }}</template>
       </el-table-column>
-      <el-table-column label="年级" min-width="80">
+      <el-table-column label="年级" prop="enrollment_year" sortable="custom" min-width="90">
         <template #default="{ row }">{{ row.enrollment_year ? `${row.enrollment_year}级` : '' }}</template>
       </el-table-column>
       <el-table-column label="词条" min-width="120">
@@ -260,7 +262,7 @@ async function doReset() {
     </el-form-item>
     <div class="form-grid">
       <el-form-item class="span-2" label="研究方向" :error="formErrors.fe('research_direction')">
-        <el-input v-model="form.research_direction" />
+        <el-autocomplete v-model="form.research_direction" :fetch-suggestions="suggest('member.research_direction')" />
       </el-form-item>
       <el-form-item label="邮箱" :error="formErrors.fe('email')">
         <el-input v-model="form.email" />

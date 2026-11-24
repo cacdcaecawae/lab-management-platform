@@ -14,9 +14,10 @@ import { projectsApi } from '@/modules/projects/api'
 import type { Booking, Condition } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
-import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod } from '@/utils/format'
+import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod, formatTime } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import BookingFormDialog from '../components/BookingFormDialog.vue'
+import BookingList from '../components/BookingList.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import PhotoPicker from '@/components/PhotoPicker.vue'
@@ -97,6 +98,14 @@ const VIEWS = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '日' } a
 const UNIT: Record<string, string> = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '天' }
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const view = ref<string>(narrow ? 'timeGridDay' : 'timeGridWeek')
+// 列表 (also ?view=list from the workbench) hides the calendar but keeps it, so switching back keeps its week.
+const listing = ref(route.query.view === 'list')
+const list = ref<InstanceType<typeof BookingList>>()
+const refresh = () => (listing.value ? list.value?.load() : api()?.refetchEvents())
+function switchView(v: string) {
+  listing.value = v === 'list'
+  if (!listing.value) void nextTick(() => api()?.changeView(v))
+}
 const title = ref('')
 const day = ref(new Date())
 const api = () => calendar.value?.getApi()
@@ -160,6 +169,11 @@ const mine = computed(() => detail.value?.user.id === auth.user?.id)
 const started = computed(() => !!detail.value && new Date(detail.value.start_at).getTime() <= Date.now())
 const canCancel = computed(() => !!detail.value && !detail.value.report && (auth.isManager || (mine.value && !started.value)))
 const canReport = computed(() => !!detail.value && mine.value && detail.value.kind === 'use' && started.value && !detail.value.report)
+// Under way (started, not over): the booker or a manager can end it now and free the rest of the time.
+const canEnd = computed(() => {
+  const b = detail.value
+  return !!b && b.kind === 'use' && !b.planned_end_at && started.value && new Date(b.end_at).getTime() > Date.now() && (mine.value || auth.isManager)
+})
 
 const reportForm = reactive({ condition: 'normal' as Condition, description: '', photo: null as File | null })
 const reportErrors = useFieldErrors(['condition', 'description', 'photo'])
@@ -206,7 +220,31 @@ async function cancel() {
     await bookingsApi.cancel(b.id)
     ElMessage.success('预约已取消')
     detail.value = null
-    api()?.refetchEvents()
+    refresh()
+  } catch (e) {
+    showError(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function endNow() {
+  const b = detail.value
+  if (!b) return
+  try {
+    await ElMessageBox.confirm(`现在结束 ${b.equipment.code} 的这次使用？之后的时间别人可以预约。`, '提前结束', {
+      confirmButtonText: '提前结束',
+      cancelButtonText: '不结束',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  busy.value = true
+  try {
+    detail.value = await bookingsApi.endNow(b.id)
+    ElMessage.success('已提前结束，之后的时间已经空出来')
+    refresh()
   } catch (e) {
     showError(e)
   } finally {
@@ -221,7 +259,7 @@ async function submitReport() {
   try {
     detail.value = await bookingsApi.report(b.id, { ...reportForm })
     ElMessage.success(reportForm.condition === 'abnormal' ? '已登记异常，设备转为待检查，管理员会收到提醒' : '已登记')
-    api()?.refetchEvents()
+    refresh()
   } catch (e) {
     reportErrors.handle(e)
   } finally {
@@ -234,15 +272,18 @@ async function submitReport() {
   <div class="booking-page">
     <el-card class="card main">
       <PageToolbar>
+        <template v-if="!listing">
         <el-button-group>
           <el-button :icon="ArrowLeft" :aria-label="`上一${UNIT[view]}`" @click="api()?.prev()" />
           <el-button :icon="ArrowRight" :aria-label="`下一${UNIT[view]}`" @click="api()?.next()" />
         </el-button-group>
         <el-button @click="api()?.today()">今天</el-button>
         <span class="cal-title">{{ title }}</span>
+        </template>
         <!-- stays in the card on a phone (the top bar only fits 新建预约); right-aligned on desktop beside it -->
-        <el-radio-group class="view-switch" :model-value="view" aria-label="视图" @change="(v) => api()?.changeView(String(v))">
+        <el-radio-group class="view-switch" :model-value="listing ? 'list' : view" aria-label="视图" @change="(v) => switchView(String(v))">
           <el-radio-button v-for="(label, key) in VIEWS" :key="key" :value="key">{{ label }}</el-radio-button>
+          <el-radio-button value="list">列表</el-radio-button>
         </el-radio-group>
         <template #actions>
           <el-button type="primary" @click="openCreate()">新建预约</el-button>
@@ -255,10 +296,11 @@ async function submitReport() {
         :closable="false"
         class="status-alert"
       />
-      <FullCalendar ref="calendar" class="calendar" :options="options" />
+      <BookingList v-if="listing" ref="list" :equipment="equipment" @open="(b) => (detail = b)" />
+      <FullCalendar v-show="!listing" ref="calendar" class="calendar" :options="options" />
     </el-card>
 
-    <el-card class="card side">
+    <el-card v-if="!listing" class="card side">
       <el-date-picker-panel class="mini" :model-value="day" :border="false" @update:model-value="jump" />
       <div class="side-head">
         <span>设备</span>
@@ -295,7 +337,10 @@ async function submitReport() {
             <span class="code">{{ detail.equipment.code }}</span> {{ detail.equipment.name }}
           </RouterLink>
         </el-descriptions-item>
-        <el-descriptions-item label="时间">{{ formatPeriod(detail.start_at, detail.end_at) }}</el-descriptions-item>
+        <el-descriptions-item label="时间">
+          {{ formatPeriod(detail.start_at, detail.end_at) }}
+          <span v-if="detail.planned_end_at" class="muted">（提前结束，原定到 {{ formatTime(detail.planned_end_at).slice(11) }}）</span>
+        </el-descriptions-item>
         <el-descriptions-item label="预约人">{{ detail.user.name }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ BOOKING_KIND_LABELS[detail.kind] }}</el-descriptions-item>
         <el-descriptions-item label="项目">{{ detail.project?.name }}</el-descriptions-item>
@@ -335,6 +380,7 @@ async function submitReport() {
       <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </div>
     <template #extra>
+      <el-button v-if="canEnd" :loading="busy" @click="endNow">提前结束</el-button>
       <el-button v-if="canCancel" type="danger" plain :loading="busy" @click="cancel">取消预约</el-button>
     </template>
   </FormDialog>

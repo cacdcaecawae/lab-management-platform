@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { meetingsApi } from '@/modules/meetings/api'
 import type { Meeting } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { useAuthStore } from '@/stores/auth'
 import PageToolbar from '@/components/PageToolbar.vue'
+import ActionItemsList from '../components/ActionItemsList.vue'
 
 const auth = useAuthStore()
-const { items, count, page, pageSize, loading } = usePagedList(meetingsApi.list, reactive({}))
+const route = useRoute()
+const router = useRouter()
+// 组会 / 行动项 (?tab=actions, also from the workbench)
+const tab = computed({
+  get: () => (route.query.tab === 'actions' ? 'actions' : 'meetings'),
+  set: (t: string) => void router.replace({ query: t === 'actions' ? { tab: 'actions' } : {} }),
+})
+const filters = reactive({ search: '' })
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading } = usePagedList(meetingsApi.list, filters)
 
 const presenters = (m: Meeting) => [...new Set(m.agenda.map((a) => a.presenter.name))].join('、')
 const openActions = (m: Meeting) => m.actions.filter((a) => !a.done_at).length
@@ -15,9 +27,16 @@ const openActions = (m: Meeting) => m.actions.filter((a) => !a.done_at).length
 
 <template>
   <el-card class="card">
+    <el-tabs v-model="tab">
+      <el-tab-pane label="组会" name="meetings" />
+      <el-tab-pane label="行动项" name="actions" />
+    </el-tabs>
+    <ActionItemsList v-if="tab === 'actions'" />
+    <template v-else>
     <PageToolbar>
+      <el-input v-model="keyword" placeholder="搜索标题、纪要、汇报内容、汇报人" clearable @change="filters.search = keyword" />
       <template #actions>
-        <el-button v-if="auth.isManager" type="primary" @click="$router.push({ name: 'meeting-new' })">新建组会</el-button>
+        <el-button v-if="auth.isSupervisor" type="primary" @click="$router.push({ name: 'meeting-new' })">新建组会</el-button>
       </template>
     </PageToolbar>
     <el-table v-loading="loading" :data="items" empty-text="暂无组会记录">
@@ -47,5 +66,6 @@ const openActions = (m: Meeting) => m.actions.filter((a) => !a.done_at).length
       :page-size="pageSize"
       hide-on-single-page
     />
+    </template>
   </el-card>
 </template>

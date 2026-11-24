@@ -1,14 +1,15 @@
 from datetime import timedelta
 
-from django.db.models import F, Max, Sum
+from django.db.models import Exists, F, Max, OuterRef, Sum
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.models import User
 from accounts.serializers import UserBriefSerializer
-from core.permissions import is_advisor, is_finance, is_manager, scope_finance, scope_group, scope_private
+from core.permissions import is_advisor, is_finance, is_manager, is_supervisor, scope_finance, scope_group, scope_private
 from equipment.models import Booking, Equipment
-from equipment.queries import calibration_within
+from equipment.queries import awaiting_report, calibration_within
 from equipment.serializers import BookingSerializer, EquipmentBriefSerializer
 from inventory.models import Consumable
 from inventory.queries import batch_details, batches_with_balance
@@ -18,19 +19,18 @@ from meetings.serializers import MyActionItemSerializer
 from projects.models import Task
 from projects.queries import board_tasks
 from projects.serializers import WorkbenchTaskSerializer
-from procurement.models import PurchaseRequest
+from procurement.models import Attachment, PurchaseRequest, Reimbursement
 from procurement.queries import awaiting_review, returned_flag
-from procurement.serializers import PurchaseSerializer
+from procurement.serializers import PurchaseSerializer, ReimbursementSerializer
 from reports.models import WeeklyReport
 from reports.queries import current_week_start, missing_students
 from reports.serializers import WeeklyReportBriefSerializer
-from research.models import Experiment, RecordStatus
-from research.serializers import ExperimentBriefSerializer
+from research.models import Experiment, ProcessingRun, RecordStatus
+from research.serializers import ExperimentBriefSerializer, RunBriefSerializer
 from specimens.queries import group_open_loans, overdue_loans
 from specimens.serializers import SpecimenBriefSerializer
 
 LIMIT = 20  # the workbench shows the most recent items only; full lists live on each page
-UNREPORTED_DAYS = timedelta(days=14)  # older unreported bookings are no longer worth a reminder
 
 
 def loan_preview(loan, today, include_borrower=False):
@@ -80,15 +80,28 @@ class DashboardView(APIView):
                 "draft_experiments": ExperimentBriefSerializer(
                     Experiment.objects.filter(owner=user, status=RecordStatus.DRAFT).order_by("-updated_at")[:LIMIT], many=True
                 ).data,
+                "draft_runs": RunBriefSerializer(
+                    ProcessingRun.objects.filter(owner=user, status=RecordStatus.DRAFT).order_by("-updated_at")[:LIMIT], many=True
+                ).data,
+                # never-submitted drafts; a returned one is listed as 采购被退回
+                "draft_purchases": PurchaseSerializer(
+                    purchases.filter(owner=user, status=PurchaseRequest.Status.DRAFT, returned=False).order_by("-updated_at")[:LIMIT],
+                    many=True,
+                ).data,
+                # still with me (待提交) and nothing to hand in yet: finance needs the invoice
+                "reimbursements_without_invoice": ReimbursementSerializer(
+                    scope_group(Reimbursement.objects.filter(owner=user, status=Reimbursement.Status.PENDING), user, "fund__group")
+                    .exclude(Exists(Attachment.objects.filter(reimbursement=OuterRef("pk"), kind=Attachment.Kind.INVOICE)))
+                    .select_related("owner", "fund", "purchase__owner").prefetch_related("attachments__uploaded_by")
+                    .order_by("occurred_on", "id")[:LIMIT],
+                    many=True,
+                ).data,
                 "current_week_report": WeeklyReportBriefSerializer(current).data if current else None,
                 # current and future bookings, soonest first
                 "upcoming_bookings": BookingSerializer(bookings.filter(end_at__gt=now).order_by("start_at")[:LIMIT], many=True).data,
-                # use bookings that ended in the last UNREPORTED_DAYS and still need a usage report
+                # use bookings that ended lately and still need a usage report (the bookings list's 待登记 too)
                 "unreported_bookings": BookingSerializer(
-                    bookings.filter(
-                        kind=Booking.Kind.USE, end_at__lte=now, end_at__gt=now - UNREPORTED_DAYS, report__isnull=True
-                    ).order_by("-start_at")[:LIMIT],
-                    many=True,
+                    awaiting_report(bookings, now).order_by("-start_at")[:LIMIT], many=True
                 ).data,
                 "returned_purchases": PurchaseSerializer(
                     purchases.filter(owner=user, returned=True).order_by("-updated_at")[:LIMIT], many=True
@@ -118,6 +131,11 @@ class DashboardView(APIView):
                     awaiting_review(purchases, user).order_by("submitted_at")[:LIMIT], many=True
                 ).data,
             }
+        if is_supervisor(user):
+            # the group's projects, open tasks past their due date (the board shows them in words)
+            data["overdue_tasks"] = scope_group(Task.objects.all(), user, "project__group_id").filter(
+                due_date__lt=today
+            ).exclude(status=Task.Status.DONE).count()
         if is_manager(user):
             to_check = scope_group(Equipment.objects.filter(status=Equipment.Status.NEEDS_CHECK), user)
             low_stock = (
@@ -133,7 +151,18 @@ class DashboardView(APIView):
                 consumable__group_id=user.group_id, consumable__tracks_batches=True, stock__gt=0,
                 expires_on__lte=today + timedelta(days=30),
             ).order_by("expires_on", "id").values("id", "batch_no", "expires_on", "stock", "consumable__name")[:LIMIT]
+            group_purchases = purchases.filter(owner__group_id=user.group_id)
             data["manager"] = {
+                "pending_signups": UserBriefSerializer(
+                    scope_group(User.objects.filter(pending=True), user).order_by("date_joined")[:LIMIT], many=True
+                ).data,
+                # approved, not bought yet; bought, not arrived yet
+                "to_purchase": PurchaseSerializer(
+                    group_purchases.filter(status=PurchaseRequest.Status.APPROVED).order_by("updated_at")[:LIMIT], many=True
+                ).data,
+                "to_receive": PurchaseSerializer(
+                    group_purchases.filter(status=PurchaseRequest.Status.PURCHASED).order_by("updated_at")[:LIMIT], many=True
+                ).data,
                 "overdue_loans": [loan_preview(loan, today, include_borrower=True) for loan in overdue[:LIMIT]],
                 "overdue_loans_count": overdue.count(),
                 "calibration_due": [

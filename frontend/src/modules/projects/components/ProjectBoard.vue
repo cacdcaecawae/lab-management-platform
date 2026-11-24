@@ -20,6 +20,10 @@ const shown = (field: string, v: unknown) =>
 const canEdit = computed(() => props.canManage || props.project.members.some(m => m.id === props.sessionUserId))
 const canDelete = (task: ProjectTask) => props.canManage || task.created_by === props.sessionUserId
 const mine = ref(false)
+const assignee = ref<number | ''>('')
+const onMilestone = ref<number | ''>('')
+// The board's filters: 只看我的 wins over a chosen assignee.
+const taskQuery = () => ({ assignee: mine.value ? props.sessionUserId : assignee.value || undefined, milestone: onMilestone.value || undefined })
 const error = ref('')
 const busy = ref(false)
 const lanes = reactive<Record<TaskStatus, { rows: ProjectTask[]; page: number; more: boolean }>>({
@@ -35,7 +39,7 @@ async function loadBoard() {
   const token = ++version
   try {
     const pages = await Promise.all(cols.map(({ key }) =>
-      projectsApi.tasks(props.project.id, { status: key, assignee: mine.value ? props.sessionUserId : undefined })))
+      projectsApi.tasks(props.project.id, { status: key, ...taskQuery() })))
     if (token !== version) return
     cols.forEach(({ key }, i) => Object.assign(lanes[key], { rows: pages[i].results, page: 1, more: !!pages[i].next }))
   } catch (e) {
@@ -50,7 +54,7 @@ async function nextTasks(key: TaskStatus) {
   busy.value = true
   error.value = ''
   try {
-    const result = await projectsApi.tasks(props.project.id, { status: key, page, assignee: mine.value ? props.sessionUserId : undefined })
+    const result = await projectsApi.tasks(props.project.id, { status: key, page, ...taskQuery() })
     if (token === version) Object.assign(lane, { rows: [...lane.rows, ...result.results], page, more: !!result.next })
   } catch (e) {
     if (token === version) error.value = errorMessage(e)
@@ -76,9 +80,9 @@ async function loadMilestones(reset = true) {
 watch(() => props.tab, tab => {
   error.value = ''
   if (tab === 'tasks') void loadBoard()
-  if (tab === 'milestones') void loadMilestones()
+  if (tab === 'tasks' || tab === 'milestones') void loadMilestones() // the board filters by milestone
 }, { immediate: true })
-watch(mine, () => { error.value = ''; void loadBoard() })
+watch([mine, assignee, onMilestone], () => { error.value = ''; void loadBoard() })
 
 const taskDialog = ref(false)
 const selectedTask = ref<ProjectTask | null>(null)
@@ -186,6 +190,12 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
   <template v-if="tab === 'tasks'">
     <PageToolbar>
       <el-checkbox v-model="mine">只看我的</el-checkbox>
+      <el-select v-if="!mine" v-model="assignee" placeholder="全部负责人" aria-label="负责人" clearable filterable>
+        <el-option v-for="m in memberChoices" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
+      <el-select v-model="onMilestone" placeholder="全部里程碑" aria-label="里程碑" clearable filterable>
+        <el-option v-for="m in milestones" :key="m.id" :label="m.title" :value="m.id" />
+      </el-select>
       <template #actions>
         <el-button v-if="canEdit" type="primary" :disabled="busy" @click="editTask(null)">新建任务</el-button>
       </template>

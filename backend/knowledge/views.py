@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.files import checked_upload, delete_on_commit, download, sha256_of
+from core.filters import Ordering
 from core.history import serialize_history
 from core.params import plain_int, search_text
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
@@ -22,6 +23,8 @@ class DocViewSet(viewsets.ModelViewSet):
     """Group-wide read; everyone creates; the author or a manager edits and adds versions; only managers delete."""
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filter_backends = [Ordering]
+    ordering_fields = ["updated_at"]
 
     def get_permissions(self):
         if self.action == "destroy":

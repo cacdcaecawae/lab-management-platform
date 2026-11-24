@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { inject, reactive, ref } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { datasetsApi } from '@/modules/datasets/api'
 import { projectsApi } from '@/modules/projects/api'
@@ -7,6 +8,7 @@ import { membersApi } from '@/modules/members/api'
 import type { DatasetKind } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
@@ -17,9 +19,11 @@ const auth = useAuthStore()
 const router = useRouter()
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 const members = auth.isAdvisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
-const filters = reactive({ project: '' as number | '', owner: '' as number | '', kind: '', search: '' })
-const keyword = ref('')
-const { items, count, page, pageSize, loading } = usePagedList(datasetsApi.list, filters)
+// ?project= comes from a project's 资产. Injected: the page also mounts alone in tests.
+const routeProject = Number(inject(routeLocationKey, undefined)?.query.project) || ''
+const filters = reactive({ project: routeProject as number | '', owner: '' as number | '', kind: '', search: '' })
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading, sort } = usePagedList(datasetsApi.list, filters)
 
 const dialog = ref(false)
 const blank = { project_id: null as number | null, name: '', kind: 'raw' as DatasetKind, description: '' }
@@ -64,7 +68,7 @@ async function create() {
         <el-button type="primary" @click="openCreate">新建数据集</el-button>
       </template>
     </PageToolbar>
-    <el-table empty-text="暂无数据集" v-loading="loading" :data="items">
+    <el-table @sort-change="sort" empty-text="暂无数据集" v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'dataset-detail', params: { id: row.id } }">{{ row.code }}</RouterLink>
@@ -81,10 +85,10 @@ async function create() {
         <template #default="{ row }">{{ row.owner.name }}</template>
       </el-table-column>
       <el-table-column prop="file_count" label="文件数" min-width="70" />
-      <el-table-column label="总大小" min-width="90">
+      <el-table-column label="总大小" prop="total_size" sortable="custom" min-width="100">
         <template #default="{ row }">{{ formatSize(row.total_size) }}</template>
       </el-table-column>
-      <el-table-column label="更新时间" min-width="140">
+      <el-table-column label="更新时间" prop="updated_at" sortable="custom" min-width="140">
         <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
       </el-table-column>
     </el-table>

@@ -14,6 +14,7 @@ vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '3' } }), useRou
 
 const makeLoan = (id: number): SpecimenLoan => ({
   id,
+  specimen: { id: 3, code: 'S-3', name: '试块' },
   borrower: { id: 2, name: 'A' },
   project: null,
   purpose: '',

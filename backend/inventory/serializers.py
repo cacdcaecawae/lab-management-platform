@@ -48,7 +48,7 @@ class ConsumableSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Consumable
-        fields = ["id", "name", "spec", "unit", "location", "safety_stock", "stock", "stock_version", "low", "tracks_batches", "batches", "nearest_expiry", "notes", "created_at", "updated_at"]
+        fields = ["id", "name", "spec", "unit", "category", "location", "safety_stock", "stock", "stock_version", "low", "tracks_batches", "batches", "nearest_expiry", "notes", "created_at", "updated_at"]
 
         read_only_fields = ["tracks_batches"]
 
@@ -120,3 +120,16 @@ class StockTxnSerializer(serializers.ModelSerializer):
         elif attrs["kind"] == StockTxn.Kind.OUT:
             attrs["quantity"] = -quantity
         return attrs
+
+
+class LedgerTxnSerializer(StockTxnSerializer):
+    """One line of the group ledger (all consumables): which consumable it was."""
+
+    consumable = serializers.SerializerMethodField()
+
+    class Meta(StockTxnSerializer.Meta):
+        fields = [*StockTxnSerializer.Meta.fields, "consumable"]
+
+    def get_consumable(self, txn):
+        item = txn.consumable
+        return {"id": item.pk, "name": item.name, "spec": item.spec, "unit": item.unit}

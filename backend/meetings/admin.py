@@ -11,6 +11,7 @@ class AgendaItemInline(admin.TabularInline):
 
 class ActionItemInline(admin.TabularInline):
     model = ActionItem
+    fk_name = "meeting"
     extra = 0
 
 

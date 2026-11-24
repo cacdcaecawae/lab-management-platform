@@ -374,6 +374,11 @@ export interface Dashboard {
     tasks: WorkbenchTask[]
     reports_needing_revision: WeeklyReportBrief[]
     draft_experiments: ExperimentBrief[]
+    draft_runs: RunBrief[]
+    // never submitted; a returned one is in returned_purchases
+    draft_purchases: Purchase[]
+    // still 待提交 and no invoice uploaded yet
+    reimbursements_without_invoice: Reimbursement[]
     current_week_report: WeeklyReportBrief | null
     upcoming_bookings: Booking[]
     unreported_bookings: Booking[]
@@ -387,8 +392,14 @@ export interface Dashboard {
     // managers: waiting for the initial review; advisors: for the final review
     purchases_to_review: Purchase[]
   } | null
+  // advisors and managers: open tasks past their due date in the group's projects
+  overdue_tasks?: number
   // managers only (they maintain equipment and consumables)
   manager: {
+    pending_signups: UserBrief[]
+    // approved, not bought yet; bought, not arrived yet
+    to_purchase: Purchase[]
+    to_receive: Purchase[]
     overdue_loans: (BorrowedSpecimenReminder & { borrower: UserBrief })[]
     overdue_loans_count: number
     calibration_due: (EquipmentBrief & { calibration_due: string })[]
@@ -416,6 +427,7 @@ export interface Defect {
 
 export interface SpecimenLoan {
   id: number
+  specimen: { id: number; code: string; name: string }
   borrower: UserBrief
   project: ProjectBrief | null
   purpose: string
@@ -543,6 +555,8 @@ export interface Booking {
   end_at: string
   purpose: string
   cancelled_at: string | null
+  // set when it was ended early: the end it had before (end_at is then the actual end)
+  planned_end_at: string | null
   report: UsageReport | null
   created_at: string
 }
@@ -577,6 +591,7 @@ export interface Consumable {
   name: string
   spec: string
   unit: string
+  category: string
   location: string
   safety_stock: number
   // sum of all transactions
@@ -592,7 +607,7 @@ export interface Consumable {
   updated_at: string
 }
 
-export type ConsumableWrite = Pick<Consumable, 'name' | 'spec' | 'unit' | 'location' | 'safety_stock' | 'notes'>
+export type ConsumableWrite = Pick<Consumable, 'name' | 'spec' | 'unit' | 'category' | 'location' | 'safety_stock' | 'notes'>
 
 export type TxnKind = 'in' | 'out' | 'return' | 'adjust'
 
@@ -607,6 +622,11 @@ export interface StockTxn {
   purchase: PurchaseRef | null
   note: string
   created_at: string
+}
+
+// a line of the group ledger (GET /api/stock-txns/): which consumable it was
+export interface LedgerTxn extends StockTxn {
+  consumable: { id: number; name: string; spec: string; unit: string }
 }
 
 // quantity: positive for in / out / return; the signed difference for adjust
@@ -904,6 +924,8 @@ export interface ActionItem {
   content: string
   due_date: string | null
   done_at: string | null
+  // brought into a later meeting (that copy carries on); this one counts as done
+  carried_to: { id: number; date: string } | null
 }
 
 export interface MyActionItem extends ActionItem {
@@ -938,7 +960,8 @@ export interface MeetingWrite {
   minutes: string
   agenda: { presenter_id: number; topic: string }[]
   // an item with id is kept (and keeps its done state); items left out are removed
-  actions: { id?: number; owner_id: number; content: string; due_date: string | null }[]
+  // carried_from: a new row copied from an open item of an earlier meeting, which is then marked as carried over
+  actions: { id?: number; owner_id: number; content: string; due_date: string | null; carried_from?: number }[]
 }
 
 // ---- achievements (phase 4) ----

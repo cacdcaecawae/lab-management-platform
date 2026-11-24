@@ -60,6 +60,11 @@ const correcting = ref(false)
 const editable = computed(() => (record.value ? (status.value === 'draft' && mine.value) || (canCorrect.value && correcting.value) : isNew))
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 const { markSaved } = useUnsavedGuard(form, () => editable.value)
+// From a low-stock consumable (?name=&spec=&quantity=): the first row is filled in; not counted as an unsaved change.
+if (isNew && typeof route.query.name === 'string') {
+  form.items = [{ ...blankRow(), name: route.query.name, spec: String(route.query.spec ?? ''), quantity: Math.max(1, Number(route.query.quantity) || 1) }]
+  markSaved()
+}
 const canReview = computed(() => {
   if (!record.value || mine.value) return false
   return (status.value === 'pending_initial' && auth.isManager) || (status.value === 'pending_final' && auth.isApprover)
@@ -277,6 +282,14 @@ if (route.params.id) load(Number(route.params.id))
             <el-button v-if="canCorrect" :disabled="busy" @click="correcting = true">修改明细</el-button>
             <el-button v-if="canMark && status === 'approved'" type="primary" :loading="busy" @click="markPurchased">标记已采购</el-button>
             <el-button v-if="canMark && status === 'purchased'" type="primary" :loading="busy" @click="markArrived">标记已到货</el-button>
+            <template v-if="status === 'arrived'">
+              <el-button v-if="auth.isManager" @click="router.push({ name: 'consumables', query: { purchase: record.id, code: record.code } })">入库到耗材</el-button>
+              <el-button
+                v-if="auth.isManager"
+                @click="router.push({ name: 'equipment', query: { new: '1', purchase: record.id, code: record.code, name: record.items[0]?.name ?? '' } })"
+              >登记为设备</el-button>
+              <el-button v-if="mine" type="primary" @click="router.push({ name: 'reimbursements', query: { purchase: record.id } })">发起报销</el-button>
+            </template>
           </template>
         </PageHeader>
       </template>

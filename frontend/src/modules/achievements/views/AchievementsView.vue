@@ -8,6 +8,8 @@ import { membersApi } from '@/modules/members/api'
 import type { Achievement, AchievementStatus, AchievementType, AchievementWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { suggest } from '@/api/suggestions'
 import { useAuthStore } from '@/stores/auth'
 import {
   ACHIEVEMENT_STATUSES,
@@ -44,15 +46,15 @@ const years = Array.from({ length: 10 }, (_, i) => thisYear - i)
 
 // "已录用及以上" is what most applications ask for: accepted and published papers.
 const STATUS_FILTERS: Record<string, string> = { formal: '正式成果（按类型）', 'accepted,published': '已录用（含已发表）', ...ACHIEVEMENT_STATUS_LABELS }
-const filters = reactive({ item: routeItem(), search: '', type: '', year: '' as number | '', status: '', member: '' as number | '' })
-const keyword = ref('')
+const filters = reactive({ item: routeItem(), search: '', type: '', year: '' as number | '', status: '', member: '' as number | '', has_fulltext: '' as 1 | '' })
+const keyword = useLiveSearch(filters)
 watch(routeItem, (item) => { filters.item = item })
 function showAll() {
   const query = { ...route.query }
   delete query.item
   return router.replace({ query, hash: route.hash })
 }
-const { items, count, page, pageSize, loading, load } = usePagedList(achievementsApi.list, filters)
+const { items, count, page, pageSize, loading, load, sort } = usePagedList(achievementsApi.list, filters)
 const members = useOptions(() => membersApi.list({ page_size: 100 })) // former members too: they stay authors
 const exportQuery = computed(() => ({ ...filters }))
 
@@ -179,6 +181,7 @@ async function removeFulltext() {
       <el-select v-model="filters.member" placeholder="全部成员" aria-label="成员" clearable filterable>
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
+      <el-checkbox v-model="filters.has_fulltext" :true-value="1" false-value="">有全文</el-checkbox>
       <template #actions>
         <IconButton :icon="Histogram" label="成果统计" @click="statsOpen = true" />
         <el-dropdown trigger="click" @command="(kind: string) => download(achievementsApi.exportUrl(exportQuery, kind === 'files'))">
@@ -193,7 +196,7 @@ async function removeFulltext() {
         <el-button type="primary" @click="open(null)">登记成果</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items" empty-text="没有符合条件的成果">
+    <el-table @sort-change="sort" v-loading="loading" :data="items" empty-text="没有符合条件的成果">
       <el-table-column label="标题" min-width="240">
         <template #default="{ row }"><el-button link type="primary" class="title" @click="open(row as Achievement)">{{ row.title }}</el-button></template>
       </el-table-column>
@@ -202,7 +205,7 @@ async function removeFulltext() {
       </el-table-column>
       <el-table-column prop="authors" label="作者" min-width="160" show-overflow-tooltip />
       <el-table-column prop="venue" label="出处 / 编号" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="date" label="日期" min-width="100" />
+      <el-table-column prop="date" label="日期" sortable="custom" min-width="100" />
       <el-table-column label="状态" min-width="80">
         <template #default="{ row }">{{ ACHIEVEMENT_STATUS_LABELS[row.status] }}</template>
       </el-table-column>
@@ -253,7 +256,7 @@ async function removeFulltext() {
         <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
     </el-form-item>
-    <el-form-item :label="VENUE_LABELS[form.type]" :error="errors.fe('venue')"><el-input v-model="form.venue" /></el-form-item>
+    <el-form-item :label="VENUE_LABELS[form.type]" :error="errors.fe('venue')"><el-autocomplete v-model="form.venue" :fetch-suggestions="suggest('achievement.venue')" /></el-form-item>
     <el-form-item label="DOI / 链接" :error="errors.fe('link')"><el-input v-model="form.link" /></el-form-item>
     <el-form-item label="备注" :error="errors.fe('notes')">
       <el-input v-model="form.notes" type="textarea" :autosize="{ minRows: 2 }" />

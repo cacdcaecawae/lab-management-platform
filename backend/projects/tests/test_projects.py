@@ -176,8 +176,9 @@ def test_leader_and_supervisors_add_logs(api, request, project, writer):
     assert api(user).get(f"/api/projects/{project.id}/").data["latest_log"]["content"] == "完成标定"
 
 
-def test_member_cannot_add_log_and_bad_log_is_400(api, project, student_a, student_b):
+def test_non_member_cannot_add_log_and_bad_log_is_400(api, group, project, student_a, student_b):
     url = f"/api/projects/{project.id}/logs/"
-    assert api(student_b).post(url, {"date": "2026-11-16", "content": "x"}, format="json").status_code == 403
+    outsider = make_user("s_c", group)  # members may add logs since issue #48 N5; someone outside the project may not
+    assert api(outsider).post(url, {"date": "2026-11-16", "content": "x"}, format="json").status_code == 403
     r = api(student_a).post(url, {"date": "16/11/2026"}, format="json")
     assert r.status_code == 400 and {"date", "content"} <= set(r.data["errors"])

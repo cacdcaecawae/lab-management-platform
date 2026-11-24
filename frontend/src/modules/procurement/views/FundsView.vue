@@ -5,13 +5,14 @@ import { fundsApi } from '@/modules/procurement/api'
 import type { Fund, FundWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { mergeById } from '@/utils/format'
 import { useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 
-const filters = reactive({ search: '', active: '' as 1 | '' })
-const keyword = ref('')
+const filters = reactive({ search: '', active: '' as 1 | '', owner: '' as number | '' })
+const keyword = useLiveSearch(filters)
 const { items, count, page, pageSize, loading, load } = usePagedList(fundsApi.list, filters)
 const members = useOptions(() => membersApi.list({ is_active: true, page_size: 100 }))
 
@@ -50,6 +51,9 @@ async function save() {
   <el-card class="card">
     <PageToolbar>
       <el-input v-model="keyword" placeholder="搜索经费号、名称" clearable @change="filters.search = keyword" />
+      <el-select v-model="filters.owner" placeholder="全部负责人" clearable filterable aria-label="负责人">
+        <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
       <el-checkbox v-model="filters.active" :true-value="1" false-value="">只看可用</el-checkbox>
       <template #actions>
         <el-button type="primary" @click="openDialog(null)">新建经费来源</el-button>

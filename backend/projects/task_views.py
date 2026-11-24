@@ -5,6 +5,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from core.notifications import notify
 from core.permissions import IsActiveMember, scope_group
 
 from .models import Milestone, Project, Task, TaskChange
@@ -21,6 +22,13 @@ def task_list(project):
     )
 
 
+def notify_assignee(task, actor, before=None):
+    """The new assignee hears about a task given to them; not when they took it themselves."""
+    if task.assignee_id and task.assignee_id not in (actor.pk, before):
+        notify(task.project.group_id, "有任务分配给你", f"/projects/{task.project_id}", recipient_ids=[task.assignee_id],
+               body=f"{task.project.name}：{task.title}")
+
+
 def tasks_endpoint(view, request, project):
     if request.method == "POST":
         if not task_editor(request.user, project):
@@ -29,6 +37,7 @@ def tasks_endpoint(view, request, project):
         serializer.is_valid(raise_exception=True)
         task = serializer.save(project=project, created_by=request.user)
         record_change(task, request.user, {}, task_snapshot(task))
+        notify_assignee(task, request.user)
         return Response(TaskSerializer(task_list(project).get(pk=task.pk)).data, status=status.HTTP_201_CREATED)
     queryset = task_list(project)
     params = request.query_params
@@ -85,9 +94,10 @@ class TaskViewSet(BoardDetailViewSet):
         serializer = self.get_serializer(task, data=request.data, partial=True,
                                          context={"request": request, "project": project})
         serializer.is_valid(raise_exception=True)
-        before = task_snapshot(task)
+        before, assignee = task_snapshot(task), task.assignee_id
         task = serializer.save()
         record_change(task, request.user, before, task_snapshot(task))
+        notify_assignee(task, request.user, assignee)
         return Response(TaskSerializer(task_list(project).get(pk=task.pk)).data)
 
     @transaction.atomic

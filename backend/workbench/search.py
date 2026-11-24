@@ -1,4 +1,5 @@
 """Cross-module search: reuse group/owner scopes; only select approved display fields."""
+import re
 from functools import reduce
 from operator import or_
 
@@ -8,15 +9,17 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.models import User
 from achievements.models import Achievement
-from core.permissions import IsActiveMember, scope_finance, scope_group, scope_private
-from datasets.models import Dataset
+from core.filters import code_lookup
+from core.permissions import IsActiveMember, is_supervisor, scope_finance, scope_group, scope_private
+from datasets.models import DataFile, Dataset
 from equipment.models import Equipment
 from inventory.models import Consumable
 from knowledge.models import Doc
-from meetings.models import Meeting
-from procurement.models import PurchaseRequest
-from projects.models import Project
+from meetings.models import ActionItem, Meeting
+from procurement.models import Fund, PurchaseRequest, Reimbursement
+from projects.models import Milestone, Project, Task
 from reports.models import WeeklyReport
 from research.models import Experiment, ProcessingRun
 from specimens.models import Specimen
@@ -24,15 +27,30 @@ from specimens.models import Specimen
 LIMIT = 5
 MAX_LENGTH = 100
 
-# Key, label, model, scope, frontend destination, visible title, match fields, optional subtitle.
+def scoped(scope, field):
+    """A scope helper applied through a relation (a task's project, a file's dataset)."""
+    return lambda queryset, user: scope(queryset, user, field)
+
+
+# Key, label, model, scope, frontend destination (formatted with the row: {id} and any selected field), visible title,
+# match fields, optional subtitle. A record code (EX-2026-0012 ...) finds its record exactly: CODES.
 MODULES = (
     ("projects", "项目", Project, scope_group, "/projects/{id}", "name", ("name",), None),
+    ("tasks", "任务", Task, scoped(scope_group, "project__group"), "/projects/{project_id}?tab=tasks", "title", ("title",), "project__name"),
+    ("milestones", "里程碑", Milestone, scoped(scope_group, "project__group"), "/projects/{project_id}?tab=milestones", "title",
+     ("title",), "project__name"),
     ("experiments", "实验记录", Experiment, scope_private, "/experiments/{id}", "title", ("title",), None),
     ("runs", "数据处理", ProcessingRun, scope_private, "/runs/{id}", "title", ("title",), None),
     ("datasets", "数据集", Dataset, scope_private, "/datasets/{id}", "name", ("name",), None),
-    ("reports", "周报", WeeklyReport, scope_private, "/reports/{id}", "week_start", ("date_text",), None),
+    ("files", "数据文件", DataFile, scoped(scope_private, "dataset__owner"), "/datasets/{dataset_id}", "name", ("name",),
+     "dataset__name"),
+    ("reports", "周报", WeeklyReport, scope_private, "/reports/{id}", "week_start", ("date_text", "owner__name"), "owner__name"),
     ("purchases", "采购申请", PurchaseRequest, scope_finance, "/purchases/{id}", "purpose",
      ("purpose", "items__name"), None),
+    ("reimbursements", "报销", Reimbursement, scope_finance, "/reimbursements?item={id}", "description", ("description",),
+     "owner__name"),
+    ("funds", "经费来源", Fund, scope_group, "/funds", "name", ("name", "code"), "code"),
+    ("members", "成员", User, scope_group, "/members", "name", ("name", "research_direction"), "research_direction"),
     ("equipment", "设备", Equipment, scope_group, "/equipment/{id}", "name",
      ("name", "code", "model", "category", "location"), "code"),
     ("specimens", "试件", Specimen, scope_group, "/specimens/{id}", "name",
@@ -40,9 +58,15 @@ MODULES = (
     ("consumables", "耗材", Consumable, scope_group, "/consumables?item={id}", "name",
      ("name", "spec", "location"), "spec"),
     ("knowledge", "知识库", Doc, scope_group, "/knowledge?doc={id}", "title", ("title",), None),
-    ("meetings", "组会", Meeting, scope_group, "/meetings/{id}", "title", ("title",), None),
+    ("meetings", "组会", Meeting, scope_group, "/meetings/{id}", "title", ("title", "minutes", "agenda__topic"), "date"),
+    ("actions", "行动项", ActionItem, scoped(scope_group, "meeting__group"), "/meetings/{meeting_id}", "content", ("content",),
+     "owner__name"),
     ("achievements", "成果", Achievement, scope_group, "/achievements?item={id}", "title", ("title",), None),
 )
+
+
+CODES = {Experiment: "EX", ProcessingRun: "RUN", Dataset: "DS", PurchaseRequest: "PR", Reimbursement: "RB"}
+LINK_FIELDS = re.compile(r"{(\w+)}")
 
 
 class SearchQuery(serializers.Serializer):
@@ -61,17 +85,22 @@ class SearchView(APIView):
             queryset = scope(model.objects.all(), request.user)
             if model is WeeklyReport:
                 queryset = queryset.alias(date_text=Cast("week_start", CharField()))
-            matches = reduce(or_, (Q(**{f"{field}__icontains": q}) for field in fields))
-            selected = ("pk", title, subtitle) if subtitle else ("pk", title)
+            if model is User and is_supervisor(request.user):  # students never see login names, nor probe them
+                fields = (*fields, "username")
+            matches = code_lookup(q, CODES[model]) if model in CODES else None
+            if matches is None:
+                matches = reduce(or_, (Q(**{f"{field}__icontains": q}) for field in fields))
+            links = [name for name in LINK_FIELDS.findall(link) if name != "id"]
+            selected = dict.fromkeys(["pk", title, *([subtitle] if subtitle else []), *links])
             rows = queryset.filter(matches).order_by("-pk").values(*selected).distinct()[:LIMIT]
             items = []
             for row in rows:
                 pk = row["pk"]
-                target = link.format(id=pk)
+                target = link.format(id=pk, **{name: row[name] for name in links})
                 items.append({
                     "id": pk,
                     "title": str(row[title])[:160] if row[title] else f"{label} #{pk}",
-                    "subtitle": row[subtitle] if subtitle else "",
+                    "subtitle": str(row[subtitle]) if subtitle and row[subtitle] is not None else "",
                     "link": target,
                 })
             if items:

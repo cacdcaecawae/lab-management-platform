@@ -4,13 +4,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemApi } from '@/modules/system/api'
 import type { Account, Identity, Role, SystemGroup } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { IDENTITY_LABELS, MEMBER_STATUS, ROLE_LABELS, formatTime, renamedMessage, roleText } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 
 const filters = reactive({ search: '', group: '' as number | '', role: '', flag: '' })
-const keyword = ref('')
+const keyword = useLiveSearch(filters)
 const { items, count, page, pageSize, loading, load } = usePagedList(systemApi.accounts, filters)
 
 const groups = ref<SystemGroup[]>([])
