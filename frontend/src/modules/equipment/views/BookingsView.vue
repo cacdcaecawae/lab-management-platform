@@ -159,7 +159,7 @@ function openCreate(start: Date | null = null, end: Date | null = null) {
 function onSaved() {
   ElMessage.success('预约成功')
   api()?.unselect()
-  api()?.refetchEvents()
+  refresh() // the list or the calendar, whichever is shown
 }
 
 // ---- booking detail: cancel / usage report ----

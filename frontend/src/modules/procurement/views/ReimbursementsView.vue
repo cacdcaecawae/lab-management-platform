@@ -33,7 +33,8 @@ const auth = useAuthStore()
 const tab = ref<'records' | 'stats'>('records')
 // Shared by the list, the statistics and the export, so their totals agree.
 // ?status= comes from the workbench (报销缺发票 → 待提交)
-const routeQuery = inject(routeLocationKey, undefined)?.query ?? {}
+const route = inject(routeLocationKey, undefined)
+const routeQuery = route?.query ?? {}
 const filters = reactive({
   search: '', status: String(routeQuery.status ?? '') in REIMBURSEMENT_STATUS ? String(routeQuery.status) : '', category: '', month: '',
   from: '', to: '', fund: '' as number | '', owner: '' as number | '',
@@ -121,9 +122,12 @@ async function fillFromPurchase(id: number | null) {
   }
 }
 
-// ?item=<id> (the site search, a notification) opens that record. Injected, not useRoute(): the page also mounts alone.
-const routeItem = Number(routeQuery.item) || 0
-if (routeItem) reimbursementsApi.get(routeItem).then(openDialog, showError)
+// ?item=<id> (the site search, a notification) opens that record, also when this page is already open. Injected, not
+// useRoute(): the page also mounts alone.
+watch(() => route?.query.item, (item) => {
+  const id = Number(item) || 0
+  if (id) reimbursementsApi.get(id).then(openDialog, showError)
+}, { immediate: true })
 // ?purchase=<id> (发起报销 on an arrived purchase request): a new one, linked and filled in
 const routePurchase = Number(routeQuery.purchase) || 0
 if (routePurchase) {

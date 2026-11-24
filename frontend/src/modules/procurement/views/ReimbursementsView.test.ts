@@ -1,6 +1,7 @@
 // 交财务 in the dialog hands in what is on screen: an edit not saved yet goes in first (afterwards nothing can change).
 import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
@@ -146,6 +147,25 @@ it('a purchase answering after another record was opened does not fill that reco
 
   expect(document.querySelector<HTMLInputElement>('.amount-input input')!.value).toBe('120.00')
   expect(document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!.value).toBe('耦合剂')
+  wrapper.unmount()
+  document.body.innerHTML = ''
+})
+
+it('another search result while the page is open opens that record', async () => {
+  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(
+    url === '/api/reimbursements/7/' ? record : { count: 0, next: null, previous: null, results: [] },
+  ), { status: 200 }))))
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { ...me, role: 'student', is_supervisor: false } as Me
+  const route = reactive({ query: {} as Record<string, string> })
+  const wrapper = mount(ReimbursementsView, {
+    global: { plugins: [ElementPlus, pinia], provide: { [routeLocationKey as symbol]: route } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  route.query = { item: '7' } // the site search, while already on this page
+  await flushPromises()
+  expect(document.querySelector('.el-dialog__title')?.textContent).toBe(`报销 ${record.code}`)
   wrapper.unmount()
   document.body.innerHTML = ''
 })

@@ -49,31 +49,46 @@ def test_carried_items_close_the_old_ones_and_are_not_new_assignments(api, group
     last = meeting(group, manager, 9)
     open_item = ActionItem.objects.create(meeting=last, owner=student_a, content="补实验", due_date=datetime.date(2026, 11, 20))
     foreign = ActionItem.objects.create(meeting=meeting(other_group, other_manager, 9), owner=other_manager, content="外组")
-    payload = {
-        "date": "2026-11-16", "title": "组会", "minutes": "", "agenda": [],
-        "actions": [
-            {"owner_id": student_a.pk, "content": "补实验", "due_date": "2026-11-20", "carried_from": open_item.pk},
-            {"owner_id": student_b.pk, "content": "新事项", "due_date": None, "carried_from": foreign.pk},
-        ],
-    }
-    created = api(manager).post("/api/meetings/", payload, format="json")
-    assert created.status_code == 201, created.data
-    open_item.refresh_from_db()
+    carried = {"owner_id": student_a.pk, "content": "补实验", "due_date": "2026-11-20", "carried_from": open_item.pk}
+    payload = {"date": "2026-11-16", "title": "组会", "minutes": "", "agenda": [], "actions": [carried]}
+    client = api(manager)
+    # an item that is not there to carry (another group's, or its meeting deleted) is refused, nothing saved
+    stray = client.post("/api/meetings/", {**payload, "actions": [{**carried, "carried_from": foreign.pk}]}, format="json")
+    assert stray.status_code == 409 and not Meeting.objects.filter(date=datetime.date(2026, 11, 16)).exists()
     foreign.refresh_from_db()
-    assert open_item.done_at and open_item.carried_to_id == created.data["id"]
-    assert foreign.done_at is None and foreign.carried_to_id is None  # another group's item is left alone
-    assert [a["content"] for a in created.data["actions"]] == ["补实验", "新事项"]
-    notified = set(Notification.objects.filter(title="有新的组会行动项分配给你").values_list("recipient_id", flat=True))
-    assert notified == {student_b.pk}
+    assert foreign.done_at is None and foreign.carried_to_id is None
+
+    # 学生甲 gets one carried row and one new row: told about the new one; 学生乙 about theirs
+    fresh = [{"owner_id": student_a.pk, "content": "新任务", "due_date": None}, {"owner_id": student_b.pk, "content": "新事项", "due_date": None}]
+    created = client.post("/api/meetings/", {**payload, "actions": [carried, *fresh]}, format="json")
+    assert created.status_code == 201, created.data
+    b = created.data["id"]
+    open_item.refresh_from_db()
+    assert open_item.done_at and open_item.carried_to_id == b
+    assert [a["content"] for a in created.data["actions"]] == ["补实验", "新任务", "新事项"]
+    notified = list(Notification.objects.filter(title="有新的组会行动项分配给你").values_list("recipient_id", flat=True))
+    assert sorted(notified) == sorted([student_a.pk, student_b.pk])
     shown = api(student_a).get(f"/api/meetings/{last.pk}/").data["actions"][0]["carried_to"]
-    assert shown == {"id": created.data["id"], "date": "2026-11-16"}
+    assert shown == {"id": b, "date": "2026-11-16"}
     # a second new meeting carrying the same item (two organisers at once) is refused, not a second open copy
-    again = api(manager).post("/api/meetings/", {**payload, "date": "2026-11-17", "actions": payload["actions"][:1]}, format="json")
+    again = client.post("/api/meetings/", {**payload, "date": "2026-11-17"}, format="json")
     assert again.status_code == 409 and again.data["code"] == "invalid_state" and "补实验" in again.data["message"]
     assert ActionItem.objects.filter(content="补实验", done_at__isnull=True).count() == 1
     # the carried one is ticked in the later meeting, not here
     assert api(student_a).post(f"/api/action-items/{open_item.pk}/done/", {"done": False}, format="json").status_code == 409
-    # deleting the meeting they were carried into opens the originals again
-    assert api(manager).delete(f"/api/meetings/{created.data['id']}/").status_code == 204
+
+    # carried on again, B → C: B cannot be deleted while it holds an item carried on (it would come back twice)
+    copy = ActionItem.objects.get(meeting_id=b, content="补实验")
+    c = client.post("/api/meetings/", {**payload, "date": "2026-11-23", "actions": [{**carried, "carried_from": copy.pk}]}, format="json")
+    assert c.status_code == 201, c.data
+    refused = client.delete(f"/api/meetings/{b}/")
+    assert refused.status_code == 409 and "2026-11-23" in refused.data["message"]
+    assert ActionItem.objects.filter(content="补实验", done_at__isnull=True).count() == 1
+    # from the newest back, each deletion opens the item before it again
+    assert client.delete(f"/api/meetings/{c.data['id']}/").status_code == 204
+    assert client.delete(f"/api/meetings/{b}/").status_code == 204
     open_item.refresh_from_db()
     assert open_item.done_at is None and open_item.carried_to_id is None
+    # a form still holding the deleted meeting's copy cannot bring it back as a second one
+    late = client.post("/api/meetings/", {**payload, "date": "2026-11-30", "actions": [{**carried, "carried_from": copy.pk}]}, format="json")
+    assert late.status_code == 409 and "不在了" in late.data["message"]

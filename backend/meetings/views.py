@@ -49,6 +49,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             # Locked, then the files read afresh (not the list fetched with the page): an upload just before is included.
             meeting = get_object_or_404(Meeting.objects.select_for_update(), pk=meeting.pk)
+            # Its items locked too: one carried on into a later meeting would be lost with it while its original
+            # reopened below, so such a meeting is not deleted; and a carry from it now waits, then finds it gone.
+            onward = [i for i in ActionItem.objects.select_for_update(of=("self",)).filter(meeting=meeting) if i.carried_to_id]
+            if onward:
+                later = Meeting.objects.get(pk=onward[0].carried_to_id)
+                raise Conflict(f"“{onward[0].content}”已转入 {later.date} 的组会，这场组会不能删除", code="invalid_state")
             delete_on_commit([f.file for f in MeetingFile.objects.filter(meeting=meeting)])
             # Items carried over into this meeting go with it: their earlier originals are open again, not lost as done.
             ActionItem.objects.filter(carried_to=meeting).update(done_at=None, carried_to=None)
@@ -124,13 +130,15 @@ class ActionItemViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"])
     def done(self, request, pk=None):
-        item = self.get_object()
-        if not (item.owner_id == request.user.id or is_manager(request.user)):
-            raise PermissionDenied("只有负责人和管理员可以修改完成状态")
-        if item.carried_to_id:  # its copy in the later meeting carries on; reopening this one would make two
-            raise Conflict(f"已转入 {item.carried_to.date} 的组会，请在那里勾选", code="invalid_state")
         data = DoneSerializer(data=request.data)
         data.is_valid(raise_exception=True)
-        item.done_at = timezone.now() if data.validated_data["done"] else None
-        item.save(update_fields=["done_at"])
+        with transaction.atomic():
+            # locked: a carry-over of this item at the same moment either goes first (then this is refused) or waits
+            item = ActionItem.objects.select_for_update(of=("self",)).select_related("carried_to").get(pk=self.get_object().pk)
+            if not (item.owner_id == request.user.id or is_manager(request.user)):
+                raise PermissionDenied("只有负责人和管理员可以修改完成状态")
+            if item.carried_to_id:  # its copy in the later meeting carries on; reopening this one would make two
+                raise Conflict(f"已转入 {item.carried_to.date} 的组会，请在那里勾选", code="invalid_state")
+            item.done_at = timezone.now() if data.validated_data["done"] else None
+            item.save(update_fields=["done_at"])
         return Response(ActionItemSerializer(item).data)

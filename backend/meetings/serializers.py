@@ -106,7 +106,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         self._notify_presenters(meeting, {a["presenter"].pk for a in agenda})
         carried = self._carry(meeting, actions)
         ActionItem.objects.bulk_create(ActionItem(meeting=meeting, **a) for a in actions)
-        self._notify_assignees(meeting, {a["owner"].pk for a in actions} - carried)
+        self._notify_assignees(meeting, {a["owner"].pk for i, a in enumerate(actions) if i not in carried})
         return meeting
 
     @transaction.atomic
@@ -126,7 +126,7 @@ class MeetingSerializer(serializers.ModelSerializer):
             assigned = set()
             carried = self._carry(meeting, actions)
             meeting.actions.exclude(id__in=kept).delete()
-            for a in actions:
+            for i, a in enumerate(actions):
                 fields = {k: v for k, v in a.items() if k != "id"}
                 if "id" in a:
                     changed = meeting.actions.filter(pk=a["id"]).update(**fields)
@@ -134,28 +134,35 @@ class MeetingSerializer(serializers.ModelSerializer):
                         assigned.add(a["owner"].pk)
                 else:
                     ActionItem.objects.create(meeting=meeting, **fields)
-                    assigned.add(a["owner"].pk)
-            self._notify_assignees(meeting, assigned - carried)
+                    if i not in carried:  # a carried row is not a new assignment; the same person's new row still is
+                        assigned.add(a["owner"].pk)
+            self._notify_assignees(meeting, assigned)
         return meeting
 
     @staticmethod
     def _carry(meeting, actions):
         """Mark the earlier items that new rows were copied from as carried over to this meeting (done there). Returns
-        the owners of those rows: their work is not new, so they are not notified again. The items are locked first, so
-        two meetings saved at once cannot both carry one; one already done or carried makes the save a 409."""
-        sources = {a.pop("carried_from") for a in actions if "carried_from" in a}
-        if not sources:
+        the positions of those rows in `actions`: their work is not new, so their owners are not told again. The items
+        are locked first, so two meetings saved at once cannot both carry one; an item gone (its meeting deleted),
+        already done or already carried makes the save a 409 rather than a second open copy."""
+        sources = [a.get("carried_from") for a in actions]
+        for a in actions:
+            a.pop("carried_from", None)
+        wanted = {pk for pk in sources if pk}
+        if not wanted:
             return set()
         earlier = list(
             ActionItem.objects.select_for_update(of=("self",))
-            .filter(pk__in=sources, meeting__group_id=meeting.group_id)
+            .filter(pk__in=wanted, meeting__group_id=meeting.group_id)
             .exclude(meeting=meeting)
             .order_by("pk")
         )
+        if len(earlier) != len(wanted):
+            raise Conflict("要带入的事项已经不在了（所在组会可能已删除），请删掉带入的行，或重新带入", code="invalid_state")
         if taken := next((item for item in earlier if item.done_at or item.carried_to_id), None):
             raise Conflict(f"“{taken.content}”已经完成或转入别的组会，请删掉这一行，或重新带入", code="invalid_state")
-        ActionItem.objects.filter(pk__in=[item.pk for item in earlier]).update(done_at=timezone.now(), carried_to=meeting)
-        return {item.owner_id for item in earlier}
+        ActionItem.objects.filter(pk__in=wanted).update(done_at=timezone.now(), carried_to=meeting)
+        return {i for i, pk in enumerate(sources) if pk}
 
     @staticmethod
     def _notify_assignees(meeting, owner_ids):
