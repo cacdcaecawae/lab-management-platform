@@ -137,6 +137,8 @@ class DatasetViewSet(viewsets.ModelViewSet):
         # Not dataset.files: that reuses the version prefetch, which loads only name + sha256.
         files = DataFile.objects.filter(dataset=dataset).select_related("uploaded_by")
         if version_param:
+            if "\x00" in version_param:  # PostgreSQL cannot compare it; no digest holds one anyway
+                raise NotFound("没有这个版本")
             # The file list of a version pinned by a submitted record.
             snapshot = dataset.snapshots.filter(digest=version_param.strip().lower()).first()
             if snapshot is None:

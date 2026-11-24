@@ -501,10 +501,10 @@
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/meetings/?search=` | 本组全员 | 分页，日期新的在前；`search` 匹配标题、纪要、议程的汇报内容和汇报人姓名 |
-| POST | `/api/meetings/` | 导师或管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；不是本组的或已完成的忽略 |
+| POST | `/api/meetings/` | 导师或管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；新的那条记住它从哪条带入。不是本组的、已不存在、已完成或已转入别处的 → 409 `invalid_state`；同一条带入两次 → 400 |
 | GET | `/api/meetings/{id}/` | 本组全员 | |
-| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会 400 |
-| DELETE | `/api/meetings/{id}/` | 管理员 | 连同附件文件一起删 |
+| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会、已有项带 `carried_from` → 400。删掉的是带入的那条时，原来那条恢复成未完成；删掉的那条已经转入后面的组会 → 409 `invalid_state` |
+| DELETE | `/api/meetings/{id}/` | 管理员 | 连同附件文件一起删；带入这场的事项，原来那条恢复成未完成；有事项已转入后面的组会 → 409 `invalid_state` |
 | POST | `/api/meetings/{id}/files/` | 议程里的汇报人、导师或管理员 | `multipart/form-data`：`file` → 201 `MeetingFile`；任意类型，单个不超过上传上限 |
 | GET | `/api/meeting-files/{id}/file/` | 本组全员 | 下载 |
 | DELETE | `/api/meeting-files/{id}/` | 上传人、导师或管理员 | |

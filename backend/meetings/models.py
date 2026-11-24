@@ -55,6 +55,10 @@ class ActionItem(models.Model):
     carried_to = models.ForeignKey(
         Meeting, verbose_name="转入组会", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # On that copy: the item it came from, so removing the copy again opens the original instead of losing it.
+    carried_from = models.ForeignKey(
+        "self", verbose_name="带入自", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         verbose_name = verbose_name_plural = "行动项"

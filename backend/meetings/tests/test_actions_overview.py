@@ -92,3 +92,34 @@ def test_carried_items_close_the_old_ones_and_are_not_new_assignments(api, group
     # a form still holding the deleted meeting's copy cannot bring it back as a second one
     late = client.post("/api/meetings/", {**payload, "date": "2026-11-30", "actions": [{**carried, "carried_from": copy.pk}]}, format="json")
     assert late.status_code == 409 and "不在了" in late.data["message"]
+
+
+def test_a_carried_row_removed_again_opens_its_original(api, group, manager, student_a):
+    a = meeting(group, manager, 2)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验")
+    row = {"owner_id": student_a.pk, "content": "补实验", "carried_from": item.pk}
+    base = {"title": "组会", "minutes": "", "agenda": []}
+    client = api(manager)
+    # one item twice in one save (two open copies), or an existing row claiming to be a copy: refused, nothing closed
+    assert client.post("/api/meetings/", {**base, "date": "2026-11-09", "actions": [row, row]}, format="json").status_code == 400
+    b = client.post("/api/meetings/", {**base, "date": "2026-11-09", "actions": [row]}, format="json").data["id"]
+    copy = ActionItem.objects.get(meeting_id=b)
+    assert copy.carried_from_id == item.pk
+    other = ActionItem.objects.create(meeting=a, owner=student_a, content="交数据")
+    bad = client.patch(f"/api/meetings/{b}/", {"actions": [{"id": copy.pk, "carried_from": other.pk}]}, format="json")
+    assert bad.status_code == 400
+    other.refresh_from_db()
+    assert other.done_at is None
+    # carried on again into C: B keeps that row, as B could not be deleted
+    c = client.post("/api/meetings/", {**base, "date": "2026-11-16", "actions": [{**row, "carried_from": copy.pk}]}, format="json")
+    kept = client.patch(f"/api/meetings/{b}/", {"actions": []}, format="json")
+    assert kept.status_code == 409 and "2026-11-16" in kept.data["message"]
+    # C drops its row (picked by mistake): B's is open again; then B drops it: the original is open again, never lost
+    assert client.patch(f"/api/meetings/{c.data['id']}/", {"actions": []}, format="json").status_code == 200
+    copy.refresh_from_db()
+    assert copy.done_at is None and copy.carried_to_id is None
+    assert client.patch(f"/api/meetings/{b}/", {"actions": []}, format="json").status_code == 200
+    item.refresh_from_db()
+    assert item.done_at is None and item.carried_to_id is None
+    assert list(ActionItem.objects.filter(done_at__isnull=True).values_list("content", flat=True)) == ["补实验", "交数据"]
+    assert api(student_a).post(f"/api/action-items/{item.pk}/done/", {"done": True}, format="json").status_code == 200

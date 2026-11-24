@@ -79,8 +79,12 @@ const inputs = mine()
 const scripts = mine('script')
 const results = mine('result')
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
-const datasetOptions = computed(() => inputs.options([...form.input_ids, ...(record.value?.inputs ?? [])]))
-const scriptOptions = computed(() => scripts.options([form.script_dataset_id, record.value?.script_dataset]))
+const datasetOptions = computed(() =>
+  inputs.options([...form.input_ids, ...(record.value?.inputs ?? []), ...(copiedFrom.value?.inputs ?? [])]),
+)
+const scriptOptions = computed(() =>
+  scripts.options([form.script_dataset_id, record.value?.script_dataset, copiedFrom.value?.script_dataset]),
+)
 const resultOptions = computed(() => results.options([form.output_dataset_id, record.value?.output_dataset]))
 
 function fill(r: ProcessingRun) {

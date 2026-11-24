@@ -76,7 +76,9 @@ const specimenOptions = computed(() =>
   specimens.options([...form.specimen_item_ids, ...(record.value?.specimen_items ?? []), ...(copiedFrom.value?.specimen_items ?? [])]),
 )
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
-const datasetOptions = computed(() => datasets.options([...form.dataset_ids, ...(record.value?.datasets ?? [])]))
+const datasetOptions = computed(() =>
+  datasets.options([...form.dataset_ids, ...(record.value?.datasets ?? []), ...(copiedFrom.value?.datasets ?? [])]),
+)
 
 function fill(r: Experiment) {
   record.value = r

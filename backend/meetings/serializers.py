@@ -46,6 +46,8 @@ class ActionItemSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if "id" not in attrs:
             return require_item_fields(self, attrs, ("owner_id", "content"))
+        if "carried_from" in attrs:  # only a new row is a copy; this would close the other item and copy nothing
+            raise serializers.ValidationError({"carried_from": ["已有的行动项不能再带入别的事项"]})
         return attrs
 
     def get_carried_to(self, item):
@@ -96,6 +98,9 @@ class MeetingSerializer(serializers.ModelSerializer):
         unknown = [a["id"] for a in actions if "id" in a and a["id"] not in known]
         if unknown:
             raise serializers.ValidationError(f"行动项不属于这次组会：{unknown}")
+        sources = [a["carried_from"] for a in actions if "carried_from" in a]
+        if len(sources) != len(set(sources)):  # two open copies of one item
+            raise serializers.ValidationError("同一条行动项带入了两次")
         return actions
 
     @transaction.atomic
@@ -125,7 +130,14 @@ class MeetingSerializer(serializers.ModelSerializer):
             previous_owners = dict(meeting.actions.filter(pk__in=kept).values_list("pk", "owner_id"))
             assigned = set()
             carried = self._carry(meeting, actions)
-            meeting.actions.exclude(id__in=kept).delete()
+            # A row left out: one carried on into a later meeting stays (as when deleting the meeting); one carried in
+            # from an earlier meeting opens its original again, so the item is not lost as done. Locked like a carry.
+            removed = list(meeting.actions.exclude(id__in=kept).select_for_update(of=("self",)).select_related("carried_to"))
+            if onward := next((r for r in removed if r.carried_to_id), None):
+                raise Conflict(f"“{onward.content}”已转入 {onward.carried_to.date} 的组会，不能从这场组会删掉", code="invalid_state")
+            originals = [r.carried_from_id for r in removed if r.carried_from_id]
+            ActionItem.objects.filter(pk__in=originals, carried_to=meeting).update(done_at=None, carried_to=None)
+            ActionItem.objects.filter(pk__in=[r.pk for r in removed]).delete()
             for i, a in enumerate(actions):
                 fields = {k: v for k, v in a.items() if k != "id"}
                 if "id" in a:
@@ -146,22 +158,24 @@ class MeetingSerializer(serializers.ModelSerializer):
         are locked first, so two meetings saved at once cannot both carry one; an item gone (its meeting deleted),
         already done or already carried makes the save a 409 rather than a second open copy."""
         sources = [a.get("carried_from") for a in actions]
-        for a in actions:
-            a.pop("carried_from", None)
         wanted = {pk for pk in sources if pk}
         if not wanted:
             return set()
-        earlier = list(
-            ActionItem.objects.select_for_update(of=("self",))
+        earlier = {
+            item.pk: item
+            for item in ActionItem.objects.select_for_update(of=("self",))
             .filter(pk__in=wanted, meeting__group_id=meeting.group_id)
             .exclude(meeting=meeting)
             .order_by("pk")
-        )
+        }
         if len(earlier) != len(wanted):
             raise Conflict("要带入的事项已经不在了（所在组会可能已删除），请删掉带入的行，或重新带入", code="invalid_state")
-        if taken := next((item for item in earlier if item.done_at or item.carried_to_id), None):
+        if taken := next((item for item in earlier.values() if item.done_at or item.carried_to_id), None):
             raise Conflict(f"“{taken.content}”已经完成或转入别的组会，请删掉这一行，或重新带入", code="invalid_state")
         ActionItem.objects.filter(pk__in=wanted).update(done_at=timezone.now(), carried_to=meeting)
+        for a in actions:
+            if a.get("carried_from"):
+                a["carried_from"] = earlier[a["carried_from"]]  # the copy keeps its original
         return {i for i, pk in enumerate(sources) if pk}
 
     @staticmethod

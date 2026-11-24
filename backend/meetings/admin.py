@@ -13,6 +13,7 @@ class ActionItemInline(admin.TabularInline):
     model = ActionItem
     fk_name = "meeting"
     extra = 0
+    readonly_fields = ["carried_to", "carried_from"]  # set by carrying over; editing them by hand breaks the pairs
 
 
 class MeetingFileInline(admin.TabularInline):

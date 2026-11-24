@@ -48,6 +48,8 @@ def test_download_zip_with_version_snapshot(api, student_a, project, dataset_a, 
         assert zf.namelist() == ["v1.csv"]
 
     assert client.get(f"/api/datasets/{dataset_a.pk}/download-zip/", {"version": "0" * 64}).status_code == 404
+    for url in ("download-zip", "files"):  # a NUL cannot be compared in PostgreSQL: not a version, not a 500
+        assert client.get(f"/api/datasets/{dataset_a.pk}/{url}/", {"version": "a\x00b"}).status_code == 404
 
 
 def test_download_zip_empty_is_409(api, student_a, dataset_a):
