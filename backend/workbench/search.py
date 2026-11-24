@@ -50,7 +50,8 @@ MODULES = (
     ("reimbursements", "报销", Reimbursement, scope_finance, "/reimbursements?item={id}", "description", ("description",),
      "owner__name"),
     ("funds", "经费来源", Fund, scope_group, "/funds", "name", ("name", "code"), "code"),
-    ("members", "成员", User, scope_group, "/members", "name", ("name", "research_direction"), "research_direction"),
+    # applicants are not members yet (the member list leaves them out too)
+    ("members", "成员", User, lambda users, user: scope_group(users.filter(pending=False), user), "/members", "name", ("name", "research_direction"), "research_direction"),
     ("equipment", "设备", Equipment, scope_group, "/equipment/{id}", "name",
      ("name", "code", "model", "category", "location"), "code"),
     ("specimens", "试件", Specimen, scope_group, "/specimens/{id}", "name",

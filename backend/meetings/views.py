@@ -8,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
+from core.exceptions import Conflict
 from core.files import checked_upload, delete_on_commit, download
 from core.filters import Search
 from core.history import serialize_history
@@ -49,6 +50,8 @@ class MeetingViewSet(viewsets.ModelViewSet):
             # Locked, then the files read afresh (not the list fetched with the page): an upload just before is included.
             meeting = get_object_or_404(Meeting.objects.select_for_update(), pk=meeting.pk)
             delete_on_commit([f.file for f in MeetingFile.objects.filter(meeting=meeting)])
+            # Items carried over into this meeting go with it: their earlier originals are open again, not lost as done.
+            ActionItem.objects.filter(carried_to=meeting).update(done_at=None, carried_to=None)
             meeting.delete()
 
     @action(detail=True, methods=["post"], parser_classes=[MultiPartParser])
@@ -124,6 +127,8 @@ class ActionItemViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         item = self.get_object()
         if not (item.owner_id == request.user.id or is_manager(request.user)):
             raise PermissionDenied("只有负责人和管理员可以修改完成状态")
+        if item.carried_to_id:  # its copy in the later meeting carries on; reopening this one would make two
+            raise Conflict(f"已转入 {item.carried_to.date} 的组会，请在那里勾选", code="invalid_state")
         data = DoneSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         item.done_at = timezone.now() if data.validated_data["done"] else None

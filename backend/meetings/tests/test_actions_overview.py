@@ -67,3 +67,9 @@ def test_carried_items_close_the_old_ones_and_are_not_new_assignments(api, group
     assert notified == {student_b.pk}
     shown = api(student_a).get(f"/api/meetings/{last.pk}/").data["actions"][0]["carried_to"]
     assert shown == {"id": created.data["id"], "date": "2026-11-16"}
+    # the carried one is ticked in the later meeting, not here
+    assert api(student_a).post(f"/api/action-items/{open_item.pk}/done/", {"done": False}, format="json").status_code == 409
+    # deleting the meeting they were carried into opens the originals again
+    assert api(manager).delete(f"/api/meetings/{created.data['id']}/").status_code == 204
+    open_item.refresh_from_db()
+    assert open_item.done_at is None and open_item.carried_to_id is None

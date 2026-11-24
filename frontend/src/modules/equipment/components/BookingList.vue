@@ -36,7 +36,7 @@ const toReport = (b: Booking) => b.kind === 'use' && !b.report && new Date(b.end
     <el-select v-model="filters.equipment" placeholder="全部设备" aria-label="设备" clearable filterable>
       <el-option v-for="e in props.equipment" :key="e.id" :label="`${e.code} ${e.name}`" :value="e.id" />
     </el-select>
-    <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期从" end-placeholder="到" class="range" />
+    <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期从" end-placeholder="到" />
   </PageToolbar>
   <el-table v-loading="loading" :data="items" empty-text="暂无预约" row-class-name="clickable" @row-click="(row: Booking) => emit('open', row)">
     <el-table-column label="时间" min-width="190">
@@ -73,17 +73,8 @@ const toReport = (b: Booking) => b.kind === 'use' && !b.report && new Date(b.end
 </template>
 
 <style scoped>
-.range {
-  max-width: 260px;
-}
 .muted {
   margin-left: 6px;
   color: var(--lab-text-3);
-}
-@media (max-width: 768px) {
-  .range {
-    width: 100%;
-    max-width: none;
-  }
 }
 </style>

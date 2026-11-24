@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 from achievements.models import Achievement
+from conftest import make_user
 from datasets.models import Dataset
 from equipment.models import Equipment
 from inventory.models import Consumable
@@ -137,3 +138,5 @@ def test_new_kinds_codes_and_who_sees_them(api, group, student_a, student_b, adv
     student_b.save()
     assert "members" not in found(student_a, "s_b") and "members" in found(advisor, "s_b")
     assert [m["title"] for m in found(student_a, "陈同学")["members"]] == ["陈同学"]
+    make_user("s_apply", group, pending=True, is_active=False, name="陈申请")  # an applicant is not a member yet
+    assert "members" not in found(advisor, "陈申请")

@@ -44,7 +44,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     <el-select v-model="filters.project" placeholder="全部项目" aria-label="项目" clearable filterable>
       <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
     </el-select>
-    <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="日期从" end-placeholder="到" class="range" />
+    <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="日期从" end-placeholder="到" />
     <template #actions>
       <IconButton :icon="Download" label="导出 Excel" tag="a" :href="consumablesApi.ledgerExportUrl(filters)" />
     </template>
@@ -82,15 +82,3 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     hide-on-single-page
   />
 </template>
-
-<style scoped>
-.range {
-  max-width: 260px;
-}
-@media (max-width: 768px) {
-  .range {
-    width: 100%;
-    max-width: none;
-  }
-}
-</style>

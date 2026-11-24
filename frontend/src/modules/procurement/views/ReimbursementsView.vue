@@ -77,8 +77,9 @@ const fundOptions = computed(() =>
 // Only the reimbursing person's own purchase requests can be linked (also when a manager edits).
 const purchaseOwner = () => current.value?.owner.id ?? auth.user?.id
 const purchases = useRemoteOptions<PurchaseBrief>((search) => purchasesApi.list({ owner: purchaseOwner(), search, page_size: 20 }))
+const linked = ref<PurchaseBrief | null>(null) // fetched to fill in: keeps its label though not among the latest 20
 const purchaseOptions = computed(() =>
-  purchases.options([form.purchase_id, current.value?.purchase]).filter((p) => p.owner.id === purchaseOwner()),
+  purchases.options([form.purchase_id, current.value?.purchase, linked.value]).filter((p) => p.owner.id === purchaseOwner()),
 )
 
 // Opening another record makes answers for the one before stale: they must not land on this one.
@@ -105,6 +106,7 @@ async function fillFromPurchase(id: number | null) {
   if (!id) return
   try {
     const p = await purchasesApi.get(id)
+    linked.value = p
     const values: Partial<FormState> = { fund_id: p.fund?.id ?? null, amount: Number(p.total), description: p.purpose.slice(0, 200) }
     for (const key of ['fund_id', 'amount', 'description'] as const) {
       if (form[key] !== opened[key] && form[key] !== filled[key]) continue // the person changed it
@@ -328,7 +330,7 @@ async function editFinanceEmail() {
         <el-option v-for="(label, k) in CATEGORY_LABELS" :key="k" :label="label" :value="k" />
       </el-select>
       <el-date-picker v-model="filters.month" type="month" value-format="YYYY-MM" placeholder="全部月份" class="month" />
-      <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="发生日期从" end-placeholder="到" class="range" />
+      <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="发生日期从" end-placeholder="到" />
       <el-select v-model="filters.fund" placeholder="全部经费" clearable filterable aria-label="经费来源">
         <el-option v-for="f in funds" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
       </el-select>
@@ -528,9 +530,6 @@ async function editFinanceEmail() {
 .month {
   width: 150px;
 }
-.range {
-  max-width: 260px;
-}
 .state {
   display: flex;
   flex-wrap: wrap;
@@ -563,10 +562,8 @@ async function editFinanceEmail() {
   flex: 1;
 }
 @media (max-width: 768px) {
-  .month,
-  .range {
+  .month {
     width: 100%;
-    max-width: none;
   }
 }
 </style>

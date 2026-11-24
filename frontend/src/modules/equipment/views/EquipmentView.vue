@@ -39,11 +39,12 @@ const locations = useSuggestions('equipment.location')
 const members = useOptions(() => membersApi.list({ page_size: 100 }))
 const { items, count, page, pageSize, loading, sort } = usePagedList(equipmentApi.list, filters)
 // ?new=1&purchase=&code=&name= : 登记为设备 on an arrived purchase request opens the form filled in
-const preset = route.query.new === '1' && Number(route.query.purchase)
+const preset = ref(route.query.new === '1' && Number(route.query.purchase)
   ? { name: String(route.query.name ?? ''), purchase: { id: Number(route.query.purchase), code: String(route.query.code ?? '') } }
-  : undefined
-const creating = ref(!!preset)
-if (preset) void router.replace({ query: {} }) // taken: reloading the list must not open the form again
+  : undefined)
+const creating = ref(!!preset.value)
+if (preset.value) void router.replace({ query: {} }) // taken: reloading the list must not open the form again
+watch(creating, (open) => open || (preset.value = undefined)) // used once: 新建设备 afterwards starts blank
 const selected = ref<number[]>([])
 const selectLabels = (rows: Equipment[]) => { selected.value = rows.map((row) => row.id) }
 const printSelected = () => router.push({ name: 'labels', query: { type: 'equipment', ids: selected.value.join(',') } })

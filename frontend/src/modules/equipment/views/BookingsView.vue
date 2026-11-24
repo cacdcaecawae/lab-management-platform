@@ -269,7 +269,7 @@ async function submitReport() {
 </script>
 
 <template>
-  <div class="booking-page">
+  <div class="booking-page" :class="{ listing }">
     <el-card class="card main">
       <PageToolbar>
         <template v-if="!listing">
@@ -392,6 +392,9 @@ async function submitReport() {
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+}
+.booking-page.listing {
+  grid-template-columns: minmax(0, 1fr); /* the list has no side card */
 }
 .booking-page > .card {
   margin-top: 0;

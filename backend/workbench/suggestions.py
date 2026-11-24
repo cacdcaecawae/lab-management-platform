@@ -20,16 +20,16 @@ LIMIT = 20
 
 # Every one is read group-wide on its own list, so the values carry no more than the list shows.
 FIELDS = {
-    "equipment.category": (Equipment, "category"),
-    "equipment.location": (Equipment, "location"),
-    "specimen.material": (Specimen, "material"),
-    "specimen.location": (Specimen, "location"),
-    "consumable.category": (Consumable, "category"),
-    "consumable.location": (Consumable, "location"),
-    "consumable.unit": (Consumable, "unit"),
-    "member.research_direction": (User, "research_direction"),
-    "achievement.venue": (Achievement, "venue"),
-    "doc.tags": (Doc, "tags"),
+    "equipment.category": (Equipment.objects, "category"),
+    "equipment.location": (Equipment.objects, "location"),
+    "specimen.material": (Specimen.objects, "material"),
+    "specimen.location": (Specimen.objects, "location"),
+    "consumable.category": (Consumable.objects, "category"),
+    "consumable.location": (Consumable.objects, "location"),
+    "consumable.unit": (Consumable.objects, "unit"),
+    "member.research_direction": (User.objects.filter(pending=False), "research_direction"),
+    "achievement.venue": (Achievement.objects, "venue"),
+    "doc.tags": (Doc.objects, "tags"),
 }
 
 
@@ -41,9 +41,9 @@ class SuggestionsView(APIView):
     def get(self, request, field):
         if field not in FIELDS:
             raise NotFound()
-        model, column = FIELDS[field]
+        source, column = FIELDS[field]
         keyword = search_text(request.query_params)
-        rows = scope_group(model.objects.all(), request.user)
+        rows = scope_group(source.all(), request.user)
         if column == "tags":  # an array: counted here (one group's documents) rather than unnested in SQL
             counts = Counter(tag for tags in rows.values_list("tags", flat=True) for tag in tags)
             values = [tag for tag, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])) if keyword.lower() in tag.lower()]

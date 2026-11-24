@@ -429,6 +429,11 @@ a:focus-visible {
 .page-toolbar .el-select {
   width: 180px;
 }
+/* a date range would otherwise stretch across the row (it is an input wrapper, which grows) */
+.page-toolbar .el-date-editor.el-range-editor {
+  flex-grow: 0;
+  width: 260px;
+}
 .page-toolbar .el-input-number {
   width: 120px;
 }

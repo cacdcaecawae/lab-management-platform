@@ -1,6 +1,7 @@
 """Suggestions for free-text fields (issue #48 S4): the group's own values, most used first."""
 import pytest
 
+from conftest import make_user
 from equipment.models import Equipment
 from knowledge.models import Doc
 
@@ -26,3 +27,10 @@ def test_tags_unknown_fields_and_bad_input(api, group, student_a, manager):
     assert client.get("/api/suggestions/doc.tags/", {"search": "探"}).data == ["探头"]
     assert client.get("/api/suggestions/user.password/").status_code == 404
     assert client.get("/api/suggestions/equipment.location/", {"search": "a\x00"}).status_code == 400
+
+
+def test_applicants_are_not_suggested(api, group, student_a):
+    student_a.research_direction = "导波检测"
+    student_a.save()
+    make_user("applicant", group, pending=True, is_active=False, research_direction="申请人的方向")  # not on the member list yet
+    assert api(student_a).get("/api/suggestions/member.research_direction/").data == ["导波检测"]

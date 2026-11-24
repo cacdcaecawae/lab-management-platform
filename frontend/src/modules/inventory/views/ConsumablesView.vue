@@ -157,6 +157,7 @@ const stockFor = Number(route?.query.purchase) ? { id: Number(route?.query.purch
 
 // A scanned label: once the item is on the page, open 领用 (quantity 1). A manager may switch it to 入库.
 const scanned = ref(false)
+watch(txnOpen, (open) => open || (scanned.value = false)) // the 领用 / 入库 switch is for that scan only
 watch(items, (list) => {
   if (!scanning || list.length !== 1) return
   scanning = false
