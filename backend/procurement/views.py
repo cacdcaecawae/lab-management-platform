@@ -568,15 +568,18 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("只有管理员可以批量标到账")
         done, failed = [], []
         for pk in dict.fromkeys(body.validated_data["ids"]):
-            if not self.scoped().filter(pk=pk).exists():
-                failed.append({"id": pk, "code": "", "reason": "不存在或无权查看"})
-                continue
+            code = ""
             try:
                 with transaction.atomic():
-                    self.move(Reimbursement.objects.select_for_update().get(pk=pk), target)
+                    # one scoped, locked read: a row deleted meanwhile is simply missing, never a 500 halfway through
+                    row = self.scoped().select_for_update(of=("self",)).filter(pk=pk).first()
+                    if row is None:
+                        failed.append({"id": pk, "code": "", "reason": "不存在或无权查看"})
+                        continue
+                    code = row.code
+                    self.move(row, target)
                 done.append(pk)
             except (PermissionDenied, Conflict, ValidationError) as exc:
-                code = Reimbursement.objects.get(pk=pk).code
                 failed.append({"id": pk, "code": code, "reason": first_message(exc.detail)})
         return Response({"done": done, "failed": failed})
 

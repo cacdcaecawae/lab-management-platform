@@ -124,7 +124,9 @@ def test_new_kinds_codes_and_who_sees_them(api, group, student_a, student_b, adv
         return {g["module"]: g["items"] for g in api(user).get(URL, {"q": q}).data}
 
     mine = found(student_a, "7788")
-    assert set(mine) == {"funds", "tasks", "milestones", "meetings", "actions"}  # not b's bill nor b's file
+    # not b's bill nor b's file; no funds either: only managers can open the 经费来源 page
+    assert set(mine) == {"tasks", "milestones", "meetings", "actions"}
+    assert found(manager, "7788")["funds"][0]["link"] == "/funds"
     assert mine["tasks"][0]["link"] == f"/projects/{project.pk}?tab=tasks"
     assert mine["actions"][0]["link"] == f"/meetings/{meeting.pk}"
     assert mine["meetings"][0]["subtitle"] == DAY.isoformat()

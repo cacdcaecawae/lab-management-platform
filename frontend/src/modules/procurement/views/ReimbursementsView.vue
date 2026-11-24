@@ -104,8 +104,11 @@ function openDialog(r: Reimbursement | null) {
 const filled: Partial<FormState> = {}
 async function fillFromPurchase(id: number | null) {
   if (!id) return
+  const gen = dialogGen
   try {
     const p = await purchasesApi.get(id)
+    // a late answer: another record opened meanwhile, or another purchase picked; it must not touch this form
+    if (gen !== dialogGen || form.purchase_id !== id) return
     linked.value = p
     const values: Partial<FormState> = { fund_id: p.fund?.id ?? null, amount: Number(p.total), description: p.purpose.slice(0, 200) }
     for (const key of ['fund_id', 'amount', 'description'] as const) {
@@ -114,7 +117,7 @@ async function fillFromPurchase(id: number | null) {
       Object.assign(filled, { [key]: values[key] })
     }
   } catch (e) {
-    showError(e)
+    if (gen === dialogGen) showError(e)
   }
 }
 

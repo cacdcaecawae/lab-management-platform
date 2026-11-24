@@ -3,6 +3,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
+from core.exceptions import Conflict
 from core.notifications import notify
 from projects.serializers import AnyGroupMemberField
 
@@ -140,16 +141,21 @@ class MeetingSerializer(serializers.ModelSerializer):
     @staticmethod
     def _carry(meeting, actions):
         """Mark the earlier items that new rows were copied from as carried over to this meeting (done there). Returns
-        the owners of those rows: their work is not new, so they are not notified again."""
+        the owners of those rows: their work is not new, so they are not notified again. The items are locked first, so
+        two meetings saved at once cannot both carry one; one already done or carried makes the save a 409."""
         sources = {a.pop("carried_from") for a in actions if "carried_from" in a}
         if not sources:
             return set()
-        earlier = ActionItem.objects.filter(
-            pk__in=sources, meeting__group_id=meeting.group_id, done_at__isnull=True
-        ).exclude(meeting=meeting)
-        owners = set(earlier.values_list("owner_id", flat=True))
-        earlier.update(done_at=timezone.now(), carried_to=meeting)
-        return owners
+        earlier = list(
+            ActionItem.objects.select_for_update(of=("self",))
+            .filter(pk__in=sources, meeting__group_id=meeting.group_id)
+            .exclude(meeting=meeting)
+            .order_by("pk")
+        )
+        if taken := next((item for item in earlier if item.done_at or item.carried_to_id), None):
+            raise Conflict(f"“{taken.content}”已经完成或转入别的组会，请删掉这一行，或重新带入", code="invalid_state")
+        ActionItem.objects.filter(pk__in=[item.pk for item in earlier]).update(done_at=timezone.now(), carried_to=meeting)
+        return {item.owner_id for item in earlier}
 
     @staticmethod
     def _notify_assignees(meeting, owner_ids):

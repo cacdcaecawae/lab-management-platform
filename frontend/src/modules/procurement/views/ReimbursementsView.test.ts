@@ -122,3 +122,30 @@ it('发起报销 from a purchase request opens a new one linked to it and filled
   wrapper.unmount()
   document.body.innerHTML = ''
 })
+
+it('a purchase answering after another record was opened does not fill that record', async () => {
+  const purchase = { id: 5, code: 'PR-2026-0005', owner: me, purpose: '探头', status: 'arrived', total: '2400.00', items: [],
+    fund: { id: 2, code: 'HX-002', name: '横向', active: true } }
+  let answer!: (r: Response) => void
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url === '/api/purchases/5/') return new Promise<Response>((resolve) => (answer = resolve)) // slow
+    const results = url.startsWith('/api/reimbursements/') ? [record] : []
+    return Promise.resolve(new Response(JSON.stringify({ count: results.length, next: null, previous: null, results }), { status: 200 }))
+  }))
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { ...me, role: 'student', is_supervisor: false } as Me
+  const wrapper = mount(ReimbursementsView, {
+    global: { plugins: [ElementPlus, pinia], provide: { [routeLocationKey as symbol]: { query: { purchase: '5' } } } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  await wrapper.findAll('button').find((b) => b.text() === record.code)!.trigger('click') // the ¥120 one, meanwhile
+  await flushPromises()
+  answer(new Response(JSON.stringify(purchase), { status: 200 }))
+  await flushPromises()
+
+  expect(document.querySelector<HTMLInputElement>('.amount-input input')!.value).toBe('120.00')
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="如 耦合剂 3 瓶、会议差旅"]')!.value).toBe('耦合剂')
+  wrapper.unmount()
+  document.body.innerHTML = ''
+})

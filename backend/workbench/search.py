@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from achievements.models import Achievement
 from core.filters import code_lookup
-from core.permissions import IsActiveMember, is_supervisor, scope_finance, scope_group, scope_private
+from core.permissions import IsActiveMember, is_manager, is_supervisor, scope_finance, scope_group, scope_private
 from datasets.models import DataFile, Dataset
 from equipment.models import Equipment
 from inventory.models import Consumable
@@ -49,7 +49,8 @@ MODULES = (
      ("purpose", "items__name"), None),
     ("reimbursements", "报销", Reimbursement, scope_finance, "/reimbursements?item={id}", "description", ("description",),
      "owner__name"),
-    ("funds", "经费来源", Fund, scope_group, "/funds", "name", ("name", "code"), "code"),
+    # only for whoever can open the 经费来源 page (managers); others pick a fund in their forms
+    ("funds", "经费来源", Fund, lambda funds, user: scope_group(funds, user) if is_manager(user) else funds.none(), "/funds", "name", ("name", "code"), "code"),
     # applicants are not members yet (the member list leaves them out too)
     ("members", "成员", User, lambda users, user: scope_group(users.filter(pending=False), user), "/members", "name", ("name", "research_direction"), "research_direction"),
     ("equipment", "设备", Equipment, scope_group, "/equipment/{id}", "name",

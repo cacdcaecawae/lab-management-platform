@@ -67,6 +67,10 @@ def test_carried_items_close_the_old_ones_and_are_not_new_assignments(api, group
     assert notified == {student_b.pk}
     shown = api(student_a).get(f"/api/meetings/{last.pk}/").data["actions"][0]["carried_to"]
     assert shown == {"id": created.data["id"], "date": "2026-11-16"}
+    # a second new meeting carrying the same item (two organisers at once) is refused, not a second open copy
+    again = api(manager).post("/api/meetings/", {**payload, "date": "2026-11-17", "actions": payload["actions"][:1]}, format="json")
+    assert again.status_code == 409 and again.data["code"] == "invalid_state" and "补实验" in again.data["message"]
+    assert ActionItem.objects.filter(content="补实验", done_at__isnull=True).count() == 1
     # the carried one is ticked in the later meeting, not here
     assert api(student_a).post(f"/api/action-items/{open_item.pk}/done/", {"done": False}, format="json").status_code == 409
     # deleting the meeting they were carried into opens the originals again
