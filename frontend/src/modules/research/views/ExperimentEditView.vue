@@ -77,7 +77,10 @@ const specimenOptions = computed(() =>
 )
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
 const datasetOptions = computed(() =>
-  datasets.options([...form.dataset_ids, ...(record.value?.datasets ?? []), ...(copiedFrom.value?.datasets ?? [])]),
+  datasets.options([
+    ...form.dataset_ids, ...(record.value?.datasets ?? []),
+    ...(copiedFrom.value?.datasets ?? []).filter((d) => form.dataset_ids.includes(d.id)), // what the copy took
+  ]),
 )
 
 function fill(r: Experiment) {

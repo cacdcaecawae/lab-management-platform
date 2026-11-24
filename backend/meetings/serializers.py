@@ -164,12 +164,16 @@ class MeetingSerializer(serializers.ModelSerializer):
         earlier = {
             item.pk: item
             for item in ActionItem.objects.select_for_update(of=("self",))
+            .select_related("meeting")
             .filter(pk__in=wanted, meeting__group_id=meeting.group_id)
             .exclude(meeting=meeting)
             .order_by("pk")
         }
         if len(earlier) != len(wanted):
             raise Conflict("要带入的事项已经不在了（所在组会可能已删除），请删掉带入的行，或重新带入", code="invalid_state")
+        if later := next((item for item in earlier.values() if item.meeting.date > meeting.date), None):
+            # filling in an old meeting would close an item of a later one
+            raise serializers.ValidationError({"actions": [f"“{later.content}”是 {later.meeting.date} 组会的事项，晚于这场组会，不能带入"]})
         if taken := next((item for item in earlier.values() if item.done_at or item.carried_to_id), None):
             raise Conflict(f"“{taken.content}”已经完成或转入别的组会，请删掉这一行，或重新带入", code="invalid_state")
         ActionItem.objects.filter(pk__in=wanted).update(done_at=timezone.now(), carried_to=meeting)

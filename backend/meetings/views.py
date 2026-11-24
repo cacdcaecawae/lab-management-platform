@@ -12,7 +12,7 @@ from core.exceptions import Conflict
 from core.files import checked_upload, delete_on_commit, download
 from core.filters import Search
 from core.history import serialize_history
-from core.params import plain_int
+from core.params import day_param, plain_int
 from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, is_supervisor, scope_group
 
 from .models import ActionItem, AgendaItem, Meeting, MeetingFile
@@ -36,11 +36,15 @@ class MeetingViewSet(viewsets.ModelViewSet):
         return [IsActiveMember()]
 
     def get_queryset(self):
-        return scope_group(Meeting.objects.select_related("created_by"), self.request.user).prefetch_related(
+        meetings = scope_group(Meeting.objects.select_related("created_by"), self.request.user).prefetch_related(
             Prefetch("agenda", AgendaItem.objects.select_related("presenter")),
             Prefetch("actions", ActionItem.objects.select_related("owner", "carried_to")),
             Prefetch("files", MeetingFile.objects.select_related("uploaded_by")),
         )
+        # ?before=YYYY-MM-DD: on or before that day (a new meeting carries over from the last one before it)
+        if self.action == "list" and (before := day_param(self.request.query_params, "before")):
+            meetings = meetings.filter(date__lte=before)
+        return meetings
 
     def perform_create(self, serializer):
         serializer.save(group=self.request.user.group, created_by=self.request.user)

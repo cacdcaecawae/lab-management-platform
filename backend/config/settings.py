@@ -125,11 +125,11 @@ STATIC_ROOT = BASE_DIR / "var" / "static"
 # object storage by changing STORAGES only.
 MEDIA_ROOT = Path(os.environ.get("DATA_ROOT") or BASE_DIR / "var" / "data")
 LAB_NAS_STORAGE_ID = os.environ.get("LAB_NAS_STORAGE_ID", "")
-if LAB_NAS_STORAGE_ID:
-    STORAGES = {
-        "default": {"BACKEND": "core.nas_storage.NasFileStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
+STORAGES = {
+    # both remove a file whose write fails halfway (core.storage)
+    "default": {"BACKEND": "core.nas_storage.NasFileStorage" if LAB_NAS_STORAGE_ID else "core.storage.CleanFileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", 2 * 1024**3))
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024**2  # larger uploads spool to a temp file
 # Put the spool directory on the data disk in production; the system temp may be too small for 2GB files.

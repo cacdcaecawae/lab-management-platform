@@ -1,7 +1,7 @@
 import re
 
 from django.db import transaction
-from django.db.models import Count, F, OuterRef, ProtectedError, Q, Subquery, Sum
+from django.db.models import Count, Exists, F, OuterRef, ProtectedError, Q, Subquery, Sum
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -171,6 +171,8 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchases = purchases.filter(owner=user)
         if params.get("todo") == "1":
             purchases = awaiting_review(purchases, user)
+        if params.get("returned") == "1":  # sent back by a reviewer, not handed in again yet
+            purchases = purchases.filter(returned=True)
         # the total is not stored (PurchaseRequest.total); a subquery, so that joins from the search cannot multiply it
         line_totals = PurchaseItem.objects.filter(request=OuterRef("pk")).values("request")
         purchases = purchases.annotate(
@@ -443,6 +445,8 @@ def filter_reimbursements(queryset, params):
             if day is None:
                 raise ValidationError({name: ["格式为 YYYY-MM-DD"]})
             queryset = queryset.filter(**{lookup: day})
+    if params.get("no_invoice") == "1":  # nothing to hand to finance yet
+        queryset = queryset.exclude(Exists(Attachment.objects.filter(reimbursement=OuterRef("pk"), kind=Attachment.Kind.INVOICE)))
     return queryset
 
 

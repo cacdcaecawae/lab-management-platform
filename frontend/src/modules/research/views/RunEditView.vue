@@ -80,10 +80,16 @@ const scripts = mine('script')
 const results = mine('result')
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
 const datasetOptions = computed(() =>
-  inputs.options([...form.input_ids, ...(record.value?.inputs ?? []), ...(copiedFrom.value?.inputs ?? [])]),
+  inputs.options([
+    ...form.input_ids, ...(record.value?.inputs ?? []),
+    ...(copiedFrom.value?.inputs ?? []).filter((d) => form.input_ids.includes(d.id)), // what the copy took
+  ]),
 )
 const scriptOptions = computed(() =>
-  scripts.options([form.script_dataset_id, record.value?.script_dataset, copiedFrom.value?.script_dataset]),
+  scripts.options([
+    form.script_dataset_id, record.value?.script_dataset,
+    copiedFrom.value?.script_dataset?.id === form.script_dataset_id ? copiedFrom.value.script_dataset : null,
+  ]),
 )
 const resultOptions = computed(() => results.options([form.output_dataset_id, record.value?.output_dataset]))
 

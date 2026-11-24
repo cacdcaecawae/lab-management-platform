@@ -123,3 +123,38 @@ def test_a_carried_row_removed_again_opens_its_original(api, group, manager, stu
     assert item.done_at is None and item.carried_to_id is None
     assert list(ActionItem.objects.filter(done_at__isnull=True).values_list("content", flat=True)) == ["补实验", "交数据"]
     assert api(student_a).post(f"/api/action-items/{item.pk}/done/", {"done": True}, format="json").status_code == 200
+
+
+def test_an_old_meeting_cannot_take_items_of_a_later_one(api, group, manager, student_a):
+    later = meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=later, owner=student_a, content="补实验")
+    earlier = meeting(group, manager, 2)
+    client = api(manager)
+    # the page asks for the last meeting on or before the one being written
+    assert [m["id"] for m in client.get("/api/meetings/", {"before": "2026-11-09"}).data["results"]] == [earlier.pk]
+    assert client.get("/api/meetings/", {"before": "2026-13-45"}).status_code == 400
+    row = {"owner_id": student_a.pk, "content": "补实验", "carried_from": item.pk}
+    filled_in = client.post("/api/meetings/", {"date": "2026-11-09", "title": "补录", "agenda": [], "actions": [row]}, format="json")
+    assert filled_in.status_code == 400 and "晚于这场组会" in str(filled_in.data)
+    item.refresh_from_db()
+    assert item.done_at is None and item.carried_to_id is None
+
+
+def test_the_admin_does_not_delete_carried_items(group, manager, ops, student_a):
+    from django.test import Client
+
+    a, b, plain = meeting(group, manager, 2), meeting(group, manager, 9), meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    ActionItem.objects.create(meeting=b, owner=student_a, content="补实验", carried_from=item)
+    ActionItem.objects.create(meeting=plain, owner=student_a, content="交数据")
+    client = Client()
+    client.force_login(ops)
+    for held in (a, b):  # the one carried out of, and the one carried into
+        assert client.post(f"/admin/meetings/meeting/{held.pk}/delete/", {"post": "yes"}).status_code == 403
+        page = client.get(f"/admin/meetings/meeting/{held.pk}/change/").content.decode()
+        assert "actions-0-DELETE" not in page  # no row of its items can be ticked for deletion
+    # the bulk "delete selected" refuses them too, and leaves a meeting without carried items deletable
+    bulk = client.post("/admin/meetings/meeting/", {"action": "delete_selected", "_selected_action": [a.pk, b.pk], "post": "yes"})
+    assert bulk.status_code == 403 and Meeting.objects.filter(pk__in=[a.pk, b.pk]).count() == 2
+    assert "actions-0-DELETE" in client.get(f"/admin/meetings/meeting/{plain.pk}/change/").content.decode()
+    assert client.post(f"/admin/meetings/meeting/{plain.pk}/delete/", {"post": "yes"}).status_code == 302

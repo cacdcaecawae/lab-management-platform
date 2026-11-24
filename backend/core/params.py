@@ -1,5 +1,6 @@
 """Query-string values that reach the database."""
 
+from django.utils.dateparse import parse_date
 from rest_framework.exceptions import ValidationError
 
 
@@ -16,3 +17,17 @@ def search_text(params):
     if "\x00" in keyword:
         raise ValidationError({"search": ["搜索词里有无效字符"]})
     return keyword
+
+
+def day_param(params, name):
+    """`params[name]` (YYYY-MM-DD) as a date, or None when it is not given; anything else is a 400."""
+    text = params.get(name)
+    if not text:
+        return None
+    try:
+        day = parse_date(text)
+    except ValueError:  # the right shape, not a date: 2026-13-45
+        day = None
+    if day is None:
+        raise ValidationError({name: ["格式为 YYYY-MM-DD"]})
+    return day

@@ -62,10 +62,10 @@ onMounted(refresh)
     <p v-if="applied" class="range">{{ applied.from }} 至 {{ applied.to }}（不含），{{ groups[applied.by] }}统计</p>
     <el-table empty-text="暂无使用记录" v-loading="loading" :data="rows">
       <el-table-column prop="key.label" label="分组" min-width="140" />
-      <el-table-column label="预约小时" min-width="100">
+      <el-table-column label="预约小时" prop="booked_hours" sortable min-width="110">
         <template #default="{ row }">{{ row.booked_hours.toFixed(2) }}</template>
       </el-table-column>
-      <el-table-column label="已登记预约小时" min-width="145">
+      <el-table-column label="已登记预约小时" prop="reported_hours" sortable min-width="155">
         <template #default="{ row }">{{ row.reported_hours.toFixed(2) }}</template>
       </el-table-column>
       <el-table-column prop="bookings" label="预约数" min-width="90" />

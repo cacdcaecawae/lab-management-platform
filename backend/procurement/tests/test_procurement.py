@@ -344,6 +344,8 @@ def test_attachments(api, student_a, student_b, manager, other_manager, fund, mo
     assert stored.startswith("procurement/") and stored.endswith(".pdf") and "报价单" not in stored
     download = api(manager).get(r.data["url"])
     assert download.status_code == 200 and b"".join(download.streaming_content) == b"%PDF-1.4 fake"
+    assert download["Cache-Control"] == "private"
+    assert download["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'self'"
     assert api(student_b).get(r.data["url"]).status_code == 404
     assert api(other_manager).get(r.data["url"]).status_code == 404
     assert api(student_b).post(url, {"file": pdf()}).status_code == 404
