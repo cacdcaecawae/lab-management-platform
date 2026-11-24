@@ -22,7 +22,7 @@ it('marks visible account notifications read and reloads the unread page', async
   })
   vi.stubGlobal('fetch', fetch)
   const pinia = createPinia()
-  useAuthStore(pinia).user = { id: 1, role: 'manager', group: { id: 7, name: 'Fixture' } } as Me
+  useAuthStore(pinia).user = { id: 1, role: 'student', is_manager: true, group: { id: 7, name: 'Fixture' } } as Me
   const wrapper = mount(NotificationsView, { global: { plugins: [router, pinia, ElementPlus] } })
   await flushPromises()
   expect(wrapper.text()).toContain(item.title)

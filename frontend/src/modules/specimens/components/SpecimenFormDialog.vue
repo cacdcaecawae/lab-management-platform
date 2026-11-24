@@ -6,6 +6,7 @@ import { membersApi } from '@/modules/members/api'
 import type { Defect, Specimen, SpecimenWrite, UserBrief } from '@/api/types'
 import { DEFECT_KIND_LABELS, SPECIMEN_KIND_LABELS, SPECIMEN_STATUSES, STATUS, mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import { suggest } from '@/api/suggestions'
 import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
@@ -84,9 +85,9 @@ async function save() {
           <el-option v-for="(label, k) in SPECIMEN_KIND_LABELS" :key="k" :label="label" :value="k" />
         </el-select>
       </el-form-item>
-      <el-form-item label="材料" :error="errors.fe('material')"><el-input v-model="form.material" placeholder="如 20 钢、6061 铝" /></el-form-item>
+      <el-form-item label="材料" :error="errors.fe('material')"><el-autocomplete v-model="form.material" :fetch-suggestions="suggest('specimen.material')" placeholder="如 20 钢、6061 铝" /></el-form-item>
       <el-form-item label="尺寸" :error="errors.fe('dimensions')"><el-input v-model="form.dimensions" placeholder="如 300×100×25 mm" /></el-form-item>
-      <el-form-item label="存放位置" :error="errors.fe('location')"><el-input v-model="form.location" /></el-form-item>
+      <el-form-item label="存放位置" :error="errors.fe('location')"><el-autocomplete v-model="form.location" :fetch-suggestions="suggest('specimen.location')" /></el-form-item>
       <el-form-item label="保管人" :error="errors.fe('custodian_id')">
         <el-select v-model="form.custodian_id" aria-label="保管人" placeholder="选择保管人" clearable filterable>
           <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
@@ -120,6 +121,7 @@ async function save() {
     </el-form-item>
 
     <el-form-item label="备注" :error="errors.fe('notes')"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
+    <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
   </FormDialog>
 </template>
 

@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from core.files import stored_name
@@ -24,17 +25,34 @@ class ResearchGroup(models.Model):
 
 
 class User(AbstractUser):
-    """username 即学号或工号。first_name / last_name 不使用，姓名存在 name。"""
+    """username 即学号或工号。first_name / last_name 不使用，姓名存在 name。
+
+    What one may do comes from the base role and two tags (.agents/notes/implemented/architecture/
+    2026-11-23-roles-and-identity.md): advisors see and review the group's research records, managers run its affairs,
+    approvers do the final review of purchases. Identity, year, graduation and tags only describe the person."""
 
     class Role(models.TextChoices):
         STUDENT = "student", "学生"
-        MANAGER = "manager", "管理员"
         ADVISOR = "advisor", "导师"
+
+    class Identity(models.TextChoices):
+        TEACHER = "teacher", "教师"
+        POSTDOC = "postdoc", "博士后"
+        PHD = "phd", "博士生"
+        MASTER = "master", "硕士生"
+        UNDERGRADUATE = "undergraduate", "本科生"
+        ASSISTANT = "assistant", "科研助理"
 
     group = models.ForeignKey(
         ResearchGroup, verbose_name="课题组", null=True, blank=True, on_delete=models.PROTECT, related_name="members"
     )
-    role = models.CharField("角色", max_length=16, choices=Role.choices, default=Role.STUDENT)
+    role = models.CharField("基础角色", max_length=16, choices=Role.choices, default=Role.STUDENT)
+    is_manager = models.BooleanField("管理员", default=False)
+    is_approver = models.BooleanField("终审人", default=False)
+    identity = models.CharField("身份", max_length=16, choices=Identity.choices, blank=True)
+    enrollment_year = models.PositiveSmallIntegerField("入学年份", null=True, blank=True)
+    graduated = models.BooleanField("已毕业", default=False)  # read with is_active: see member_status
+    tags = ArrayField(models.CharField(max_length=20), verbose_name="词条", default=list, blank=True)
     name = models.CharField("姓名", max_length=50, blank=True)
     phone = models.CharField("联系电话", max_length=30, blank=True)
     research_direction = models.CharField("研究方向", max_length=100, blank=True)
@@ -54,16 +72,38 @@ class User(AbstractUser):
         ]
 
     def save(self, *args, **kwargs):
+        changed = set()
         # Switched on (系统管理, /admin/) or given another role by ops: no longer an application for the managers.
         if self.pending and (self.is_active or self.role != self.Role.STUDENT):
             self.pending = False
-            if kwargs.get("update_fields") is not None:
-                kwargs["update_fields"] = {*kwargs["update_fields"], "pending"}
+            changed.add("pending")
+        if self.is_active and self.graduated:  # back in the group (e.g. a master's graduate starting a PhD)
+            self.graduated = False
+            changed.add("graduated")
+        if changed and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], *changed}
         super().save(*args, **kwargs)
 
     @property
+    def is_advisor(self):
+        return self.role == self.Role.ADVISOR
+
+    @property
     def is_supervisor(self):
-        return self.role in (self.Role.MANAGER, self.Role.ADVISOR)
+        """导师或管理员: new projects and their leaders, blind defect sizes, usage and storage statistics, members'
+        contact details. Research records need the advisor role, purchases a tag (core.permissions)."""
+        return self.is_advisor or self.is_manager
+
+    @property
+    def member_status(self):
+        """在籍 / 已毕业 / 已停用: only active accounts sign in."""
+        return "active" if self.is_active else "graduated" if self.graduated else "disabled"
+
+    @property
+    def audiences(self):
+        """Notifications sent to a role or tag (core.notifications.AUDIENCES) that this user reads."""
+        return ["", *(["advisor"] if self.is_advisor else []), *(["manager"] if self.is_manager else []),
+                *(["approver"] if self.is_approver else [])]
 
     @property
     def display_name(self):

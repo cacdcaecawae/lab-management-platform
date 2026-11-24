@@ -21,6 +21,16 @@ CASES = [
     ("/api/achievements/export/", {"year": TOO_BIG}),
     ("/api/specimens/", {"status": NUL}),
     ("/api/consumables/", {"expiring_within": NOT_A_NUMBER}),
+    # issue #48 S2-S4: the new filters, sorting and code search
+    ("/api/equipment/", {"custodian": TOO_BIG}),
+    ("/api/equipment/", {"category": NUL}),
+    ("/api/specimens/", {"material": NUL}),
+    ("/api/consumables/", {"ordering": "nearest_expiry_on" + NUL}),
+    ("/api/purchases/", {"fund": NOT_A_NUMBER}),
+    ("/api/purchases/", {"search": "PR-9999-99999999999999999999"}),
+    ("/api/reimbursements/", {"search": NUL}),
+    ("/api/meetings/", {"search": NUL}),
+    ("/api/suggestions/specimen.location/", {"search": NUL}),
 ]
 
 

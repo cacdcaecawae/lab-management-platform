@@ -3,9 +3,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import LabelsView from './LabelsView.vue'
 
-const mocks = vi.hoisted(() => ({ equipment: vi.fn(), specimen: vi.fn(), encode: vi.fn() }))
+const mocks = vi.hoisted(() => ({ equipment: vi.fn(), specimen: vi.fn(), consumables: vi.fn(), encode: vi.fn() }))
 vi.mock('@/modules/equipment/api', () => ({ equipmentApi: { get: mocks.equipment } }))
 vi.mock('@/modules/specimens/api', () => ({ specimensApi: { get: mocks.specimen } }))
+vi.mock('@/modules/inventory/api', () => ({ consumablesApi: { list: mocks.consumables } }))
 vi.mock('qrcode', () => ({ default: { toDataURL: mocks.encode } }))
 
 async function show(path: string) {
@@ -18,6 +19,7 @@ async function show(path: string) {
       { path: '/specimens', name: 'specimens', component: empty },
       { path: '/equipment/:id', name: 'equipment-detail', component: empty },
       { path: '/specimens/:id', name: 'specimen-detail', component: empty },
+      { path: '/consumables', name: 'consumables', component: empty },
     ],
   })
   await router.push(path)
@@ -97,5 +99,17 @@ it('ignores outdated responses when navigating within the print page', async () 
   expect(wrapper.find('.label').text()).toContain('SP-2')
   expect(wrapper.text()).not.toContain('outdated')
   expect(mocks.encode).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+})
+
+it('points a consumable label at taking it out, and prints its name, spec and place', async () => {
+  mocks.consumables.mockImplementation(async ({ item }: { item: number }) => ({
+    results: [{ id: item, name: '耦合剂', spec: '250 mL', location: 'A302' }],
+  }))
+  const { wrapper } = await show('/labels?type=consumable&ids=4')
+  expect(mocks.encode.mock.calls[0]?.[0]).toBe(`${location.origin}/consumables?item=4&scan=1`)
+  expect(wrapper.find('.label').text()).toContain('耦合剂')
+  expect(wrapper.find('.label').text()).toContain('250 mL · A302')
+  expect(wrapper.text()).toContain('返回耗材库存')
   wrapper.unmount()
 })

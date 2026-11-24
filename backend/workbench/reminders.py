@@ -8,6 +8,7 @@ from django.db.models import F
 from accounts.models import User
 from equipment.models import Equipment
 from equipment.queries import CALIBRATION_REMINDER_DAYS, calibration_within
+from inventory.queries import batches_with_balance
 from meetings.models import ActionItem
 from reports.models import WeeklyReport
 from reports.queries import HANDED_IN
@@ -23,7 +24,7 @@ def build_digests(today, site_url):
     managers = defaultdict(list)
     digests = defaultdict(list)
     for user in eligible.values():
-        if user.role == User.Role.MANAGER:
+        if user.is_manager:
             managers[user.group_id].append(user.pk)
 
     def notice(recipient, title, item, path):
@@ -45,6 +46,14 @@ def build_digests(today, site_url):
     for device in calibration_within(Equipment.objects.filter(calibration_due__in=dates), today=today).order_by("calibration_due", "id"):
         for manager_id in managers[device.group_id]:
             notice(manager_id, "设备校准", f"{device.code} {device.name}（{device.calibration_due} 到期）", f"/equipment/{device.pk}")
+
+    # consumable batches still in stock, on the same days as calibrations: due today, in 7 and in 30 days
+    batches = batches_with_balance().filter(expires_on__in=dates, stock__gt=0, consumable__tracks_batches=True)
+    for batch in batches.select_related("consumable"):
+        item = batch.consumable
+        for manager_id in managers[item.group_id]:
+            notice(manager_id, "耗材批次到期", f"{item} 批号 {batch.batch_no}（{batch.expires_on} 到期，剩 {batch.stock} {item.unit}）",
+                   f"/consumables?item={item.pk}")
 
     actions = ActionItem.objects.filter(
         owner_id__in=eligible,

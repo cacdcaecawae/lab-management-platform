@@ -2,8 +2,9 @@
 
     group / other_group          two research groups
     student_a, student_b         students in `group`
-    manager, advisor             supervisors of `group`
-    other_manager                supervisor of `other_group` (must NOT see `group` data)
+    manager                      a student of `group` with the 管理员 tag (affairs; not other students' research records)
+    advisor                      an advisor of `group` with the 终审人 tag (research records; final purchase reviews)
+    other_manager, other_advisor a manager and an advisor of `other_group` (must NOT see `group` data)
     ops                          the ops account: a superuser without a group (系统管理 only)
     project                      project in `group`, leader student_a, members a + b
     api(user)                    DRF APIClient logged in as `user` (CSRF not enforced)
@@ -62,17 +63,22 @@ def student_b(group):
 
 @pytest.fixture
 def manager(group):
-    return make_user("mgr", group, User.Role.MANAGER)
+    return make_user("mgr", group, is_manager=True)  # a student with the 管理员 tag
 
 
 @pytest.fixture
 def advisor(group):
-    return make_user("adv", group, User.Role.ADVISOR)
+    return make_user("adv", group, User.Role.ADVISOR, is_approver=True)
 
 
 @pytest.fixture
 def other_manager(other_group):
-    return make_user("other_mgr", other_group, User.Role.MANAGER)
+    return make_user("other_mgr", other_group, is_manager=True)
+
+
+@pytest.fixture
+def other_advisor(other_group):
+    return make_user("other_adv", other_group, User.Role.ADVISOR, is_approver=True)
 
 
 @pytest.fixture

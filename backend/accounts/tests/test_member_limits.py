@@ -11,7 +11,7 @@ NEW_PASSWORD = "Fresh-pass-2026"
 
 
 def test_manager_cannot_touch_advisor_or_other_manager(api, group, manager, advisor):
-    peer = make_user("mgr2", group, User.Role.MANAGER)
+    peer = make_user("mgr2", group, is_manager=True)  # another student with the 管理员 tag
     client = api(manager)
     for target in (advisor, peer):
         r = client.post(f"/api/members/{target.id}/reset-password/", {"password": NEW_PASSWORD}, format="json")
@@ -22,14 +22,16 @@ def test_manager_cannot_touch_advisor_or_other_manager(api, group, manager, advi
         assert target.check_password(PASSWORD) and target.is_active
 
 
-def test_manager_creates_and_assigns_students_only(api, manager, student_a):
+def test_manager_creates_students_only_and_hands_out_no_role_or_tag(api, manager, student_a):
     client = api(manager)
-    body = {"username": "2026009", "name": "新导师", "role": "advisor", "password": NEW_PASSWORD}
-    r = client.post("/api/members/", body, format="json")
-    assert r.status_code == 400 and "role" in r.data["errors"]
-    r = client.patch(f"/api/members/{student_a.id}/", {"role": "manager"}, format="json")
-    assert r.status_code == 400 and "role" in r.data["errors"]
-    assert client.post("/api/members/", {**body, "role": "student"}, format="json").status_code == 201
+    grab = {"role": "advisor", "is_manager": True, "is_approver": True}
+    body = {"username": "2026009", "name": "新导师", "password": NEW_PASSWORD, **grab}
+    assert client.post("/api/members/", body, format="json").status_code == 201
+    created = User.objects.get(username="2026009")
+    assert (created.role, created.is_manager, created.is_approver) == ("student", False, False)
+    assert client.patch(f"/api/members/{student_a.id}/", grab, format="json").status_code == 200
+    student_a.refresh_from_db()
+    assert (student_a.role, student_a.is_manager, student_a.is_approver) == ("student", False, False)
 
 
 def test_manager_still_edits_own_profile(api, manager):

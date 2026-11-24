@@ -1,6 +1,6 @@
 ---
 name: verify-equipment-tla
-description: 用 TLA+ 模型检查器（TLC）穷举设备预约的并发交错：建预约、使用登记、取消预约、管理员编辑设备同时发生时，"登记异常后到管理员处理前不能建使用预约"等 5 条规则是否成立。改了 backend/equipment 的 views.py / serializers.py / models.py、config/settings.py 的数据库设置，或 EquipmentFormDialog.vue 之后使用；也用于判断这些代码是否还和模型一致。
+description: 用 TLA+ 模型检查器（TLC）穷举设备预约的并发交错：建预约、使用登记、取消预约、提前结束、管理员编辑设备同时发生时，"登记异常后到管理员处理前不能建使用预约"等 7 条规则是否成立。改了 backend/equipment 的 views.py / serializers.py / models.py、config/settings.py 的数据库设置，或 EquipmentFormDialog.vue 之后使用；也用于判断这些代码是否还和模型一致。
 ---
 
 # 设备预约并发交错的模型检查
@@ -16,6 +16,8 @@ description: 用 TLA+ 模型检查器（TLC）穷举设备预约的并发交错�
 | 3 | `NotCancelledAndReported` | 一个预约不会既被取消又被登记 | 统计和使用记录对不上 |
 | 4 | `OneReportNo500` | 每个预约最多一条使用登记，重复登记得到 409 而不是服务器错误 | 用户看到 500 |
 | 5 | TLC 死锁检查 | 锁等待不会成环 | PostgreSQL 会杀掉其中一个请求，用户看到 500 |
+| 6 | `NoOverlap` | 同一设备未取消的预约不重叠；提前结束的预约不再占着自己时段的剩余部分 | 两人约到同一段时间 |
+| 7 | `EndsOnlyStartedUse` | 只有已经开始的使用预约能提前结束 | 结束时间早于开始时间，数据库约束报错，用户看到 500 |
 
 "管理员处理"在模型里的意思是：编辑表单打开时显示的是"待检查"，并且请求里明确给出了状态（`Handles`）。服务器无法区分"故意改回可用"和"旧表单把可用带回来"，所以按表单看到的状态判断。
 
@@ -42,7 +44,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 | `interleavings` | 建预约、登记、取消，3 个并发请求 | 通过 |
 | `with-edits-patch-no-status` | 再加上管理员编辑，编辑不改状态 | 通过（F1） |
 | `with-edits` | 编辑也可以改状态 | 通过（R1） |
-| `break-*`（7 个） | 各自去掉代码里的一处保护（模型里的 `Mutant` 分支） | 各自打破对应规则，证明检查还能失败 |
+| `break-*`（8 个） | 各自去掉代码里的一处保护（模型里的 `Mutant` 分支） | 各自打破对应规则，证明检查还能失败 |
 
 其中 `break-edit-writes-stale-status`（没带状态时，服务器写回 `get_object()` 读到的旧状态）对应 F1 的修复，`break-edit-skips-status-seen-check`（服务器不核对 `status_seen`）对应 R1 的修复。表单只提交改过的字段，在模型里已经不是安全所必需：多提交一个没改的状态，会被 `status_seen` 核对拦成 409。它的作用是避免这种无谓的 409。
 
@@ -61,7 +63,7 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 
 ## 覆盖范围（模型的每一步对应的代码）
 
-截至 `SYNC=c8503dc5e7067fab6f8d707330b5606e56cf87b3`。集成复核覆盖校准筛选、表单导入路径、登录审计与 NAS 设置。异常登记在原事务内新增通知写入，失败时随登记一起回滚；原预约和设备的锁顺序、异常标记与提交条件保持一致。从同一基线对照设备模块的三个覆盖文件、设备表单及 `settings.py` 的数据库部分。数据库部分使用 Python AST 识别简单的顶层 `DATABASES` 字典、相关覆盖配置和环境初始化，不执行设置文件；注释和纯格式变化不触发复核。提取不确定（例如动态表达式、二次赋值、通配符导入）时按有改动复核。基线提交不可读取时退出 1，不自动改 `SYNC`。
+截至 `SYNC=c09779d9540ade76822367dc316c9639742fb046`（issue #48 其余提案后复核：新增提前结束，对应 `EndStart` / `EndLockBooking` / `EndUpdate` 和 `NoOverlap`、`EndsOnlyStartedUse` 两条规则；管理员取消别人的预约时在原事务里多写一条通知，不加锁；预约列表视图和设备筛选只读；设备表单多了只用于新建的 `initial`，编辑路径不变。R1 后复核：自 `c8503dc` 起，覆盖的代码只改了异常通知的收件人（按"管理员"标签）、照片下载改用共用的 `download`、邮件正文里的站名，设备表单换成共用弹窗；表单打开时记下的值、只提交改了的字段、改状态时带 `status_seen` 都没变，加锁和状态的步骤不受影响）。集成复核覆盖校准筛选、表单导入路径、登录审计与 NAS 设置。异常登记在原事务内新增通知写入，失败时随登记一起回滚；原预约和设备的锁顺序、异常标记与提交条件保持一致。从同一基线对照设备模块的三个覆盖文件、设备表单及 `settings.py` 的数据库部分。数据库部分使用 Python AST 识别简单的顶层 `DATABASES` 字典、相关覆盖配置和环境初始化，不执行设置文件；注释和纯格式变化不触发复核。提取不确定（例如动态表达式、二次赋值、通配符导入）时按有改动复核。基线提交不可读取时退出 1，不自动改 `SYNC`。
 
 | 模型动作 | 代码 | 说明 |
 |---|---|---|
@@ -74,6 +76,9 @@ TLC 的输出和配置在 `$TEMP/verify-equipment-tla/`（每次运行时清空�
 | `ReportMarkEquipment` | `report`：异常时 `Equipment.objects.select_for_update()`，状态为"可用"才改成"待检查"再 `save()` | |
 | `CancelLockBooking` | `BookingViewSet.cancel`：`lock_booking()`，然后检查未取消、学生只能在开始前取消、`UsageReport...exists()` | |
 | `CancelUpdate` | `cancel`：`booking.save(update_fields=["cancelled_at"])` | |
+| `EndStart` | `BookingViewSet.end_now`：`self.get_object()` | 不是预约人也不是管理员时在锁下返回 403，什么也不写，不建模 |
+| `EndLockBooking` | `end_now`：`lock_booking()`，然后检查是使用预约、未取消、`start_at <= now < end_at` | 已经提前结束过的（`planned_end_at` 有值，含开始后第一分钟内结束、`end_at` 还没到的）同样 409；`end_skips_started_check` 变体去掉"已开始" |
+| `EndUpdate` | `end_now`：`booking.save(update_fields=["end_at", "planned_end_at"])`，`end_at` 只会提前 | 正在建重叠预约的事务要等它提交；提交后新预约（开始时间不早于现在）不再和它重叠 |
 | `EditOpenForm` | `frontend/src/modules/equipment/components/EquipmentFormDialog.vue`：打开时记下表单值（`opened`），保存时只 PATCH 和它不同的字段；改了状态时带上 `status_seen: opened.status` | 状态没改就不带（`"omit"`），所以只能带和打开时不同的状态；`status_seen` 就是 `formSeen` |
 | `EditRead` | `EquipmentViewSet.partial_update` → DRF `UpdateModelMixin.update` → `get_object()` | 普通 SELECT，不加锁；读到的值只在 `edit_writes_stale_status` 变体里用 |
 | `EditUpdate` | `EquipmentSerializer.save()`：`transaction.atomic()` 内 `EquipmentSerializer.update()` 先 `Equipment.objects.select_for_update().get(pk=...)` 重读；带了状态而锁下的状态既不是 `status_seen` 也不是新状态时 `Conflict`（409 `stale_status`），否则写上请求里的字段并 `save()` | 等行锁；没带状态时写锁下读到的最新状态 |

@@ -107,7 +107,7 @@ class RegisterView(APIView):
             if User.objects.filter(group=group, pending=True).count() >= PENDING_LIMIT:
                 raise Conflict("待审核的申请太多，请联系课题组管理员先处理", code="too_many_pending")
             user = data.save(group=group)
-            notify(group.pk, f"{user.name} 申请加入课题组，请审核", "/members", role=User.Role.MANAGER)
+            notify(group.pk, f"{user.name} 申请加入课题组，请审核", "/members", role="manager")
         return Response(status=status.HTTP_201_CREATED)
 
 

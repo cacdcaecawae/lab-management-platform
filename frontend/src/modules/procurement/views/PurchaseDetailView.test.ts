@@ -54,7 +54,7 @@ async function mountAsManager(reviewResponse: { status: number; body: unknown },
   })
   await router.push('/p/5')
   await router.isReady()
-  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
+  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'student', is_manager: true, is_supervisor: true } as Me
   const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] }, attachTo: document.body })
   await flushPromises()
   const click = async (text: string) => {
@@ -94,5 +94,49 @@ describe('PurchaseDetailView review', () => {
       expect.objectContaining({ submitted_seen: purchase.submitted_at }),
       expect.objectContaining({ submitted_seen: refreshed.submitted_at }),
     ])
+  })
+})
+
+describe('PurchaseDetailView items', () => {
+  it('shows a row error under its own row when a blank row before it is not sent', async () => {
+    const draft = { ...purchase, status: 'draft', submitted_at: null, items: [], total: '0.00' } as PurchaseDetail
+    const sent: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+      if (init.method === 'PATCH') {
+        sent.push(JSON.parse(init.body as string))
+        const errors = { items: [{ unit_price: ['请填写单价'] }] } // numbered by the items the server got
+        return Promise.resolve(new Response(JSON.stringify({ code: 'validation_error', message: '提交的数据有误', errors }), { status: 400 }))
+      }
+      const body = url === '/api/purchases/5/' ? draft : { count: 0, next: null, previous: null, results: [] }
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
+    }))
+    const pinia = createPinia()
+    const stub = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        ...['purchases', 'purchase-reviews', 'equipment-detail'].map((name) => ({ path: `/${name}/:id?`, name, component: stub })),
+        { path: '/p/:id', name: 'purchase-detail', component: PurchaseDetailView },
+      ],
+    })
+    await router.push('/p/5')
+    await router.isReady()
+    useAuthStore(pinia).user = { id: 2, name: '陈同学', role: 'student', is_supervisor: false } as Me // the applicant
+    const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] }, attachTo: document.body })
+    await flushPromises()
+    const click = async (text: string) => {
+      await wrapper.findAll('button').find((b) => b.text() === text)!.trigger('click')
+      await flushPromises()
+    }
+
+    await click('添加一行') // row 1 stays blank, row 2 gets a name but no price
+    await wrapper.findAll('input[aria-label="品名"]')[1].setValue('探头支架')
+    await click('保存草稿')
+
+    expect(sent).toEqual([expect.objectContaining({ items: [expect.objectContaining({ name: '探头支架' })] })])
+    const error = wrapper.get('.row-error')
+    expect(error.text()).toBe('单价：请填写单价')
+    expect(error.element.previousElementSibling!.querySelector<HTMLInputElement>('input[aria-label="品名"]')!.value).toBe('探头支架')
+    wrapper.unmount()
   })
 })

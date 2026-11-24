@@ -4,7 +4,7 @@ from simple_history.models import HistoricalRecords
 
 
 class WeeklyReport(models.Model):
-    """周报：每人每周一份（week_start 为周一）。个人数据：本人 + 本组管理员/导师可见。
+    """周报：每人每周一份（week_start 为周一）。个人数据：本人 + 本组导师可见。
 
     状态：草稿 → 已提交 → 已阅 / 需补充；需补充时学生修改后再次提交。"""
 
@@ -44,7 +44,7 @@ class WeeklyReport(models.Model):
 
 
 class ReportFeedback(models.Model):
-    """导师/管理员对周报的一次反馈。只增不改。"""
+    """导师对周报的一次反馈。只增不改。"""
 
     class Verdict(models.TextChoices):
         REVIEWED = "reviewed", "已阅"

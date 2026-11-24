@@ -1,4 +1,3 @@
-from accounts.models import User
 from core.notifications import notify
 
 from .models import PurchaseRequest
@@ -12,8 +11,8 @@ def notify_purchase(purchase):
     group_id = purchase.owner.group_id
     path = f"/purchases/{purchase.pk}"
     reviewer = {
-        S.PENDING_INITIAL: (User.Role.MANAGER, "采购申请待初审"),
-        S.PENDING_FINAL: (User.Role.ADVISOR, "采购申请待终审"),
+        S.PENDING_INITIAL: ("manager", "采购申请待初审"),
+        S.PENDING_FINAL: ("approver", "采购申请待终审"),
     }.get(purchase.status)
     if reviewer:
         role, title = reviewer

@@ -3,7 +3,7 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
-from accounts.member_serializers import LoginNameMixin, NewAccountMixin
+from accounts.member_serializers import LoginNameMixin, MemberDetailsMixin, NewAccountMixin
 from accounts.models import ResearchGroup, User
 from core.models import SiteSettings
 
@@ -64,7 +64,7 @@ class SystemGroupSerializer(serializers.ModelSerializer):
         return getattr(group, "member_count", 0)  # annotated by the view: active members
 
 
-class AccountSerializer(LoginNameMixin, serializers.ModelSerializer):
+class AccountSerializer(LoginNameMixin, MemberDetailsMixin, serializers.ModelSerializer):
     """A member account of any group. The group is set when the account is created: moving someone changes who
     can see their records, so that stays a deliberate step in /admin/."""
 
@@ -73,12 +73,17 @@ class AccountSerializer(LoginNameMixin, serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "name", "role", "group", "email", "phone", "wechat", "research_direction", "is_active",
-            "must_change_password", "pending", "last_login",
+            "id", "username", "name", "role", "is_manager", "is_approver", "identity", "enrollment_year", "member_status",
+            "tags", "group", "email", "phone", "wechat", "research_direction", "is_active", "must_change_password",
+            "pending", "last_login",
         ]
         read_only_fields = ["must_change_password", "pending", "last_login"]
         # The login name can be corrected (LoginNameMixin); duplicates are a 409, not DRF's 400.
-        extra_kwargs = {"name": {"allow_blank": False}, "username": {"validators": [User.username_validator]}}
+        extra_kwargs = {
+            "name": {"allow_blank": False},
+            "username": {"validators": [User.username_validator]},
+            "enrollment_year": {"min_value": 1950, "max_value": 2100},
+        }
 
     def get_group(self, user):
         return {"id": user.group_id, "name": user.group.name} if user.group_id else None
@@ -87,6 +92,7 @@ class AccountSerializer(LoginNameMixin, serializers.ModelSerializer):
 class AccountCreateSerializer(NewAccountMixin, AccountSerializer):
     group_id = serializers.PrimaryKeyRelatedField(source="group", queryset=ResearchGroup.objects.all(), write_only=True)
     password = serializers.CharField(write_only=True, trim_whitespace=False)
+    member_status = serializers.CharField(read_only=True)  # a new account is 在籍
 
     class Meta(AccountSerializer.Meta):
         fields = [*AccountSerializer.Meta.fields, "group_id", "password"]
@@ -96,5 +102,6 @@ class AccountCreateSerializer(NewAccountMixin, AccountSerializer):
             "name": {"required": True, "allow_blank": False},
             "role": {"required": True},
             "username": {"validators": [User.username_validator]},
+            "enrollment_year": {"min_value": 1950, "max_value": 2100},
         }
 

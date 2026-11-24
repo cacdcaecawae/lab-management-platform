@@ -44,13 +44,17 @@ class AgendaItem(models.Model):
 
 
 class ActionItem(models.Model):
-    """行动项。负责人或管理员标记完成（记 done_at）。"""
+    """行动项。负责人或管理员标记完成（记 done_at）；新组会带入时转过去（carried_to），旧的这条算完成。"""
 
     meeting = models.ForeignKey(Meeting, verbose_name="组会", on_delete=models.CASCADE, related_name="actions")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="负责人", on_delete=models.PROTECT, related_name="action_items")
     content = models.CharField("事项", max_length=300)
     due_date = models.DateField("截止日期", null=True, blank=True)
     done_at = models.DateTimeField("完成时间", null=True, blank=True)
+    # Brought into a later meeting's list (that copy carries on); this one counts as done and keeps the record.
+    carried_to = models.ForeignKey(
+        Meeting, verbose_name="转入组会", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         verbose_name = verbose_name_plural = "行动项"

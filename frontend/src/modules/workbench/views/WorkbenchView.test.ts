@@ -3,7 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import type { Dashboard } from '@/api/types'
+import type { Dashboard, Me } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import EquipmentView from '@/modules/equipment/views/EquipmentView.vue'
 import SpecimensView from '@/modules/specimens/views/SpecimensView.vue'
 import WorkbenchView from './WorkbenchView.vue'
@@ -22,6 +23,7 @@ const base: Dashboard = {
     borrowed_specimens: [loan], borrowed_specimens_count: 21,
     tasks: [], action_items: [], reports_needing_revision: [], draft_experiments: [],
     current_week_report: null, upcoming_bookings: [], unreported_bookings: [], returned_purchases: [],
+    draft_runs: [], draft_purchases: [], reimbursements_without_invoice: [],
   },
   supervisor: null,
   manager: null,
@@ -30,6 +32,8 @@ const names = {
   workbench: '/', specimens: '/specimens', 'specimen-detail': '/specimens/:id',
   equipment: '/equipment', 'equipment-detail': '/equipment/:id', 'report-new': '/reports/new',
   reports: '/reports', experiments: '/experiments', bookings: '/bookings', consumables: '/consumables',
+  runs: '/runs', 'run-edit': '/runs/:id', purchases: '/purchases', 'purchase-detail': '/purchases/:id', members: '/members',
+  reimbursements: '/reimbursements', projects: '/projects', meetings: '/meetings', 'purchase-reviews': '/purchases/reviews',
 }
 
 async function setup(path: string, data = base) {
@@ -49,7 +53,7 @@ it('shows actual totals and links each reminder to its matching filter', async (
   const { global } = await setup('/', {
     ...base,
     manager: {
-      equipment_to_check: [], low_stock: [],
+      equipment_to_check: [], low_stock: [], pending_signups: [], to_purchase: [], to_receive: [],
       overdue_loans: [{ ...loan, borrower: { id: 1, name: '学生甲' } }], overdue_loans_count: 22,
       calibration_due: [{ id: 1, code: 'E-1', name: '设备甲', status: 'available', calibration_due: '2026-11-19' }],
       calibration_due_count: 23,
@@ -99,5 +103,31 @@ it('remembers the schedule column width set from the divider and resets it on do
   expect(bar.attributes('aria-valuenow')).toBe('720')
   await bar.trigger('dblclick')
   expect(localStorage.getItem('lab.workbench.side')).toBe('400')
+  wrapper.unmount()
+})
+
+it('reminds a student manager of the weekly report and links new kinds to their filtered lists', async () => {
+  const purchase = { id: 4, code: 'PR-2026-0004', owner: { id: 2, name: '学生甲' }, purpose: '探头' }
+  const { global } = await setup('/', {
+    ...base,
+    my: { ...base.my, draft_runs: [{ id: 3, code: 'RUN-2026-0003', title: '成像', status: 'draft' }] },
+    supervisor: { week_start: '2026-11-16', missing_reports: [{ id: 5, name: '学生乙' }], pending_reviews: [], purchases_to_review: [] },
+    overdue_tasks: 2,
+    manager: {
+      equipment_to_check: [], low_stock: [], overdue_loans: [], overdue_loans_count: 0, calibration_due: [], calibration_due_count: 0,
+      pending_signups: [{ id: 6, name: '新同学' }], to_purchase: [purchase], to_receive: [],
+    },
+  } as unknown as Dashboard)
+  const pinia = global.plugins[1] as ReturnType<typeof createPinia>
+  useAuthStore(pinia).user = { id: 2, name: '学生甲', role: 'student', is_manager: true, is_approver: false, is_supervisor: true } as Me
+  const wrapper = mount(WorkbenchView, { global })
+  await flushPromises()
+  const hrefs = wrapper.findAll('a').map((a) => a.attributes('href'))
+  expect(wrapper.text()).toContain('写本周周报')
+  expect(hrefs).toContain('/reports?tab=missing&week=2026-11-16')
+  expect(hrefs).toContain('/runs/3')
+  expect(hrefs).toContain('/members')
+  expect(hrefs).toContain('/purchases/4')
+  expect(wrapper.text()).toContain('组里有 2 个任务已逾期')
   wrapper.unmount()
 })

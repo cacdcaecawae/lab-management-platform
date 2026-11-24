@@ -29,10 +29,10 @@ def meeting(api, manager, student_a, student_b):
     return r.data
 
 
-def test_managers_run_meetings(api, group, student_a, student_b, advisor, other_manager, meeting):
+def test_advisors_and_managers_run_meetings(api, group, student_a, student_b, advisor, other_manager, meeting):
     assert api(student_a).post("/api/meetings/", body(student_a, student_b), format="json").status_code == 403
-    assert api(advisor).post("/api/meetings/", body(student_a, student_b), format="json").status_code == 403
     assert Meeting.objects.get().group == group and meeting["title"] == "组会"
+    assert api(advisor).post("/api/meetings/", body(student_a, student_b), format="json").status_code == 201  # issue #48 N4
     r = api(student_b).get(f"/api/meetings/{meeting['id']}/")  # group-wide read
     assert r.data["agenda"][0]["presenter"]["id"] == student_a.id and len(r.data["actions"]) == 2
     assert api(other_manager).get(f"/api/meetings/{meeting['id']}/").status_code == 404

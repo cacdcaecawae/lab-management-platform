@@ -76,6 +76,8 @@ class Booking(models.Model):
     end_at = models.DateTimeField("结束时间")
     purpose = models.CharField("用途", max_length=200, blank=True)
     cancelled_at = models.DateTimeField("取消时间", null=True, blank=True)
+    # Set when the booking was ended early (the end before that); end_at is then the actual end.
+    planned_end_at = models.DateTimeField("原定结束时间", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

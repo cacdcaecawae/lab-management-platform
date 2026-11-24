@@ -22,7 +22,8 @@ import * as labels from '@/modules/labels'
 import * as system from '@/modules/system'
 
 // meta.title: page title; meta.menu: menu item to highlight on detail pages;
-// meta.supervisor: only managers / advisors; meta.manager: only managers; meta.superuser: only the ops account
+// meta.supervisor: advisors and managers; meta.manager: managers; meta.finance: managers and approvers;
+// meta.superuser: only the ops account
 // (UI only — the API enforces it).
 export const appRoutes: RouteRecordRaw[] = [
   ...workbench.routes,
@@ -92,6 +93,7 @@ router.beforeEach(async (to) => {
   }
   if (to.meta.supervisor && !auth.isSupervisor) return { name: 'workbench' }
   if (to.meta.manager && !auth.isManager) return { name: 'workbench' }
+  if (to.meta.finance && !auth.isFinance) return { name: 'workbench' }
   if (to.meta.superuser && !auth.isSuperuser) return { name: 'workbench' }
   // the ops account has no group, so every business page would only say "no group"; the password page comes first
   if (auth.isSuperuser && !auth.user.group && !to.meta.superuser && to.name !== 'password') return { name: 'system' }

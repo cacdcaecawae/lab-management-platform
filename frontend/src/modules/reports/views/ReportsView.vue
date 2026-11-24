@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { reportsApi } from '@/modules/reports/api'
 import { membersApi } from '@/modules/members/api'
 import type { UserBrief, WeeklyReportDigest } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { useAuthStore } from '@/stores/auth'
 import { STATUS, formatTime, mondayOf, notMonday } from '@/utils/format'
 import { showError } from '@/utils/errors'
@@ -16,6 +18,7 @@ import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const DIGEST_SECTIONS = [
   { key: 'goals', label: '本周目标' },
@@ -25,18 +28,22 @@ const DIGEST_SECTIONS = [
 ] as const
 
 // Supervisors: 待反馈 / 本周汇总 / 未交名单 / 全部. Students only see their own reports (the API scopes the list).
-const tab = ref(auth.isSupervisor ? 'pending' : 'all')
+// ?tab=, ?week= and ?status= come from the workbench (未交周报 of a week, 周报需补充).
+const routeTab = String(route.query.tab ?? '')
+const tab = ref(auth.isAdvisor && ['pending', 'digest', 'missing', 'all'].includes(routeTab) ? routeTab : auth.isAdvisor ? 'pending' : 'all')
+const routeStatus = String(route.query.status ?? '')
+const routeWeek = String(route.query.week ?? '')
 const filters = reactive({
-  status: auth.isSupervisor ? 'submitted' : '',
+  status: tab.value === 'pending' ? 'submitted' : ['draft', 'submitted', 'needs_revision', 'reviewed'].includes(routeStatus) ? routeStatus : '',
   week_start: '',
   owner: '' as number | '',
   search: '',
 })
-const keyword = ref('')
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
-const { items, count, page, pageSize, loading } = usePagedList(reportsApi.list, filters)
+const keyword = useLiveSearch(filters)
+const members = auth.isAdvisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+const { items, count, page, pageSize, loading, sort } = usePagedList(reportsApi.list, filters)
 
-const missingWeek = ref(mondayOf())
+const missingWeek = ref(/^\d{4}-\d{2}-\d{2}$/.test(routeWeek) && !notMonday(new Date(`${routeWeek}T00:00:00`)) ? routeWeek : mondayOf())
 const missing = ref<UserBrief[] | null>(null)
 const missingLoading = ref(false)
 let missingSeq = 0
@@ -139,6 +146,23 @@ watch(tab, (t) => {
 watch(missingWeek, () => {
   if (tab.value === 'missing') void loadMissing()
 })
+if (tab.value === 'missing') void loadMissing()
+if (tab.value === 'digest') void loadDigest()
+
+// A notification (and a mail when mail is on) to each student still missing; at most once a day per week.
+const reminding = ref(false)
+async function remindMissing() {
+  reminding.value = true
+  try {
+    const { reminded, already } = await reportsApi.remindMissing(missingWeek.value)
+    if (reminded) ElMessage.success(`已提醒 ${reminded} 人${already ? `，另有 ${already} 人今天已经提醒过` : ''}`)
+    else ElMessage.info('今天已经提醒过这些同学')
+  } catch (e) {
+    showError(e)
+  } finally {
+    reminding.value = false
+  }
+}
 watch(digestWeek, () => {
   if (tab.value === 'digest') void loadDigest()
 })
@@ -150,7 +174,7 @@ onBeforeUnmount(() => {
 
 <template>
   <el-card class="card">
-    <el-tabs v-if="auth.isSupervisor" v-model="tab">
+    <el-tabs v-if="auth.isAdvisor" v-model="tab">
       <el-tab-pane label="待反馈" name="pending" />
       <el-tab-pane label="本周汇总" name="digest" />
       <el-tab-pane label="未交名单" name="missing" />
@@ -161,6 +185,9 @@ onBeforeUnmount(() => {
       <PageToolbar :foldable="false">
         <span>周一日期</span>
         <el-date-picker v-model="missingWeek" type="date" value-format="YYYY-MM-DD" :disabled-date="notMonday" :clearable="false" />
+        <template #actions>
+          <el-button type="primary" :loading="reminding" :disabled="!missing?.length" @click="remindMissing">提醒未交的人</el-button>
+        </template>
       </PageToolbar>
       <div v-loading="missingLoading">
         <el-result v-if="missing === null && !missingLoading" icon="warning" title="未交名单加载失败">
@@ -236,7 +263,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <PageToolbar>
         <el-input v-model="keyword" placeholder="搜索周报内容或姓名" clearable @change="filters.search = keyword" />
-        <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="成员" placeholder="全部成员" clearable filterable>
+        <el-select v-if="auth.isAdvisor" v-model="filters.owner" aria-label="成员" placeholder="全部成员" clearable filterable>
           <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
         </el-select>
         <el-date-picker
@@ -250,25 +277,25 @@ onBeforeUnmount(() => {
           <el-option v-for="s in ['draft', 'submitted', 'needs_revision', 'reviewed']" :key="s" :label="STATUS[s].label" :value="s" />
         </el-select>
         <template #actions>
-          <el-button v-if="!auth.isSupervisor" type="primary" :loading="openingThisWeek" @click="openThisWeek">写本周周报</el-button>
+          <el-button v-if="!auth.isAdvisor" type="primary" :loading="openingThisWeek" @click="openThisWeek">写本周周报</el-button>
         </template>
       </PageToolbar>
-      <el-table empty-text="暂无周报" v-loading="loading" :data="items">
-        <el-table-column v-if="auth.isSupervisor" label="学生" min-width="90">
+      <el-table @sort-change="sort" empty-text="暂无周报" v-loading="loading" :data="items">
+        <el-table-column v-if="auth.isAdvisor" label="学生" min-width="90">
           <template #default="{ row }">
             <RouterLink :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.owner.name }}</RouterLink>
           </template>
         </el-table-column>
-        <el-table-column label="周一日期" min-width="110">
+        <el-table-column label="周一日期" prop="week_start" sortable="custom" min-width="110">
           <template #default="{ row }">
-            <RouterLink v-if="!auth.isSupervisor" :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.week_start }}</RouterLink>
+            <RouterLink v-if="!auth.isAdvisor" :to="{ name: 'report-edit', params: { id: row.id } }">{{ row.week_start }}</RouterLink>
             <template v-else>{{ row.week_start }}</template>
           </template>
         </el-table-column>
         <el-table-column label="状态" min-width="90">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
-        <el-table-column label="提交时间" min-width="140">
+        <el-table-column label="提交时间" prop="submitted_at" sortable="custom" min-width="140">
           <template #default="{ row }">{{ formatTime(row.submitted_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="80" fixed="right">

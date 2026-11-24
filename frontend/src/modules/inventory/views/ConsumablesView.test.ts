@@ -4,12 +4,13 @@ import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import type { Consumable, Me } from '@/api/types'
+import { routeLocationKey } from 'vue-router'
 import ConsumablesView from './ConsumablesView.vue'
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 it('sends the displayed ledger version and reloads without retrying a stale stocktake', async () => {
-  const item: Consumable = { id: 1, name: '线缆', spec: '', unit: '根', location: '', safety_stock: 0,
+  const item: Consumable = { id: 1, name: '线缆', spec: '', unit: '根', category: '', location: '', safety_stock: 0,
     stock: 10, stock_version: 7, low: false, notes: '', created_at: '', updated_at: '' }
   const calls: { url: string; body?: unknown }[] = []
   vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
@@ -22,7 +23,7 @@ it('sends the displayed ledger version and reloads without retrying a stale stoc
       previous: null, results: isItems ? [item] : [] }), { status: 200 }))
   }))
   const pinia = createPinia()
-  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'manager', is_supervisor: true } as Me
+  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'student', is_manager: true, is_supervisor: true } as Me
   const wrapper = mount(ConsumablesView, { global: { plugins: [ElementPlus, pinia] }, attachTo: document.body })
   await flushPromises()
   // 盘点 sits in the row's "更多" menu
@@ -44,5 +45,27 @@ it('sends the displayed ledger version and reloads without retrying a stale stoc
   expect(writes[0]!.body).toEqual(expect.objectContaining({ kind: 'adjust', quantity: -2, stock_version_seen: 7 }))
   expect(calls.filter((c) => c.url.startsWith('/api/consumables/?'))).toHaveLength(2)
   expect(document.body.textContent).toContain('请重新打开盘点并核对实际数量')
+  wrapper.unmount()
+})
+
+it('opens 领用 of a scanned label once the item is on the page, and a manager can switch it to 入库', async () => {
+  const item: Consumable = { id: 4, name: '耦合剂', spec: '', unit: '瓶', category: '', location: '', safety_stock: 0,
+    stock: 3, stock_version: 1, low: false, notes: '', created_at: '', updated_at: '' }
+  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(
+    url.startsWith('/api/consumables/?') ? { count: 1, next: null, previous: null, results: [item] } : url.startsWith('/api/suggestions/') ? [] : { count: 0, next: null, previous: null, results: [] },
+  ), { status: 200 }))))
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { id: 1, name: '管理员', role: 'student', is_manager: true, is_supervisor: true } as Me
+  const route = { query: { item: '4', scan: '1' }, hash: '' }
+  const wrapper = mount(ConsumablesView, {
+    global: { plugins: [ElementPlus, pinia], provide: { [routeLocationKey as symbol]: route } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(document.querySelector('.el-dialog')?.textContent).toContain('领用：耦合剂')
+  ;(Array.from(document.querySelectorAll('.el-dialog .el-radio-button')).find((b) => b.textContent?.trim() === '入库') as HTMLElement)
+    .querySelector('input')!.click()
+  await flushPromises()
+  expect(document.querySelector('.el-dialog')?.textContent).toContain('入库：耦合剂')
   wrapper.unmount()
 })

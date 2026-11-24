@@ -18,7 +18,7 @@ from procurement.views import PurchaseViewSet
 def test_review_submission_guard_without_database(monkeypatch, verdict, submitted_seen):
     current = datetime(2026, 11, 18, 2, microsecond=123456, tzinfo=timezone.utc)
     purchase = SimpleNamespace(
-        pk=1, owner_id=2, owner=SimpleNamespace(role="student"), status="pending_initial",
+        pk=1, owner_id=2, owner=SimpleNamespace(role="student", is_approver=False), status="pending_initial",
         total=Decimal("2536.50"), submitted_at=current, save=Mock(),
     )
     view = PurchaseViewSet()
@@ -31,7 +31,8 @@ def test_review_submission_guard_without_database(monkeypatch, verdict, submitte
             "one_microsecond_old": "2026-11-18T02:00:00.123455Z",
             None: None, "malformed": "not-a-date",
         }[submitted_seen]
-    request = SimpleNamespace(user=SimpleNamespace(id=1, is_supervisor=True, role="manager"), data=body)
+    manager = SimpleNamespace(id=1, is_authenticated=True, group_id=1, role="student", is_manager=True, is_approver=False)
+    request = SimpleNamespace(user=manager, data=body)
     create = Mock()
     notify_purchase = Mock()
     monkeypatch.setattr("procurement.views.notify_purchase", notify_purchase)

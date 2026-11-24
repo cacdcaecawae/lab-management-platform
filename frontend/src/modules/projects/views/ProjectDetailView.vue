@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { projectsApi } from '@/modules/projects/api'
@@ -9,6 +9,7 @@ import { formatTime, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import ProjectBoard from '@/modules/projects/components/ProjectBoard.vue'
+import ProjectAssets from '@/modules/projects/components/ProjectAssets.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -20,8 +21,16 @@ const id = Number(route.params.id)
 const project = ref<Project | null>(null)
 const loadError = ref('') // replaces the page; 404 reads 记录不存在或无权查看
 const editing = ref(false)
-const boardTab = ref(route.query.tab === "tasks" ? "tasks" : "progress")
+// ?tab= (the workbench links to 任务) is followed while the page stays open, and kept in the address.
+const tabOf = (tab: unknown) => (tab === 'tasks' || tab === 'milestones' || tab === 'assets' ? tab : 'progress')
+const boardTab = ref(tabOf(route.query.tab))
+watch(() => route.query.tab, (tab) => (boardTab.value = tabOf(tab)))
+watch(boardTab, (tab) => {
+  if (tab !== tabOf(route.query.tab)) void router.replace({ query: { ...route.query, tab: tab === 'progress' ? undefined : tab } })
+})
 const canEdit = computed(() => !!project.value && (auth.isSupervisor || project.value.leader.id === auth.user?.id))
+// progress logs: also the project's current members
+const canLog = computed(() => canEdit.value || !!project.value?.members.some((m) => m.id === auth.user?.id))
 
 async function load() {
   try {
@@ -105,10 +114,12 @@ loadLogs(true)
         <el-tab-pane label="进展" name="progress" />
         <el-tab-pane label="任务" name="tasks" />
         <el-tab-pane label="里程碑" name="milestones" />
+        <el-tab-pane label="资产" name="assets" />
       </el-tabs>
-      <ProjectBoard :project="project" :session-user-id="auth.user?.id" :can-manage="canEdit" :tab="boardTab" />
+      <ProjectAssets v-if="boardTab === 'assets'" :project-id="project.id" />
+      <ProjectBoard v-else :project="project" :session-user-id="auth.user?.id" :can-manage="canEdit" :tab="boardTab" />
       <template v-if="boardTab === 'progress'">
-        <el-form v-if="canEdit" label-position="top" class="log-form form-page" @submit.prevent="addLog">
+        <el-form v-if="canLog" label-position="top" class="log-form form-page" @submit.prevent="addLog">
           <el-form-item label="日期" :error="logErrors.fe('date')">
             <el-date-picker v-model="logForm.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
           </el-form-item>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Edit } from '@element-plus/icons-vue'
@@ -34,10 +34,21 @@ const isOwner = computed(() => dataset.value?.owner.id === auth.user?.id)
 const hasReferences = computed(
   () => refs.value.experiments.length > 0 || refs.value.runs.length > 0 || refs.value.reports.length > 0,
 )
-const canDelete = computed(() => isOwner.value && dataset.value?.file_count === 0 && !hasReferences.value)
+const refsFailed = ref(false) // 被引用处 unknown: not offered for deletion here
+const canDelete = computed(() => isOwner.value && dataset.value?.file_count === 0 && !refsFailed.value && !hasReferences.value)
 // ?version=<code>: the file list a submitted record pinned; files uploaded later are marked.
-const version = typeof route.query.version === 'string' ? route.query.version : ''
+const version = computed(() => (typeof route.query.version === 'string' ? route.query.version : ''))
 const versionFileIds = ref<Set<number> | null>(null)
+const versionFiles = async (v: string) => (v ? new Set((await datasetsApi.files(id, v)).map((f) => f.id)) : null)
+// another version of this dataset opened from a link while the page is open (the view is reused)
+watch(version, async (v) => {
+  try {
+    const ids = await versionFiles(v)
+    if (v === version.value) versionFileIds.value = ids
+  } catch (e) {
+    showError(e)
+  }
+})
 const previewOpen = ref(false)
 const previewTarget = ref<PreviewTarget | null>(null)
 
@@ -48,14 +59,18 @@ function openPreview(row: DataFile) {
 
 async function load() {
   try {
-    ;[dataset.value, files.value, refs.value] = await Promise.all([
-      datasetsApi.get(id),
-      datasetsApi.files(id),
-      datasetsApi.references(id),
-    ])
-    if (version) versionFileIds.value = new Set((await datasetsApi.files(id, version)).map((f) => f.id))
+    ;[dataset.value, files.value] = await Promise.all([datasetsApi.get(id), datasetsApi.files(id)])
+    versionFileIds.value = await versionFiles(version.value)
   } catch (e) {
     loadError.value = errorMessage(e)
+    return
+  }
+  try {
+    refs.value = await datasetsApi.references(id)
+    refsFailed.value = false
+  } catch (e) {
+    refsFailed.value = true
+    showError(e)
   }
 }
 
@@ -123,10 +138,27 @@ const queue = ref<UploadItem[]>([])
 const uploading = ref(false)
 const picker = ref<HTMLInputElement>()
 
-async function onPick(e: Event) {
+function onPick(e: Event) {
   const input = e.target as HTMLInputElement
   const picked = Array.from(input.files ?? [])
   input.value = '' // allow picking the same file again after an error
+  void upload(picked)
+}
+
+// Files dragged onto the 文件 card go the same way as picked ones (progress, same-name refusal, SHA256, disk space).
+const dragging = ref(false)
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  if (!isOwner.value || uploading.value) return
+  const entries = Array.from(e.dataTransfer?.items ?? []).map((item) => item.webkitGetAsEntry?.())
+  if (entries.some((entry) => entry?.isDirectory)) {
+    ElMessage.error('不支持拖入文件夹，请把文件夹里的文件拖进来')
+    return
+  }
+  void upload(Array.from(e.dataTransfer?.files ?? []))
+}
+
+async function upload(picked: File[]) {
   if (!picked.length) return
   const start = queue.value.length
   queue.value.push(...picked.map((f) => ({ name: f.name, size: f.size, progress: 0, status: 'waiting' as const, error: '' })))
@@ -184,7 +216,14 @@ load()
       </el-descriptions>
     </el-card>
 
-    <el-card class="card">
+    <el-card
+      class="card files-card"
+      :class="{ dropping: dragging }"
+      @dragover.prevent="dragging = isOwner && !uploading"
+      @dragleave.self="dragging = false"
+      @drop.prevent="onDrop"
+    >
+      <div v-if="dragging" class="drop-hint">松开上传</div>
       <template #header>
         <div class="actions">
           <span>文件</span>
@@ -305,6 +344,24 @@ load()
 <style scoped>
 .notice {
   margin-bottom: 12px;
+}
+.files-card {
+  position: relative;
+}
+.files-card.dropping {
+  outline: 2px dashed var(--el-color-primary);
+  outline-offset: -8px;
+}
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--el-color-primary);
+  pointer-events: none;
 }
 .upload-item {
   margin-bottom: 12px;

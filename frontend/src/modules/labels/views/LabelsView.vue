@@ -4,13 +4,31 @@ import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { equipmentApi } from '@/modules/equipment/api'
 import { specimensApi } from '@/modules/specimens/api'
+import { consumablesApi } from '@/modules/inventory/api'
 
 const perSheet = 24
 const maxLabels = perSheet * 4
 const route = useRoute()
 const router = useRouter()
 const origin = window.location.origin
-const kind = computed(() => route.query.type === 'equipment' || route.query.type === 'specimen' ? route.query.type : null)
+const KINDS = ['equipment', 'specimen', 'consumable'] as const
+type Kind = (typeof KINDS)[number]
+const kind = computed(() => (KINDS.includes(route.query.type as Kind) ? (route.query.type as Kind) : null))
+// each kind: what to read for one label, where its code points (a consumable's opens 领用 at once: scan=1), the list
+const SOURCES = {
+  equipment: { get: (id: number) => equipmentApi.get(id), to: (id: number) => ({ name: 'equipment-detail', params: { id } }), list: 'equipment', back: '设备台账' },
+  specimen: { get: (id: number) => specimensApi.get(id), to: (id: number) => ({ name: 'specimen-detail', params: { id } }), list: 'specimens', back: '试样与标准件' },
+  consumable: {
+    get: async (id: number) => {
+      const item = (await consumablesApi.list({ item: id })).results[0]
+      if (!item) throw new Error('not found')
+      return { code: item.name, name: [item.spec, item.location].filter(Boolean).join(' · ') }
+    },
+    to: (id: number) => ({ name: 'consumables', query: { item: id, scan: '1' } }),
+    list: 'consumables',
+    back: '耗材库存',
+  },
+} as const
 const request = computed(() => {
   const input = route.query.ids
   // Bound both raw input and the number of network requests, even for a hand-edited URL.
@@ -39,16 +57,15 @@ watch([request, attempts], async ([input], _previous, onCleanup) => {
   failed.value = []
   loading.value = !!input
   if (!input) return
-  const equipment = input.kind === 'equipment'
-  const get = equipment ? equipmentApi.get : specimensApi.get
+  const source = SOURCES[input.kind]
   const results: Label[] = []
   const errors: number[] = []
   for (let i = 0; i < input.ids.length; i += 6) {
     const batch = input.ids.slice(i, i + 6)
     const responses = await Promise.allSettled(batch.map(async (id): Promise<Label> => {
-      const { code, name } = await get(id)
+      const { code, name } = await source.get(id)
       if (obsolete) throw new Error('Superseded')
-      const href = router.resolve({ name: equipment ? 'equipment-detail' : 'specimen-detail', params: { id } }).href
+      const href = router.resolve(source.to(id)).href
       const url = new URL(href, origin).href
       const image = await QRCode.toDataURL(url, { width: 256, margin: 4, errorCorrectionLevel: 'M' })
       return { id, code, name, url, image }
@@ -72,7 +89,7 @@ function printLabels() {
 <template>
   <main class="label-print">
     <header class="label-toolbar">
-      <router-link :to="{ name: kind === 'specimen' ? 'specimens' : 'equipment' }">返回{{ kind === 'specimen' ? '试样与标准件' : '设备台账' }}</router-link>
+      <router-link :to="{ name: SOURCES[kind ?? 'equipment'].list }">返回{{ SOURCES[kind ?? 'equipment'].back }}</router-link>
       <h1>打印二维码标签</h1>
       <p>二维码使用当前站点地址 <strong>{{ origin }}</strong>。请先在正式域名下小批试印，扫码确认后再批量打印；打印请选择 A4、实际大小，并关闭浏览器页眉页脚。建议使用覆膜标签纸。</p>
       <el-alert v-if="!request" title="标签参数无效。请从列表或详情打开，每次最多打印 96 项。" type="warning" :closable="false" />

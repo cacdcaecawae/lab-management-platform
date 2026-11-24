@@ -12,7 +12,7 @@ afterEach(() => {
 })
 
 it('defaults issue to earliest eligible positive batch, not expired or zero-balance rows', async () => {
-  const item: Consumable = { id: 1, name: '耦合剂', spec: '', unit: '瓶', location: '', safety_stock: 0,
+  const item: Consumable = { id: 1, name: '耦合剂', spec: '', unit: '瓶', category: '', location: '', safety_stock: 0,
     stock: 10, stock_version: 7, low: false, notes: '', created_at: '', updated_at: '', tracks_batches: true,
     batches: [
       { id: 1, batch_no: '过期批次', expires_on: '2024-01-01', stock: 2, can_issue: false },

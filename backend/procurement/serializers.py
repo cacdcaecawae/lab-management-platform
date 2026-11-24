@@ -7,7 +7,7 @@ from rest_framework import serializers
 from accounts.models import ResearchGroup
 from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
-from core.permissions import scope_group, scope_private
+from core.permissions import scope_finance, scope_group
 from projects.serializers import GroupMemberField
 
 from .models import Approval, Attachment, Fund, PurchaseItem, PurchaseRequest, Reimbursement
@@ -188,7 +188,7 @@ class VisiblePurchaseField(serializers.PrimaryKeyRelatedField):
     """A purchase request the requesting user can see; ReimbursementSerializer.validate narrows it to the owner's."""
 
     def get_queryset(self):
-        return scope_private(PurchaseRequest.objects.all(), self.context["request"].user)
+        return scope_finance(PurchaseRequest.objects.all(), self.context["request"].user)
 
 
 class ReimbursementSerializer(serializers.ModelSerializer):
@@ -221,11 +221,16 @@ class AdvanceSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Reimbursement.Status.choices)
 
 
+class BatchAdvanceSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.IntegerField(min_value=1, max_value=2**63 - 1), min_length=1, max_length=100)
+    status = serializers.ChoiceField(choices=[Reimbursement.Status.SUBMITTED, Reimbursement.Status.PAID])
+
+
 class ArrivedPurchaseField(serializers.PrimaryKeyRelatedField):
     """An arrived purchase request of the requesting manager's group (equipment and stock-in forms link one)."""
 
     def get_queryset(self):
-        return scope_private(
+        return scope_finance(
             PurchaseRequest.objects.filter(status=PurchaseRequest.Status.ARRIVED), self.context["request"].user
         )
 

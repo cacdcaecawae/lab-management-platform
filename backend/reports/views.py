@@ -1,16 +1,19 @@
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework import filters, status, viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from accounts.serializers import UserBriefSerializer
+from core import mail
 from core.exceptions import Conflict
+from core.filters import Ordering, Search
 from core.history import serialize_history
+from core.models import Notification
 from core.notifications import notify
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
+from core.permissions import IsActiveMember, IsAdvisor, IsOwnerOrReadOnly, scope_private
 from datasets.versions import pin_versions
 
 from .models import WeeklyReport
@@ -78,8 +81,9 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
     serializer_class = WeeklyReportSerializer
     permission_classes = [IsActiveMember, IsOwnerOrReadOnly]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [Search, Ordering]
     search_fields = ["owner__name", "goals", "done", "findings", "next_plan"]
+    ordering_fields = ["week_start", "submitted_at"]
 
     def get_queryset(self):
         qs = scope_private(WeeklyReport.objects.all(), self.request.user)
@@ -133,9 +137,11 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
             report.submitted_at = timezone.now()
             report.data_versions = pin_versions(report.cited_datasets())
             report.save()
+            notify(report.owner.group_id, "有新的周报待反馈", f"/reports/{report.pk}", role="advisor",
+                   exclude_ids=[report.owner_id], body=f"{report.owner.display_name} · {report.week_start} 这一周")
         return self._detail(report)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=True, methods=["post"], permission_classes=[IsActiveMember, IsAdvisor])
     def feedback(self, request, pk=None):
         with transaction.atomic():
             report = self._lock()
@@ -156,12 +162,34 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
     def history(self, request, pk=None):
         return Response(serialize_history(self.get_object()))
 
-    @action(detail=False, permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, permission_classes=[IsActiveMember, IsAdvisor])
     def missing(self, request):
         query = ReportQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         week_start = query.validated_data.get("week_start", current_week_start())
         return Response(UserBriefSerializer(missing_students(request.user, week_start), many=True).data)
+
+    @action(detail=False, methods=["post"], url_path="remind-missing", permission_classes=[IsActiveMember, IsAdvisor])
+    def remind_missing(self, request):
+        """Remind the students who have not handed in that week's report: a notification each, and one mail (Bcc) when
+        mail is on. At most once a day per student and week, so a second click does not nag."""
+        query = ReportQuerySerializer(data=request.data)
+        query.is_valid(raise_exception=True)
+        week_start = query.validated_data.get("week_start", current_week_start())
+        title = f"请提交 {week_start} 这一周的周报"
+        missing = list(missing_students(request.user, week_start))
+        # shortcut: two advisors clicking in the same instant may both remind; keep a per-week record if that matters.
+        reminded = set(
+            Notification.objects.filter(recipient__in=missing, title=title, created_at__date=timezone.localdate())
+            .values_list("recipient_id", flat=True)
+        )
+        fresh = [user for user in missing if user.pk not in reminded]
+        with transaction.atomic():
+            notify(request.user.group_id, title, "/reports", recipient_ids=[user.pk for user in fresh])
+        emails = [user.email for user in fresh if user.email]
+        body = f"{request.user.display_name} 提醒你提交 {week_start} 这一周的周报。请登录 Phase，在“周报”里填写并提交。"
+        mail.send_quietly(f"[周报] {title}", body, emails, "周报催交", bcc=True)
+        return Response({"reminded": len(fresh), "already": len(reminded)})
 
     def _digest_data(self, request):
         query = ReportQuerySerializer(data=request.query_params)
@@ -176,7 +204,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
         missing = list(missing_students(request.user, week_start))
         return week_start, reports, missing
 
-    @action(detail=False, permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, permission_classes=[IsActiveMember, IsAdvisor])
     def digest(self, request):
         week_start, reports, missing = self._digest_data(request)
         return Response({
@@ -185,7 +213,7 @@ class WeeklyReportViewSet(viewsets.ModelViewSet):
             "missing": UserBriefSerializer(missing, many=True).data,
         })
 
-    @action(detail=False, url_path="digest/export", permission_classes=[IsActiveMember, IsSupervisor])
+    @action(detail=False, url_path="digest/export", permission_classes=[IsActiveMember, IsAdvisor])
     def digest_export(self, request):
         week_start, reports, missing = self._digest_data(request)
         md = _render_digest_markdown(week_start, reports, missing)

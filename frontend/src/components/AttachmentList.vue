@@ -7,6 +7,7 @@ import type { Attachment, AttachmentKind, MeetingFile } from '@/api/types'
 import { ATTACHMENT_KIND_LABELS, formatSize, formatTime } from '@/utils/format'
 import { showError } from '@/utils/errors'
 import { previewKindOf } from '@/utils/preview'
+import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 import FilePreviewDialog, { type PreviewTarget } from '@/components/FilePreviewDialog.vue'
 
 // upload: omitted when the viewer may not add files; canDelete: per file (the server checks again).
@@ -15,7 +16,7 @@ type FileItem = Attachment | MeetingFile
 const props = withDefaults(
   defineProps<{
     attachments: FileItem[]
-    upload?: (file: File, kind: AttachmentKind) => Promise<unknown>
+    upload?: (file: File, kind: AttachmentKind, onProgress: (percent: number) => void) => Promise<unknown>
     canDelete: (a: FileItem) => boolean
     defaultKind?: AttachmentKind
     withKinds?: boolean
@@ -36,6 +37,9 @@ const emit = defineEmits<{ changed: [] }>()
 const kind = ref<AttachmentKind>(props.defaultKind ?? 'quote')
 const picker = ref<HTMLInputElement>()
 const busy = ref(false)
+const percent = ref<number | null>(null) // only uploads that report progress (meeting files) show a bar
+// Leaving the page while a file is still uploading would lose it: ask first.
+useUnsavedGuard({}, () => busy.value, () => busy.value)
 const previewOpen = ref(false)
 const previewTarget = ref<PreviewTarget | null>(null)
 
@@ -53,7 +57,8 @@ async function onPick(e: Event) {
   try {
     for (const file of files) {
       try {
-        await props.upload(file, kind.value)
+        percent.value = null
+        await props.upload(file, kind.value, (p) => (percent.value = p))
       } catch (err) {
         // A rejected file says why (type, size) in errors.file.
         const reason = err instanceof ApiError ? err.body.errors?.file?.join('；') : undefined
@@ -63,6 +68,7 @@ async function onPick(e: Event) {
     }
   } finally {
     busy.value = false
+    percent.value = null
     emit('changed')
   }
 }
@@ -111,6 +117,7 @@ async function remove(a: FileItem) {
       <el-button :icon="Upload" :loading="busy" @click="picker?.click()">上传附件</el-button>
       <span class="meta">{{ hint }}</span>
       <input ref="picker" type="file" :accept="accept" multiple hidden @change="onPick" />
+      <el-progress v-if="busy && percent !== null" class="progress" :percentage="percent" />
     </div>
     <FilePreviewDialog v-model="previewOpen" :target="previewTarget" />
   </div>
@@ -151,6 +158,9 @@ async function remove(a: FileItem) {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
+}
+.progress {
+  flex-basis: 100%;
 }
 .kind {
   width: 110px;

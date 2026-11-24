@@ -16,15 +16,19 @@ const entries = ref<HistoryEntry[]>([])
 const loading = ref(false)
 const TYPES = { created: '创建', changed: '修改', deleted: '删除' }
 
+let seq = 0
 watch(visible, async (v) => {
   if (!v) return
+  const mine = ++seq // opened again (another record): an earlier answer is stale
+  entries.value = []
   loading.value = true
   try {
-    entries.value = await props.load()
+    const list = await props.load()
+    if (mine === seq) entries.value = list
   } catch (e) {
-    showError(e)
+    if (mine === seq) showError(e)
   } finally {
-    loading.value = false
+    if (mine === seq) loading.value = false
   }
 })
 

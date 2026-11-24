@@ -43,6 +43,7 @@ class DefectSerializer(serializers.ModelSerializer):
 
 
 class LoanSerializer(serializers.ModelSerializer):
+    specimen = serializers.SerializerMethodField()  # code and name only: no blind-test sizes
     borrower = UserBriefSerializer(read_only=True)
     project = ProjectBriefSerializer(read_only=True)
     project_id = GroupProjectField(source="project", write_only=True, required=False, allow_null=True)
@@ -52,10 +53,13 @@ class LoanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecimenLoan
         fields = [
-            "id", "borrower", "project", "project_id", "purpose", "due_date", "borrowed_at", "returned_at", "returned_by",
+            "id", "specimen", "borrower", "project", "project_id", "purpose", "due_date", "borrowed_at", "returned_at", "returned_by",
             "return_note", "return_location", "return_photo_url",
         ]
         read_only_fields = ["borrowed_at", "returned_at", "return_note", "return_location", "return_photo_url"]
+
+    def get_specimen(self, loan):
+        return {"id": loan.specimen_id, "code": loan.specimen.code, "name": loan.specimen.name}
 
     def get_return_photo_url(self, loan):
         return f"/api/specimens/{loan.specimen_id}/loans/{loan.pk}/photo/" if loan.return_photo else None

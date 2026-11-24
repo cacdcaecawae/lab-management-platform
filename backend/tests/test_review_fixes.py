@@ -22,9 +22,10 @@ def test_manager_cannot_take_over_ops_accounts(api, group, manager, flag):
     assert client.get(f"/api/members/{ops.id}/").status_code == 200  # still listed as a group member
 
 
-def test_manager_cannot_change_own_role(api, manager):
-    r = api(manager).patch(f"/api/members/{manager.id}/", {"role": "student"}, format="json")
-    assert r.status_code == 400 and "role" in r.data["errors"]
+def test_manager_cannot_change_own_role_or_tags(api, manager):
+    r = api(manager).patch(f"/api/members/{manager.id}/", {"role": "advisor", "is_approver": True}, format="json")
+    manager.refresh_from_db()
+    assert r.status_code == 200 and (manager.role, manager.is_manager, manager.is_approver) == ("student", True, False)
 
 
 @pytest.mark.parametrize("url", ["/api/members/?role=%00", "/api/projects/?status=%00", "/api/datasets/?kind=%00", "/api/datasets/?kind=nope"])

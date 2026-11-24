@@ -167,13 +167,16 @@ export function useNav() {
   const route = useRoute()
   const router = useRouter()
 
-  // Only routes that exist and that the role may open (meta.supervisor / meta.manager / meta.superuser).
+  // Only routes that exist and that the role may open (meta.supervisor / manager / finance / superuser).
   // An ops account without a group only gets 系统管理.
   const allowed = (name: string) => {
     const r = router.getRoutes().find((x) => x.name === name)
     if (!r) return false
     if (r.meta.superuser) return auth.isSuperuser
-    return !!auth.user?.group && (!r.meta.supervisor || auth.isSupervisor) && (!r.meta.manager || auth.isManager)
+    return (
+      !!auth.user?.group && (!r.meta.supervisor || auth.isSupervisor) && (!r.meta.manager || auth.isManager)
+      && (!r.meta.finance || auth.isFinance)
+    )
   }
   // computed: the role is known only after login, and the layout outlives a logout / login as someone else
   const modules = computed(() => {

@@ -11,7 +11,7 @@ import type { ActionItem, Meeting, MeetingWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime, mergeById, toDateStr } from '@/utils/format'
-import { isNotFound, showActionError, showError, useFieldErrors } from '@/utils/errors'
+import { errorMessage, showActionError, showError, useFieldErrors } from '@/utils/errors'
 import AttachmentList from '@/components/AttachmentList.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -42,7 +42,10 @@ interface Row {
   person: number | null
   text: string
   due_date: string | null
+  carried_from?: number
 }
+// A new meeting's minutes start from this outline (edit or delete freely); it is not stored anywhere else.
+const MINUTES_OUTLINE = '本周进展：\n\n讨论：\n\n决定：\n\n下周安排：\n'
 const form = reactive({ date: today, title: '组会', minutes: '', agenda: [] as Row[], actions: [] as Row[] })
 const errors = useFieldErrors(['date', 'title', 'minutes', 'agenda', 'actions'])
 // Ask before leaving with unsaved changes while editing (startEdit() takes the snapshot).
@@ -53,7 +56,7 @@ function startEdit() {
   Object.assign(form, {
     date: m?.date ?? today,
     title: m?.title ?? '组会',
-    minutes: m?.minutes ?? '',
+    minutes: m ? m.minutes : MINUTES_OUTLINE,
     agenda: m ? m.agenda.map((a) => ({ person: a.presenter.id, text: a.topic, due_date: null })) : [{ person: null, text: '', due_date: null }],
     actions: m ? m.actions.map((a) => ({ id: a.id, person: a.owner.id, text: a.content, due_date: a.due_date })) : [],
   })
@@ -69,7 +72,9 @@ function body(): MeetingWrite {
     title: form.title,
     minutes: form.minutes,
     agenda: form.agenda.filter(filled).map((r) => ({ presenter_id: r.person!, topic: r.text })),
-    actions: form.actions.filter(filled).map((r) => ({ id: r.id, owner_id: r.person!, content: r.text, due_date: r.due_date || null })),
+    actions: form.actions
+      .filter(filled)
+      .map((r) => ({ id: r.id, owner_id: r.person!, content: r.text, due_date: r.due_date || null, carried_from: r.carried_from })),
   }
 }
 
@@ -106,14 +111,34 @@ async function remove() {
   }
 }
 
-async function load() {
-  const id = Number(route.params.id)
-  if (!id) return startEdit() // /meetings/new
+// New meeting: copy the open items of the latest meeting. On save those old items are marked as carried over here.
+const carrying = ref(false)
+async function carryOver() {
+  carrying.value = true
   try {
-    meeting.value = await meetingsApi.get(id)
+    const last = (await meetingsApi.list({ page_size: 1 })).results[0]
+    const taken = new Set(form.actions.map((r) => r.carried_from))
+    const open = (last?.actions ?? []).filter((a) => !a.done_at && !taken.has(a.id))
+    form.actions.push(...open.map((a) => ({ person: a.owner.id, text: a.content, due_date: a.due_date, carried_from: a.id })))
+    if (!open.length) ElMessage.info(last ? `${last.date} 的组会没有未完成的行动项` : '还没有组会')
   } catch (e) {
-    if (isNotFound(e)) loadError.value = '记录不存在或无权查看'
-    else showError(e)
+    showError(e)
+  } finally {
+    carrying.value = false
+  }
+}
+
+const isNew = !route.params.id
+const loading = ref(false)
+async function load() {
+  if (isNew) return startEdit() // /meetings/new
+  loading.value = true
+  try {
+    meeting.value = await meetingsApi.get(Number(route.params.id))
+  } catch (e) {
+    loadError.value = errorMessage(e)
+  } finally {
+    loading.value = false
   }
 }
 load()
@@ -137,19 +162,21 @@ async function reload() {
 </script>
 
 <template>
-  <div v-if="loadError" class="card"><el-empty :description="loadError" /></div>
+  <el-result v-if="loadError" icon="warning" :title="loadError">
+    <template #extra><el-button @click="router.push({ name: 'meetings' })">返回组会列表</el-button></template>
+  </el-result>
   <template v-else>
-    <el-card class="card">
+    <el-card v-loading="loading" class="card">
       <template #header>
-        <PageHeader :back="{ name: 'meetings' }" :title="meeting ? `${meeting.date} ${meeting.title}` : '新建组会'">
+        <PageHeader :back="{ name: 'meetings' }" :title="meeting ? `${meeting.date} ${meeting.title}` : isNew ? '新建组会' : ''">
           <template v-if="editing">
-            <el-button v-if="meeting" type="danger" plain @click="remove">删除组会</el-button>
+            <el-button v-if="meeting && auth.isManager" type="danger" plain @click="remove">删除组会</el-button>
             <el-button @click="meeting ? (editing = false) : router.push({ name: 'meetings' })">取消</el-button>
             <el-button type="primary" :loading="saving" @click="save">保存</el-button>
           </template>
           <template v-else-if="meeting">
             <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
-            <el-button v-if="auth.isManager" type="primary" @click="startEdit">编辑</el-button>
+            <el-button v-if="auth.isSupervisor" type="primary" @click="startEdit">编辑</el-button>
           </template>
         </PageHeader>
       </template>
@@ -188,7 +215,10 @@ async function reload() {
               <el-date-picker v-model="r.due_date" type="date" value-format="YYYY-MM-DD" placeholder="截止日期" aria-label="截止日期" class="due" />
               <el-button :icon="Delete" text aria-label="删除这一项" @click="form.actions.splice(i, 1)" />
             </div>
-            <el-button :icon="Plus" text @click="form.actions.push({ person: null, text: '', due_date: null })">添加行动项</el-button>
+            <div class="row">
+              <el-button :icon="Plus" text @click="form.actions.push({ person: null, text: '', due_date: null })">添加行动项</el-button>
+              <el-button v-if="!meeting" text :loading="carrying" @click="carryOver">带入上次未完成的事项</el-button>
+            </div>
           </div>
         </el-form-item>
         <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
@@ -209,9 +239,15 @@ async function reload() {
       </el-card>
       <el-card class="card" header="行动项">
         <el-table :data="meeting.actions" empty-text="暂无行动项">
-          <el-table-column label="完成" width="70">
+          <el-table-column prop="content" label="事项" min-width="220" />
+          <el-table-column label="负责人" min-width="90">
+            <template #default="{ row }">{{ row.owner.name }}</template>
+          </el-table-column>
+          <el-table-column label="完成" min-width="70">
             <template #default="{ row }">
+              <RouterLink v-if="row.carried_to" :to="{ name: 'meeting-detail', params: { id: row.carried_to.id } }">已转入 {{ row.carried_to.date }} 组会</RouterLink>
               <el-checkbox
+                v-else
                 :model-value="!!row.done_at"
                 :disabled="!canToggle(row as ActionItem)"
                 :aria-label="`完成：${row.content}`"
@@ -219,10 +255,6 @@ async function reload() {
               />
             </template>
           </el-table-column>
-          <el-table-column label="负责人" min-width="90">
-            <template #default="{ row }">{{ row.owner.name }}</template>
-          </el-table-column>
-          <el-table-column prop="content" label="事项" min-width="220" />
           <el-table-column label="截止" min-width="110">
             <template #default="{ row }">
               <span :class="{ overdue: overdue(row as ActionItem) }">{{ row.due_date ?? '' }}{{ overdue(row as ActionItem) ? '（已过期）' : '' }}</span>
@@ -239,8 +271,8 @@ async function reload() {
           :with-kinds="false"
           accept=""
           hint="汇报 PPT 等，任意类型，单个不超过 2 GB"
-          :upload="presenting || auth.isManager ? (file) => meetingsApi.upload(meeting!.id, file) : undefined"
-          :can-delete="(f) => f.uploaded_by.id === auth.user?.id || auth.isManager"
+          :upload="presenting || auth.isSupervisor ? (file, _kind, onProgress) => meetingsApi.upload(meeting!.id, file, onProgress) : undefined"
+          :can-delete="(f) => f.uploaded_by.id === auth.user?.id || auth.isSupervisor"
           :remove="meetingsApi.removeFile"
           @changed="reload"
         />

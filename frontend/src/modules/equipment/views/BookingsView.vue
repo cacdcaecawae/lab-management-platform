@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import FullCalendar from '@fullcalendar/vue3'
@@ -14,9 +14,10 @@ import { projectsApi } from '@/modules/projects/api'
 import type { Booking, Condition } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { useAuthStore } from '@/stores/auth'
-import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod } from '@/utils/format'
+import { BOOKING_KIND_LABELS, CONDITION_LABELS, STATUS, formatPeriod, formatTime } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import BookingFormDialog from '../components/BookingFormDialog.vue'
+import BookingList from '../components/BookingList.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import PhotoPicker from '@/components/PhotoPicker.vue'
@@ -43,6 +44,13 @@ const shown = ref<number[]>([])
 watch(equipment, (list) => (shown.value = list.some((e) => e.id === linked) ? [linked as number] : list.map((e) => e.id)), {
   once: true,
 })
+// Phones: the page opens on the working day, 08:00 at the top (the night and the device list are above it); once,
+// after the device list has its height.
+if (window.matchMedia('(max-width: 768px)').matches) {
+  watch(equipment, () => nextTick(() => document.querySelector('.calendar .fc-timegrid-slot[data-time="08:00:00"]')?.scrollIntoView({ block: 'start' })), {
+    once: true,
+  })
+}
 const allShown = computed(() => equipment.value.length > 0 && shown.value.length === equipment.value.length)
 const toggleAll = (on: boolean | string | number) => (shown.value = on ? equipment.value.map((e) => e.id) : [])
 const mineOnly = ref<1 | ''>('')
@@ -90,6 +98,14 @@ const VIEWS = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '日' } a
 const UNIT: Record<string, string> = { dayGridMonth: '月', timeGridWeek: '周', timeGridDay: '天' }
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const view = ref<string>(narrow ? 'timeGridDay' : 'timeGridWeek')
+// 列表 (also ?view=list from the workbench) hides the calendar but keeps it, so switching back keeps its week.
+const listing = ref(route.query.view === 'list')
+const list = ref<InstanceType<typeof BookingList>>()
+const refresh = () => (listing.value ? list.value?.load() : api()?.refetchEvents())
+function switchView(v: string) {
+  listing.value = v === 'list'
+  if (!listing.value) void nextTick(() => api()?.changeView(v))
+}
 const title = ref('')
 const day = ref(new Date())
 const api = () => calendar.value?.getApi()
@@ -143,7 +159,7 @@ function openCreate(start: Date | null = null, end: Date | null = null) {
 function onSaved() {
   ElMessage.success('预约成功')
   api()?.unselect()
-  api()?.refetchEvents()
+  refresh() // the list or the calendar, whichever is shown
 }
 
 // ---- booking detail: cancel / usage report ----
@@ -153,23 +169,39 @@ const mine = computed(() => detail.value?.user.id === auth.user?.id)
 const started = computed(() => !!detail.value && new Date(detail.value.start_at).getTime() <= Date.now())
 const canCancel = computed(() => !!detail.value && !detail.value.report && (auth.isManager || (mine.value && !started.value)))
 const canReport = computed(() => !!detail.value && mine.value && detail.value.kind === 'use' && started.value && !detail.value.report)
+// Under way (started, not over): the booker or a manager can end it now and free the rest of the time.
+const canEnd = computed(() => {
+  const b = detail.value
+  return !!b && b.kind === 'use' && !b.planned_end_at && started.value && new Date(b.end_at).getTime() > Date.now() && (mine.value || auth.isManager)
+})
 
 const reportForm = reactive({ condition: 'normal' as Condition, description: '', photo: null as File | null })
 const reportErrors = useFieldErrors(['condition', 'description', 'photo'])
 const reportPhotoBusy = ref(false)
 const busy = ref(false)
-watch(detail, () => {
+watch(detail, (b) => {
   reportPhotoBusy.value = false
   Object.assign(reportForm, { condition: 'normal', description: '', photo: null })
   reportErrors.clear()
+  if (!b && route.query.booking) {
+    // closed: the same link opens it again
+    const { booking: _, ...query } = route.query
+    void router.replace({ query })
+  }
 })
-// Links from the workbench: /bookings?booking=<id> opens that booking on its week.
-if (route.query.booking) {
-  bookingsApi.get(Number(route.query.booking)).then((b) => {
-    detail.value = b
-    api()?.gotoDate(b.start_at)
-  }, showError)
-}
+// Links from the workbench and notices: /bookings?booking=<id> opens that booking on its week, also when this page is
+// already open (the view is reused).
+watch(
+  () => route.query.booking,
+  (id) => {
+    if (typeof id !== 'string' || !id) return
+    bookingsApi.get(Number(id)).then((b) => {
+      detail.value = b
+      api()?.gotoDate(b.start_at)
+    }, showError)
+  },
+  { immediate: true },
+)
 
 async function cancel() {
   const b = detail.value
@@ -188,7 +220,31 @@ async function cancel() {
     await bookingsApi.cancel(b.id)
     ElMessage.success('预约已取消')
     detail.value = null
-    api()?.refetchEvents()
+    refresh()
+  } catch (e) {
+    showError(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function endNow() {
+  const b = detail.value
+  if (!b) return
+  try {
+    await ElMessageBox.confirm(`现在结束 ${b.equipment.code} 的这次使用？之后的时间别人可以预约。`, '提前结束', {
+      confirmButtonText: '提前结束',
+      cancelButtonText: '不结束',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  busy.value = true
+  try {
+    detail.value = await bookingsApi.endNow(b.id)
+    ElMessage.success('已提前结束，之后的时间已经空出来')
+    refresh()
   } catch (e) {
     showError(e)
   } finally {
@@ -203,7 +259,7 @@ async function submitReport() {
   try {
     detail.value = await bookingsApi.report(b.id, { ...reportForm })
     ElMessage.success(reportForm.condition === 'abnormal' ? '已登记异常，设备转为待检查，管理员会收到提醒' : '已登记')
-    api()?.refetchEvents()
+    refresh()
   } catch (e) {
     reportErrors.handle(e)
   } finally {
@@ -213,18 +269,21 @@ async function submitReport() {
 </script>
 
 <template>
-  <div class="booking-page">
+  <div class="booking-page" :class="{ listing }">
     <el-card class="card main">
       <PageToolbar>
+        <template v-if="!listing">
         <el-button-group>
           <el-button :icon="ArrowLeft" :aria-label="`上一${UNIT[view]}`" @click="api()?.prev()" />
           <el-button :icon="ArrowRight" :aria-label="`下一${UNIT[view]}`" @click="api()?.next()" />
         </el-button-group>
         <el-button @click="api()?.today()">今天</el-button>
         <span class="cal-title">{{ title }}</span>
+        </template>
         <!-- stays in the card on a phone (the top bar only fits 新建预约); right-aligned on desktop beside it -->
-        <el-radio-group class="view-switch" :model-value="view" aria-label="视图" @change="(v) => api()?.changeView(String(v))">
+        <el-radio-group class="view-switch" :model-value="listing ? 'list' : view" aria-label="视图" @change="(v) => switchView(String(v))">
           <el-radio-button v-for="(label, key) in VIEWS" :key="key" :value="key">{{ label }}</el-radio-button>
+          <el-radio-button value="list">列表</el-radio-button>
         </el-radio-group>
         <template #actions>
           <el-button type="primary" @click="openCreate()">新建预约</el-button>
@@ -237,10 +296,11 @@ async function submitReport() {
         :closable="false"
         class="status-alert"
       />
-      <FullCalendar ref="calendar" class="calendar" :options="options" />
+      <BookingList v-if="listing" ref="list" :equipment="equipment" @open="(b) => (detail = b)" />
+      <FullCalendar v-show="!listing" ref="calendar" class="calendar" :options="options" />
     </el-card>
 
-    <el-card class="card side">
+    <el-card v-if="!listing" class="card side">
       <el-date-picker-panel class="mini" :model-value="day" :border="false" @update:model-value="jump" />
       <div class="side-head">
         <span>设备</span>
@@ -277,7 +337,10 @@ async function submitReport() {
             <span class="code">{{ detail.equipment.code }}</span> {{ detail.equipment.name }}
           </RouterLink>
         </el-descriptions-item>
-        <el-descriptions-item label="时间">{{ formatPeriod(detail.start_at, detail.end_at) }}</el-descriptions-item>
+        <el-descriptions-item label="时间">
+          {{ formatPeriod(detail.start_at, detail.end_at) }}
+          <span v-if="detail.planned_end_at" class="muted">（提前结束，原定到 {{ formatTime(detail.planned_end_at).slice(11) }}）</span>
+        </el-descriptions-item>
         <el-descriptions-item label="预约人">{{ detail.user.name }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ BOOKING_KIND_LABELS[detail.kind] }}</el-descriptions-item>
         <el-descriptions-item label="项目">{{ detail.project?.name }}</el-descriptions-item>
@@ -317,6 +380,7 @@ async function submitReport() {
       <el-alert v-for="msg in reportErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
     </div>
     <template #extra>
+      <el-button v-if="canEnd" :loading="busy" @click="endNow">提前结束</el-button>
       <el-button v-if="canCancel" type="danger" plain :loading="busy" @click="cancel">取消预约</el-button>
     </template>
   </FormDialog>
@@ -328,6 +392,9 @@ async function submitReport() {
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+}
+.booking-page.listing {
+  grid-template-columns: minmax(0, 1fr); /* the list has no side card */
 }
 .booking-page > .card {
   margin-top: 0;
@@ -401,6 +468,21 @@ async function submitReport() {
 @media (max-width: 768px) {
   .view-switch {
     margin-left: 0;
+  }
+  /* the devices above the calendar, not after its 24 hours; jumping to a date is the 月 view's */
+  .side {
+    order: -1;
+  }
+  .mini {
+    display: none;
+  }
+  .side-head {
+    padding-top: 0;
+    border-top: 0;
+  }
+  /* scrolled to 08:00 (script): stop under the top bar (52px) and the sticky day header (53px) */
+  .calendar :deep(.fc-timegrid-slot) {
+    scroll-margin-top: 106px;
   }
 }
 .status-alert {

@@ -10,12 +10,12 @@ from django.http import FileResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, NotFound, ValidationError
-from rest_framework.filters import SearchFilter
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
 from core.files import FileTooLarge, clean_file_name, open_stored, sha256_of
+from core.filters import Ordering, Search
 from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private
 from core.preview import preview_response
 
@@ -84,8 +84,10 @@ class DatasetViewSet(viewsets.ModelViewSet):
     serializer_class = DatasetSerializer
     permission_classes = [IsActiveMember, IsOwnerOrReadOnly]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-    filter_backends = [SearchFilter]
+    filter_backends = [Search, Ordering]
     search_fields = ["name"]
+    code_prefix = "DS"
+    ordering_fields = ["updated_at", "total_size"]
 
     def get_queryset(self):
         # Explicit order_by: Django drops Meta.ordering on aggregated (GROUP BY) querysets.

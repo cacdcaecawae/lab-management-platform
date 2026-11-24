@@ -56,7 +56,7 @@ def test_submit_pins_the_version_and_later_uploads_do_not_move_it(api, project, 
     assert [f["name"] for f in a.get(url).json()] == ["01.mat", "02.mat"]
 
 
-def test_return_clears_the_pin_and_resubmit_pins_the_new_version(api, project, student_a, manager):
+def test_return_clears_the_pin_and_resubmit_pins_the_new_version(api, project, student_a, advisor):
     a = api(student_a)
     raw = new_dataset(a, project, "raw")
     upload(a, raw["id"], "01.mat")
@@ -64,7 +64,7 @@ def test_return_clears_the_pin_and_resubmit_pins_the_new_version(api, project, s
     first = exp["datasets"][0]["version"]
     upload(a, raw["id"], "02.mat")
 
-    returned = api(manager).post(f"/api/experiments/{exp['id']}/return/", {"reason": "补数据"}, format="json").json()
+    returned = api(advisor).post(f"/api/experiments/{exp['id']}/return/", {"reason": "补数据"}, format="json").json()
     assert returned["datasets"][0]["version"] is None
     second = a.post(f"/api/experiments/{exp['id']}/submit/").json()["datasets"][0]["version"]
     assert second not in (None, first)
@@ -91,13 +91,13 @@ def test_runs_and_reports_pin_every_cited_dataset(api, project, student_a):
     assert report["datasets"][0]["version"] == run["inputs"][0]["version"]
 
 
-def test_versions_follow_the_dataset_permissions(api, project, student_a, student_b, manager, other_manager):
+def test_versions_follow_the_dataset_permissions(api, project, student_a, student_b, manager, advisor, other_manager):
     a = api(student_a)
     raw = new_dataset(a, project, "raw")
     upload(a, raw["id"], "01.mat")
     pinned = submitted_experiment(a, project, raw["id"])["datasets"][0]["version"]
     url = f"/api/datasets/{raw['id']}/files/"
     assert a.get(url, {"version": "0" * 64}).status_code == 404
-    for outsider in (student_b, other_manager):
+    for outsider in (student_b, manager, other_manager):
         assert api(outsider).get(url, {"version": pinned}).status_code == 404
-    assert api(manager).get(url, {"version": pinned}).status_code == 200
+    assert api(advisor).get(url, {"version": pinned}).status_code == 200

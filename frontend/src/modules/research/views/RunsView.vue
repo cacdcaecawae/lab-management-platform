@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { inject, reactive, ref } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { runsApi } from '@/modules/research/api'
 import { projectsApi } from '@/modules/projects/api'
 import { membersApi } from '@/modules/members/api'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
@@ -12,10 +14,18 @@ import PageToolbar from '@/components/PageToolbar.vue'
 
 const auth = useAuthStore()
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
-const filters = reactive({ project: '' as number | '', owner: '' as number | '', status: '', search: '' })
-const keyword = ref('')
-const { items, count, page, pageSize, loading } = usePagedList(runsApi.list, filters)
+const members = auth.isAdvisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
+// ?status= and ?owner= come from the workbench (实验 / 处理记录未提交), ?project= from a project's 资产.
+// Injected: the page also mounts alone in tests.
+const query = inject(routeLocationKey, undefined)?.query ?? {}
+const filters = reactive({
+  project: (Number(query.project) || '') as number | '',
+  owner: (Number(query.owner) || '') as number | '',
+  status: query.status === 'draft' || query.status === 'submitted' ? query.status : '',
+  search: '',
+})
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading, sort } = usePagedList(runsApi.list, filters)
 </script>
 
 <template>
@@ -25,7 +35,7 @@ const { items, count, page, pageSize, loading } = usePagedList(runsApi.list, fil
       <el-select v-model="filters.project" aria-label="项目" placeholder="全部项目" clearable filterable>
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
-      <el-select v-if="auth.isSupervisor" v-model="filters.owner" aria-label="提交人" placeholder="全部成员" clearable filterable>
+      <el-select v-if="auth.isAdvisor" v-model="filters.owner" aria-label="提交人" placeholder="全部成员" clearable filterable>
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
@@ -36,7 +46,7 @@ const { items, count, page, pageSize, loading } = usePagedList(runsApi.list, fil
         <el-button type="primary" @click="$router.push({ name: 'run-new' })">新建处理记录</el-button>
       </template>
     </PageToolbar>
-    <el-table empty-text="暂无数据处理记录" v-loading="loading" :data="items">
+    <el-table @sort-change="sort" empty-text="暂无数据处理记录" v-loading="loading" :data="items">
       <el-table-column label="编号" min-width="130">
         <template #default="{ row }">
           <RouterLink class="code" :to="{ name: 'run-edit', params: { id: row.id } }">{{ row.code }}</RouterLink>
@@ -53,7 +63,7 @@ const { items, count, page, pageSize, loading } = usePagedList(runsApi.list, fil
       <el-table-column label="状态" min-width="90">
         <template #default="{ row }"><StatusTag :status="row.status" /></template>
       </el-table-column>
-      <el-table-column label="更新时间" min-width="140">
+      <el-table-column label="更新时间" prop="updated_at" sortable="custom" min-width="140">
         <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
       </el-table-column>
     </el-table>

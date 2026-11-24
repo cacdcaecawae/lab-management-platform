@@ -33,6 +33,8 @@ export const purchasesApi = {
   // q: status, mine=1, todo=1 (waiting for my review), search
   list: (q?: ListQuery) => api.get<Page<Purchase>>('/api/purchases/', q),
   get: (id: number) => api.get<PurchaseDetail>(`/api/purchases/${id}/`),
+  // a plain link: the list as .xlsx with the same filters and order
+  exportUrl: (q: ListQuery) => withQuery('/api/purchases/export/', q),
   create: (body: PurchaseWrite) => api.post<PurchaseDetail>('/api/purchases/', body),
   update: (id: number, body: Partial<PurchaseWrite>) => api.patch<PurchaseDetail>(`/api/purchases/${id}/`, body),
   remove: (id: number) => api.delete(`/api/purchases/${id}/`),
@@ -62,6 +64,9 @@ export const reimbursementsApi = {
   stats: (q: ListQuery) => api.get<ReimbursementStats>('/api/reimbursements/stats/', q),
   // a plain link: the browser downloads the .xlsx with the session cookie
   exportUrl: (q: ListQuery) => withQuery('/api/reimbursements/export/', q),
+  // several at once; each moves on its own and the ones that cannot are listed with the reason
+  batchAdvance: (ids: number[], status: 'submitted' | 'paid') =>
+    api.post<{ done: number[]; failed: { id: number; code: string; reason: string }[] }>('/api/reimbursements/batch-advance/', { ids, status }),
   remindFinance: () => api.post<{ sent: number; to: string }>('/api/reimbursements/remind-finance/'),
   financeEmail: () => api.get<{ finance_email: string }>('/api/reimbursements/finance-email/'),
   setFinanceEmail: (finance_email: string) =>

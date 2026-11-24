@@ -9,6 +9,8 @@ export const specimensApi = {
   update: (id: number, body: Partial<SpecimenWrite>) => api.patch<Specimen>(`/api/specimens/${id}/`, body),
   history: (id: number) => api.get<HistoryEntry[]>(`/api/specimens/${id}/history/`),
   loans: (id: number, q?: ListQuery) => api.get<Page<SpecimenLoan>>(`/api/specimens/${id}/loans/`, q),
+  // the group's loans (project, open=1), newest first
+  allLoans: (q?: ListQuery) => api.get<Page<SpecimenLoan>>('/api/specimen-loans/', q),
   borrow: (id: number, body: LoanWrite) => api.post<SpecimenLoan>(`/api/specimens/${id}/borrow/`, body),
   giveBack: (
     id: number,

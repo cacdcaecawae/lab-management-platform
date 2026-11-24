@@ -33,6 +33,7 @@ interface Kind {
   hint?: string
   action?: { label: string; to: RouteLocationRaw } // nothing to list, one thing to do
 }
+const me = String(auth.user?.id ?? '')
 const total = (k: Kind) => (k.rows && k.rows.length >= 20 && k.count <= 20 ? '20+' : String(k.count))
 
 // The workbench answers "what needs me now" (DESIGN.md).
@@ -51,12 +52,15 @@ const kinds = computed<Kind[]>(() => {
         })),
       },
       {
-        type: '待反馈周报', count: sv.pending_reviews.length, to: { name: 'reports' }, alert: true,
+        type: '待反馈周报', count: sv.pending_reviews.length, to: { name: 'reports', query: { tab: 'pending' } }, alert: true,
         rows: sv.pending_reviews.map((r) => ({
           key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.owner.name} · ${r.week_start} 这一周`,
         })),
       },
-      { type: '未交周报', count: sv.missing_reports.length, to: { name: 'reports' }, names: sv.missing_reports.map((u) => u.name), hint: `${sv.week_start} 这一周` },
+      {
+        type: '未交周报', count: sv.missing_reports.length, to: { name: 'reports', query: { tab: 'missing', week: sv.week_start } },
+        names: sv.missing_reports.map((u) => u.name), hint: `${sv.week_start} 这一周`,
+      },
     )
   }
   const my = d.my
@@ -64,30 +68,48 @@ const kinds = computed<Kind[]>(() => {
     type: '采购被退回', count: my.returned_purchases.length, to: { name: 'purchases' }, alert: true,
     rows: my.returned_purchases.map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: p.purpose, hint: '去修改' })),
   })
-  if (!d.supervisor && !my.current_week_report) {
+  // students write weekly reports, also those with the 管理员 tag (who get the supervisor block for purchases)
+  if (auth.user?.role === 'student' && !my.current_week_report) {
     s.push({ type: '本周周报', count: 1, to: { name: 'reports' }, alert: true, action: { label: '写本周周报', to: { name: 'report-new' } } })
   }
   s.push(
     {
-      type: '周报需补充', count: my.reports_needing_revision.length, to: { name: 'reports' }, alert: true,
+      type: '周报需补充', count: my.reports_needing_revision.length, to: { name: 'reports', query: { status: 'needs_revision' } }, alert: true,
       rows: my.reports_needing_revision.map((r) => ({ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周` })),
     },
     {
-      type: '待登记使用', count: my.unreported_bookings.length, to: { name: 'bookings' },
+      type: '待登记使用', count: my.unreported_bookings.length, to: { name: 'bookings', query: { view: 'list', pending: '1' } },
       rows: my.unreported_bookings.map((b) => ({
         key: b.id, to: { name: 'bookings', query: { booking: b.id } }, code: b.equipment.code, text: formatPeriod(b.start_at, b.end_at), hint: '去登记',
       })),
     },
     {
-      type: '实验未提交', count: my.draft_experiments.length, to: { name: 'experiments' },
+      type: '实验未提交', count: my.draft_experiments.length, to: { name: 'experiments', query: { status: 'draft', owner: me } },
       rows: my.draft_experiments.map((x) => ({ key: x.id, to: { name: 'experiment-edit', params: { id: x.id } }, code: x.code, text: x.title, status: x.status })),
     },
     {
-      type: '行动项', count: my.action_items.length, to: { name: 'meetings' }, alert: my.action_items.some((a) => a.due_date && a.due_date < todayStr),
-      rows: my.action_items.map((a) => ({
-        key: a.id, to: { name: 'meeting-detail', params: { id: a.meeting.id } }, text: a.content,
-        hint: a.due_date ? `${a.due_date} 截止` : `${a.meeting.date} 组会`, late: !!a.due_date && a.due_date < todayStr,
+      type: '处理记录未提交', count: my.draft_runs?.length ?? 0, to: { name: 'runs', query: { status: 'draft', owner: me } },
+      rows: (my.draft_runs ?? []).map((x) => ({ key: x.id, to: { name: 'run-edit', params: { id: x.id } }, code: x.code, text: x.title, status: 'draft' })),
+    },
+    {
+      type: '采购草稿', count: my.draft_purchases?.length ?? 0, to: { name: 'purchases', query: { status: 'draft', mine: '1' } },
+      rows: (my.draft_purchases ?? []).map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: p.purpose, hint: '去提交' })),
+    },
+    {
+      type: '报销缺发票', count: my.reimbursements_without_invoice?.length ?? 0, to: { name: 'reimbursements', query: { status: 'pending' } },
+      rows: (my.reimbursements_without_invoice ?? []).map((r) => ({
+        key: r.id, to: { name: 'reimbursements', query: { item: r.id } }, code: r.code, text: r.description || `¥ ${formatMoney(r.amount)}`, hint: '上传发票',
       })),
+    },
+    {
+      type: '行动项', count: my.action_items.length, to: { name: 'meetings', query: { tab: 'actions', owner: me } }, alert: my.action_items.some((a) => a.due_date && a.due_date < todayStr),
+      rows: my.action_items.map((a) => {
+        const late = !!a.due_date && a.due_date < todayStr
+        return {
+          key: a.id, to: { name: 'meeting-detail', params: { id: a.meeting.id } }, text: a.content,
+          hint: a.due_date ? `${a.due_date} 截止${late ? '，已逾期' : ''}` : `${a.meeting.date} 组会`, late,
+        }
+      }),
     },
     {
       type: '任务', count: my.tasks?.length ?? 0, to: { name: 'projects' },
@@ -100,6 +122,18 @@ const kinds = computed<Kind[]>(() => {
   if (d.manager) {
     const m = d.manager
     s.push(
+      {
+        type: '待审核注册', count: m.pending_signups?.length ?? 0, to: { name: 'members' }, alert: true,
+        names: (m.pending_signups ?? []).map((u) => u.name), hint: '在成员页审核',
+      },
+      {
+        type: '待采购', count: m.to_purchase?.length ?? 0, to: { name: 'purchases', query: { status: 'approved' } },
+        rows: (m.to_purchase ?? []).map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: `${p.owner.name} · ${p.purpose}`, hint: '已批准' })),
+      },
+      {
+        type: '待到货', count: m.to_receive?.length ?? 0, to: { name: 'purchases', query: { status: 'purchased' } },
+        rows: (m.to_receive ?? []).map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: `${p.owner.name} · ${p.purpose}`, hint: '已采购' })),
+      },
       {
         type: '逾期未还', count: m.overdue_loans_count, to: { name: 'specimens', query: { overdue: '1' } }, alert: true,
         rows: m.overdue_loans.map((l) => ({
@@ -114,7 +148,8 @@ const kinds = computed<Kind[]>(() => {
       {
         type: '校准到期', count: m.calibration_due_count, to: { name: 'equipment', query: { calibration_within: '30' } },
         rows: m.calibration_due.map((e) => ({
-          key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name, hint: `${e.calibration_due} 到期`,
+          key: e.id, to: { name: 'equipment-detail', params: { id: e.id } }, code: e.code, text: e.name,
+          hint: `${e.calibration_due} ${e.calibration_due < todayStr ? '已过期' : '到期'}`,
           late: e.calibration_due < todayStr,
         })),
       },
@@ -177,6 +212,10 @@ const others = computed(() => {
     const r = my.current_week_report
     groups.push({ title: '本周周报', rows: [{ key: r.id, to: { name: 'report-edit', params: { id: r.id } }, text: `${r.week_start} 这一周`, status: r.status }] })
   }
+  const late = data.value?.overdue_tasks ?? 0
+  if (late) {
+    groups.push({ title: '项目', rows: [{ key: 'overdue-tasks', to: { name: 'projects' }, text: `组里有 ${late} 个任务已逾期`, danger: '已逾期' }] })
+  }
   if (my.borrowed_specimens_count) {
     const rows: Row[] = my.borrowed_specimens.map((l) => ({
       key: l.loan_id, to: { name: 'specimen-detail', params: { id: l.specimen.id } }, code: l.specimen.code, text: l.specimen.name,
@@ -227,7 +266,7 @@ function drag(e: PointerEvent) {
         <h1 class="hello">你好，{{ auth.user?.name || auth.user?.username }}</h1>
         <p class="sub">{{ today }}<template v-if="data"> · {{ summary }}</template></p>
       </div>
-      <el-button v-if="!auth.isSupervisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
+      <el-button v-if="!auth.isAdvisor" type="primary" :icon="Plus" @click="$router.push({ name: 'experiment-new' })">新建实验记录</el-button>
     </header>
 
     <!-- Left: things only you can move forward. Right: what is already booked or borrowed, to keep in mind. -->
@@ -292,7 +331,7 @@ function drag(e: PointerEvent) {
                   <span v-if="r.hint" class="detail">{{ r.hint }}</span>
                 </span>
                 <StatusTag v-if="r.status" :status="r.status" />
-                <el-tag v-if="r.danger" type="danger" disable-transitions>{{ r.danger }}</el-tag>
+                <el-tag v-if="r.danger" class="status-tag" type="danger" disable-transitions>{{ r.danger }}</el-tag>
               </RouterLink>
             </li>
           </ul>

@@ -10,7 +10,7 @@ export interface SiteNotification {
 }
 
 export const notificationsApi = {
-  list: (q?: { page?: number; page_size?: number; unread?: 1 | '' }) => api.get<Page<SiteNotification>>('/api/notifications/', q),
+  list: (q?: { page?: number; page_size?: number; unread?: 1 | ''; module?: string }) => api.get<Page<SiteNotification>>('/api/notifications/', q),
   count: () => api.get<{ count: number }>('/api/notifications/unread-count/'),
   read: (id: number) => api.post<SiteNotification>(`/api/notifications/${id}/read/`, {}),
   readAll: () => api.post<{ updated: number }>('/api/notifications/read-all/', {}),

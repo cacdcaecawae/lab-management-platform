@@ -17,6 +17,7 @@ from rest_framework.response import Response
 
 from core.export import xlsx_bytes
 from core.files import checked_upload, delete_name_on_commit, delete_on_commit, download
+from core.filters import Ordering
 from core.history import serialize_history
 from core.params import plain_int, search_text
 from core.permissions import IsActiveMember, IsManager, is_manager, scope_group
@@ -40,6 +41,8 @@ class AchievementViewSet(viewsets.ModelViewSet):
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = AchievementSerializer
+    filter_backends = [Ordering]
+    ordering_fields = ["date"]
 
     def get_permissions(self):
         if self.action == "destroy":
@@ -64,6 +67,8 @@ class AchievementViewSet(viewsets.ModelViewSet):
             items = items.filter(date__year=int(year))
         if member := params.get("member"):
             items = items.filter(members=member) if plain_int(member) else items.none()
+        if (fulltext := params.get("has_fulltext")) in ("1", "0"):
+            items = items.exclude(fulltext="") if fulltext == "1" else items.filter(fulltext="")
         if keyword := search_text(params):
             items = items.filter(Q(title__icontains=keyword) | Q(authors__icontains=keyword) | Q(venue__icontains=keyword))
         return items
@@ -134,7 +139,8 @@ class AchievementViewSet(viewsets.ModelViewSet):
     @action(detail=False)
     def export(self, request):
         """The filtered list as .xlsx; with files=1 a .zip of the list plus every full text, named by row number."""
-        items = list(self.get_queryset().order_by("type", "date", "id"))
+        items = self.get_queryset()
+        items = list(self.filter_queryset(items) if request.query_params.get("ordering") else items.order_by("type", "date", "id"))
         with_files = request.query_params.get("files") == "1"
         book = Workbook()
         sheet = book.active

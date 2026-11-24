@@ -1,6 +1,9 @@
 // Types mirror docs/api-contract.md. Keep them in sync with the contract, not with guesses.
 
-export type Role = 'student' | 'manager' | 'advisor'
+// Base role; 管理员 and 终审人 are tags on top (is_manager, is_approver), see the roles-and-identity note.
+export type Role = 'student' | 'advisor'
+export type Identity = 'teacher' | 'postdoc' | 'phd' | 'master' | 'undergraduate' | 'assistant'
+export type MemberStatus = 'active' | 'graduated' | 'disabled'
 
 export interface UserBrief {
   id: number
@@ -12,7 +15,9 @@ export interface Me {
   username: string
   name: string
   role: Role
-  is_supervisor: boolean
+  is_manager: boolean
+  is_approver: boolean
+  is_supervisor: boolean // advisor or manager
   is_superuser: boolean // the ops account: 系统管理 only, usually without a group
   group: { id: number; name: string } | null
   email: string
@@ -35,6 +40,12 @@ export interface Member {
   id: number
   name: string
   role: Role
+  is_manager: boolean
+  is_approver: boolean
+  identity: Identity | ''
+  enrollment_year: number | null
+  member_status: MemberStatus
+  tags: string[]
   research_direction: string
   is_active: boolean
 }
@@ -53,7 +64,9 @@ export type MemberListItem = Member & Partial<Omit<MemberDetail, keyof Member>>
 export interface MemberCreate {
   username: string
   name: string
-  role: Role
+  identity?: Identity | ''
+  enrollment_year?: number | null
+  tags?: string[]
   email?: string
   phone?: string
   wechat?: string
@@ -62,7 +75,12 @@ export interface MemberCreate {
 }
 
 // username: managers can correct a member's login name (e.g. a student number mistyped at signup)
-export type MemberUpdate = Partial<Pick<MemberDetail, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'>>
+export type MemberUpdate = Partial<
+  Pick<
+    MemberDetail,
+    'username' | 'name' | 'identity' | 'enrollment_year' | 'member_status' | 'tags' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'
+  >
+>
 
 // A student who registered through the group's link and waits for a manager.
 export interface PendingMember {
@@ -356,6 +374,11 @@ export interface Dashboard {
     tasks: WorkbenchTask[]
     reports_needing_revision: WeeklyReportBrief[]
     draft_experiments: ExperimentBrief[]
+    draft_runs: RunBrief[]
+    // never submitted; a returned one is in returned_purchases
+    draft_purchases: Purchase[]
+    // still 待提交 and no invoice uploaded yet
+    reimbursements_without_invoice: Reimbursement[]
     current_week_report: WeeklyReportBrief | null
     upcoming_bookings: Booking[]
     unreported_bookings: Booking[]
@@ -369,8 +392,14 @@ export interface Dashboard {
     // managers: waiting for the initial review; advisors: for the final review
     purchases_to_review: Purchase[]
   } | null
+  // advisors and managers: open tasks past their due date in the group's projects
+  overdue_tasks?: number
   // managers only (they maintain equipment and consumables)
   manager: {
+    pending_signups: UserBrief[]
+    // approved, not bought yet; bought, not arrived yet
+    to_purchase: Purchase[]
+    to_receive: Purchase[]
     overdue_loans: (BorrowedSpecimenReminder & { borrower: UserBrief })[]
     overdue_loans_count: number
     calibration_due: (EquipmentBrief & { calibration_due: string })[]
@@ -398,6 +427,7 @@ export interface Defect {
 
 export interface SpecimenLoan {
   id: number
+  specimen: { id: number; code: string; name: string }
   borrower: UserBrief
   project: ProjectBrief | null
   purpose: string
@@ -525,6 +555,8 @@ export interface Booking {
   end_at: string
   purpose: string
   cancelled_at: string | null
+  // set when it was ended early: the end it had before (end_at is then the actual end)
+  planned_end_at: string | null
   report: UsageReport | null
   created_at: string
 }
@@ -559,6 +591,7 @@ export interface Consumable {
   name: string
   spec: string
   unit: string
+  category: string
   location: string
   safety_stock: number
   // sum of all transactions
@@ -574,7 +607,7 @@ export interface Consumable {
   updated_at: string
 }
 
-export type ConsumableWrite = Pick<Consumable, 'name' | 'spec' | 'unit' | 'location' | 'safety_stock' | 'notes'>
+export type ConsumableWrite = Pick<Consumable, 'name' | 'spec' | 'unit' | 'category' | 'location' | 'safety_stock' | 'notes'>
 
 export type TxnKind = 'in' | 'out' | 'return' | 'adjust'
 
@@ -589,6 +622,11 @@ export interface StockTxn {
   purchase: PurchaseRef | null
   note: string
   created_at: string
+}
+
+// a line of the group ledger (GET /api/stock-txns/): which consumable it was
+export interface LedgerTxn extends StockTxn {
+  consumable: { id: number; name: string; spec: string; unit: string }
 }
 
 // quantity: positive for in / out / return; the signed difference for adjust
@@ -799,6 +837,12 @@ export interface Account {
   username: string
   name: string
   role: Role
+  is_manager: boolean
+  is_approver: boolean
+  identity: Identity | ''
+  enrollment_year: number | null
+  member_status: MemberStatus
+  tags: string[]
   group: { id: number; name: string } | null
   email: string
   phone: string
@@ -810,10 +854,17 @@ export interface Account {
   last_login: string | null
 }
 
-export type AccountUpdate = Partial<Pick<Account, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'>>
+export type AccountUpdate = Partial<
+  Pick<
+    Account,
+    | 'username' | 'name' | 'role' | 'is_manager' | 'is_approver' | 'identity' | 'enrollment_year' | 'member_status' | 'tags'
+    | 'email' | 'phone' | 'wechat' | 'research_direction' | 'is_active'
+  >
+>
 
-export interface AccountCreate extends Required<Omit<AccountUpdate, 'is_active'>> {
-  username: string
+export interface AccountCreate
+  extends Required<Pick<AccountUpdate, 'username' | 'name' | 'role' | 'email' | 'phone' | 'wechat' | 'research_direction'>>,
+    Pick<AccountUpdate, 'is_manager' | 'is_approver' | 'identity' | 'enrollment_year' | 'tags'> {
   group_id: number
   password: string
 }
@@ -873,6 +924,8 @@ export interface ActionItem {
   content: string
   due_date: string | null
   done_at: string | null
+  // brought into a later meeting (that copy carries on); this one counts as done
+  carried_to: { id: number; date: string } | null
 }
 
 export interface MyActionItem extends ActionItem {
@@ -907,7 +960,8 @@ export interface MeetingWrite {
   minutes: string
   agenda: { presenter_id: number; topic: string }[]
   // an item with id is kept (and keeps its done state); items left out are removed
-  actions: { id?: number; owner_id: number; content: string; due_date: string | null }[]
+  // carried_from: a new row copied from an open item of an earlier meeting, which is then marked as carried over
+  actions: { id?: number; owner_id: number; content: string; due_date: string | null; carried_from?: number }[]
 }
 
 // ---- achievements (phase 4) ----

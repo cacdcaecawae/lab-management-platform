@@ -8,10 +8,13 @@ import { purchasesApi } from '@/modules/procurement/api'
 import type { Equipment, EquipmentStatus, EquipmentWrite, PurchaseRef, UserBrief } from '@/api/types'
 import { EQUIPMENT_STATUSES, STATUS, mergeById } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
+import { suggest } from '@/api/suggestions'
+import { useRemoteOptions } from '@/composables/useRemoteOptions'
 import FormDialog from '@/components/FormDialog.vue'
 
 const visible = defineModel<boolean>({ required: true })
-const props = defineProps<{ equipment?: Equipment | null }>()
+// initial: a new device from an arrived purchase request (its 登记为设备 button): the name and the request preset
+const props = defineProps<{ equipment?: Equipment | null; initial?: { name: string; purchase: PurchaseRef } }>()
 // stale: the status changed since the form opened; the dialog closed and the page should reload.
 const emit = defineEmits<{ saved: [equipment: Equipment]; stale: [] }>()
 
@@ -29,8 +32,8 @@ const members = ref<UserBrief[]>([])
 const options = computed(() => mergeById(members.value, [props.equipment?.custodian]))
 // Arrived purchase requests (managers open this form, and they see the group's requests).
 type PurchaseOption = PurchaseRef & { purpose?: string }
-const arrived = ref<PurchaseOption[]>([])
-const purchaseOptions = computed(() => mergeById<PurchaseOption>(arrived.value, [props.equipment?.purchase]))
+const arrived = useRemoteOptions<PurchaseOption>((search) => purchasesApi.list({ status: 'arrived', search, page_size: 20 }), false)
+const purchaseOptions = computed(() => arrived.options([form.purchase_id, props.equipment?.purchase, props.initial?.purchase]))
 let optionsLoaded = false
 
 watch(visible, async (v) => {
@@ -40,23 +43,19 @@ watch(visible, async (v) => {
     code: e.code, name: e.name, model: e.model, category: e.category, location: e.location,
     custodian_id: e.custodian?.id ?? null, status: e.status, purchase_date: e.purchase_date,
     calibration_due: e.calibration_due, notes: e.notes, purchase_id: e.purchase?.id ?? null,
-  })
+  }, !e && props.initial && { name: props.initial.name, purchase_id: props.initial.purchase.id })
   opened = { ...form }
   errors.clear()
+  arrived.search()
   if (optionsLoaded) return
   try {
-    // shortcut: first 100 active members / arrived requests only; switch to remote search if a group gets larger.
-    const [m, p] = await Promise.all([
-      membersApi.list({ is_active: true, page_size: 100 }),
-      purchasesApi.list({ status: 'arrived', page_size: 100 }),
-    ])
-    members.value = m.results
-    arrived.value = p.results
+    // shortcut: first 100 active members only; switch to remote search if a group gets larger.
+    members.value = (await membersApi.list({ is_active: true, page_size: 100 })).results
     optionsLoaded = true
   } catch (e) {
     showError(e)
   }
-})
+}, { immediate: true }) // a page may mount it open (登记为设备 from a purchase request)
 
 // A cleared select or date picker gives undefined, which JSON drops; send null so the field is really cleared.
 const value = (k: keyof EquipmentWrite) => form[k] ?? null
@@ -102,10 +101,10 @@ async function save() {
         <el-input v-model="form.model" />
       </el-form-item>
       <el-form-item label="类别" :error="errors.fe('category')">
-        <el-input v-model="form.category" placeholder="如 探伤仪、探头" />
+        <el-autocomplete v-model="form.category" :fetch-suggestions="suggest('equipment.category')" placeholder="如 探伤仪、探头" />
       </el-form-item>
       <el-form-item label="存放位置" :error="errors.fe('location')">
-        <el-input v-model="form.location" />
+        <el-autocomplete v-model="form.location" :fetch-suggestions="suggest('equipment.location')" />
       </el-form-item>
       <el-form-item label="保管人" :error="errors.fe('custodian_id')">
         <el-select v-model="form.custodian_id" filterable clearable placeholder="选择保管人">
@@ -119,7 +118,7 @@ async function save() {
         <el-date-picker v-model="form.calibration_due" type="date" value-format="YYYY-MM-DD" />
       </el-form-item>
       <el-form-item label="采购申请（已到货）" :error="errors.fe('purchase_id')" class="span-all">
-        <el-select v-model="form.purchase_id" filterable clearable placeholder="可不选">
+        <el-select v-model="form.purchase_id" filterable remote :remote-method="arrived.search" :loading="arrived.loading.value" clearable placeholder="可不选，可搜编号、用途">
           <el-option v-for="p in purchaseOptions" :key="p.id" :label="p.purpose ? `${p.code} ${p.purpose}` : p.code" :value="p.id" />
         </el-select>
       </el-form-item>

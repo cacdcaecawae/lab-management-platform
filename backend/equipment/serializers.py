@@ -132,9 +132,9 @@ class BookingSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             "id", "equipment", "equipment_id", "user", "project", "project_id", "kind", "start_at", "end_at",
-            "purpose", "cancelled_at", "report", "created_at",
+            "purpose", "cancelled_at", "planned_end_at", "report", "created_at",
         ]
-        read_only_fields = ["cancelled_at"]
+        read_only_fields = ["cancelled_at", "planned_end_at"]
 
     def validate(self, attrs):
         if attrs["end_at"] <= attrs["start_at"]:

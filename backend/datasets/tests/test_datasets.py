@@ -67,16 +67,17 @@ def test_list_scope(api, student_a, manager, advisor, other_manager, dataset_a, 
         return {d["name"] for d in api(user).get("/api/datasets/").json()["results"]}
 
     assert names(student_a) == {dataset_a.name}
-    assert names(manager) == names(advisor) == {dataset_a.name, dataset_b.name}
+    assert names(advisor) == {dataset_a.name, dataset_b.name}
+    assert names(manager) == set()  # a student with the 管理员 tag: their own datasets only
     assert names(other_manager) == set()
 
 
-def test_list_filters(api, manager, student_a, student_b, project, group):
+def test_list_filters(api, advisor, student_a, student_b, project, group):
     other_project = Project.objects.create(group=group, name="另一个项目", leader=student_a)
     Dataset.objects.create(owner=student_a, project=project, name="兰姆波 原始", kind="raw")
     Dataset.objects.create(owner=student_a, project=other_project, name="处理脚本", kind="script")
     Dataset.objects.create(owner=student_b, project=project, name="兰姆波 结果", kind="result")
-    client = api(manager)
+    client = api(advisor)
 
     def names(query):
         resp = client.get(f"/api/datasets/?{query}")
@@ -113,12 +114,12 @@ def test_put_is_not_allowed(api, student_a, dataset_a):
     assert resp.status_code == 405
 
 
-def test_supervisor_can_read_but_not_write(api, manager, advisor, dataset_a):
-    for user in (manager, advisor):
-        client = api(user)
-        assert client.get(f"/api/datasets/{dataset_a.pk}/").status_code == 200
-        assert client.patch(f"/api/datasets/{dataset_a.pk}/", {"name": "x"}, format="json").status_code == 403
-        assert client.delete(f"/api/datasets/{dataset_a.pk}/").status_code == 403
+def test_advisor_can_read_but_not_write(api, manager, advisor, dataset_a):
+    client = api(advisor)
+    assert client.get(f"/api/datasets/{dataset_a.pk}/").status_code == 200
+    assert client.patch(f"/api/datasets/{dataset_a.pk}/", {"name": "x"}, format="json").status_code == 403
+    assert client.delete(f"/api/datasets/{dataset_a.pk}/").status_code == 403
+    assert api(manager).get(f"/api/datasets/{dataset_a.pk}/").status_code == 404
     dataset_a.refresh_from_db()
     assert dataset_a.name == "A 原始波形"
 

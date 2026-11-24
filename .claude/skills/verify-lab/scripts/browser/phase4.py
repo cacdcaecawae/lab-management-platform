@@ -150,7 +150,7 @@ def achievements(ui, stack):
         path.write_bytes(payload)
         selector = ".el-dialog input[type=file][accept='.pdf']"
         WebDriverWait(author, 12).until(ec.presence_of_element_located((By.CSS_SELECTOR, selector))).send_keys(str(path))
-        ui.visible(author, By.LINK_TEXT, name)
+        ui.button(author, name)  # the file name opens the preview (a link-styled button since PR #51)
         record.refresh_from_db()
         assert record.fulltext_name == name
         with record.fulltext.open("rb") as stored:
@@ -162,7 +162,7 @@ def achievements(ui, stack):
     new_name, new_digest = upload("phase4-replacement.pdf", 15)
     assert old_name != new_name and old_digest != new_digest
     WebDriverWait(author, 12).until(lambda _: not record.fulltext.storage.exists(old_name))
-    assert not author.find_elements(By.LINK_TEXT, "phase4-initial.pdf")
+    assert not author.find_elements(By.XPATH, "//button[normalize-space(.)='phase4-initial.pdf']")
     ui.screenshot(author, "achievements-fulltext-replaced")
     ui.button(author, "取消").click()
 

@@ -254,9 +254,10 @@ def test_other_group_manager_gets_404(api, student_a, other_manager, dataset_a, 
     assert download(client, meta["id"])[0].status_code == 404
 
 
-def test_supervisors_read_and_download_but_cannot_upload(api, student_a, manager, advisor, dataset_a, upload, stored_files):
+def test_advisors_read_and_download_but_cannot_upload(api, student_a, manager, advisor, dataset_a, upload, stored_files):
     [meta] = upload(api(student_a), dataset_a, [("a.bin", b"private")]).json()
-    for user in (manager, advisor):
+    assert api(manager).get(f"/api/files/{meta['id']}/").status_code == 404  # 管理员 tag: not research files
+    for user in (advisor,):
         client = api(user)
         assert client.get(f"/api/datasets/{dataset_a.pk}/files/").status_code == 200
         assert client.get(f"/api/files/{meta['id']}/").status_code == 200

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import type { Booking } from '@/api/types'
 import BookingsView from './BookingsView.vue'
 
@@ -27,6 +27,7 @@ const startedBooking: Booking = {
   end_at: '2026-01-01T10:00:00+08:00',
   purpose: '采集波形',
   cancelled_at: null,
+  planned_end_at: null,
   report: null,
   created_at: '2026-01-01T07:00:00+08:00',
 }
@@ -93,5 +94,31 @@ it('blocks usage report submission until selected photo finishes compressing', a
   await submitBtn().trigger('click')
   await flushPromises()
   expect(bookingsMock.report).toHaveBeenCalledWith(7, expect.objectContaining({ condition: 'normal', photo: compressed }))
+  wrapper.unmount()
+})
+
+it('ends a booking under way now and shows the end it had before', async () => {
+  const end = new Date(Date.now() + 3_600_000).toISOString()
+  const running = { ...startedBooking, start_at: new Date(Date.now() - 3_600_000).toISOString(), end_at: end }
+  bookingsMock.get.mockResolvedValue(running)
+  const endNow = vi.fn().mockResolvedValue({ ...running, end_at: new Date().toISOString(), planned_end_at: end })
+  Object.assign(bookingsMock, { endNow })
+  vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+  const wrapper = mount(BookingsView, {
+    global: {
+      plugins: [ElementPlus],
+      stubs: {
+        FullCalendar: { template: '<div />', methods: { getApi: () => ({ gotoDate: vi.fn(), refetchEvents: vi.fn() }) } },
+        BookingFormDialog: true,
+        RouterLink: { template: '<a><slot /></a>' },
+      },
+    },
+  })
+  await flushPromises()
+  await wrapper.findAll('button').find((b) => b.text() === '提前结束')!.trigger('click')
+  await flushPromises()
+  expect(endNow).toHaveBeenCalledWith(7)
+  expect(wrapper.text()).toContain('提前结束，原定到')
+  expect(wrapper.findAll('button').some((b) => b.text() === '提前结束')).toBe(false) // over now
   wrapper.unmount()
 })

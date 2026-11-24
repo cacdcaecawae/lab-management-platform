@@ -78,7 +78,7 @@ def test_milestone_integrity_progress_and_history(api, project, group, student_a
     assert lead.delete(detail(m, "milestones")).status_code == 204
     rows = member.get(project_url(project) + "?status=done").data["results"]
     assert rows[0]["milestone"] is None
-    assert rows[0]["history"][0]["changes"] == {"milestone": {"before": m, "after": None}}
+    assert rows[0]["history"][0]["changes"] == {"milestone": {"before": "合成记录", "after": None}}
     assert len(rows[0]["history"]) == 3
 
 

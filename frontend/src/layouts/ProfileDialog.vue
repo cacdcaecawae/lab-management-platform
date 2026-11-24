@@ -5,6 +5,7 @@ import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useFieldErrors } from '@/utils/errors'
 import FormDialog from '@/components/FormDialog.vue'
+import { suggest } from '@/api/suggestions'
 import AccountCard from './AccountCard.vue'
 
 // 个人信息 (DESIGN.md): who you are on top (click the picture to change it, saved at once), then the contact
@@ -60,7 +61,7 @@ async function save() {
         <el-input v-model="form.wechat" />
       </el-form-item>
       <el-form-item label="研究方向" :error="errors.fe('research_direction')">
-        <el-input v-model="form.research_direction" />
+        <el-autocomplete v-model="form.research_direction" :fetch-suggestions="suggest('member.research_direction')" />
       </el-form-item>
     </div>
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />

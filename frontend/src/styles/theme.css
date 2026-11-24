@@ -429,6 +429,11 @@ a:focus-visible {
 .page-toolbar .el-select {
   width: 180px;
 }
+/* a date range would otherwise stretch across the row (it is an input wrapper, which grows) */
+.page-toolbar .el-date-editor.el-range-editor {
+  flex-grow: 0;
+  width: 260px;
+}
 .page-toolbar .el-input-number {
   width: 120px;
 }
@@ -747,6 +752,14 @@ a:focus-visible {
     position: absolute !important;
     top: 12px;
     right: 0;
+  }
+  /* two tags (草稿 + 被退回) would not fit the room kept beside the title: they take a line of their own */
+  .el-table .el-table__body td.el-table__cell[data-label='状态']:has(.status-tag ~ .status-tag) {
+    position: static !important;
+    flex-basis: 100%;
+  }
+  .el-table .el-table__body tr:has(td[data-label='状态'] .status-tag ~ .status-tag) td:is(:first-child:not(.el-table-column--selection), .el-table-column--selection + td) {
+    padding-right: 0;
   }
   .el-table .el-table__body td:is(.el-table-fixed-column--right, [data-label='操作']) {
     flex-basis: 100%;

@@ -8,6 +8,8 @@ import { equipmentApi } from '@/modules/equipment/api'
 import type { DocCategory, DocDetail, DocWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { useSuggestions } from '@/api/suggestions'
 import { useAuthStore } from '@/stores/auth'
 import { DOC_CATEGORY_LABELS, formatSize, formatTime, mergeById } from '@/utils/format'
 import { showActionError, showError, useFieldErrors } from '@/utils/errors'
@@ -23,10 +25,13 @@ const route = useRoute()
 const router = useRouter()
 
 // ?equipment=<id> comes from the equipment page ("资料"), ?doc=<id> opens one document.
-const initialEquipment = Number(route.query.equipment) || ''
-const filters = reactive({ search: '', category: '', equipment: initialEquipment as number | '' })
-const keyword = ref('')
-const { items, count, page, pageSize, loading, load } = usePagedList(docsApi.list, filters)
+const routeEquipment = () => (Number(route.query.equipment) || '') as number | ''
+const filters = reactive({ search: '', category: '', tag: '', equipment: routeEquipment() })
+const tags = useSuggestions('doc.tags')
+// another device's 资料, or 知识库 in the menu (no device), while the page is open: the view is reused
+watch(() => route.query.equipment, () => (filters.equipment = routeEquipment()))
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading, load, sort } = usePagedList(docsApi.list, filters)
 // shortcut: the first 100 devices; switch to remote search if the ledger grows past that.
 const devices = useOptions(() => equipmentApi.list({ page_size: 100 }))
 const previewOpen = ref(false)
@@ -203,11 +208,14 @@ watch(() => route.query.doc, (doc, previous) => {
       <el-select v-model="filters.equipment" placeholder="全部设备" aria-label="设备" clearable filterable>
         <el-option v-for="d in devices" :key="d.id" :label="`${d.code} ${d.name}`" :value="d.id" />
       </el-select>
+      <el-select v-model="filters.tag" placeholder="全部标签" aria-label="标签" clearable filterable remote :remote-method="tags.search">
+        <el-option v-for="t in tags.values.value" :key="t" :label="t" :value="t" />
+      </el-select>
       <template #actions>
         <el-button type="primary" @click="openFromList(null)">新建文档</el-button>
       </template>
     </PageToolbar>
-    <el-table v-loading="loading" :data="items" empty-text="没有符合条件的文档">
+    <el-table @sort-change="sort" v-loading="loading" :data="items" empty-text="没有符合条件的文档">
       <el-table-column label="标题" min-width="200">
         <template #default="{ row }"><el-button link type="primary" @click="openFromList(row.id)">{{ row.title }}</el-button></template>
       </el-table-column>
@@ -219,7 +227,7 @@ watch(() => route.query.doc, (doc, previous) => {
       </el-table-column>
       <el-table-column label="标签" min-width="140">
         <template #default="{ row }">
-          <el-tag v-for="t in row.tags" :key="t" size="small" class="tag" disable-transitions>{{ t }}</el-tag>
+          <el-tag v-for="t in row.tags" :key="t" size="small" class="tag" disable-transitions role="button" tabindex="0" :title="`只看标签“${t}”`" @click="filters.tag = t" @keydown.enter="filters.tag = t">{{ t }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="最新文件" min-width="180">
@@ -234,7 +242,7 @@ watch(() => route.query.doc, (doc, previous) => {
       <el-table-column label="作者" min-width="80">
         <template #default="{ row }">{{ row.author.name }}</template>
       </el-table-column>
-      <el-table-column label="更新时间" min-width="140">
+      <el-table-column label="更新时间" prop="updated_at" sortable="custom" min-width="140">
         <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
       </el-table-column>
     </el-table>
@@ -269,7 +277,9 @@ watch(() => route.query.doc, (doc, previous) => {
       </el-form-item>
     </div>
     <el-form-item label="标签" :error="errors.fe('tags')">
-      <el-select v-model="form.tags" multiple filterable allow-create default-first-option :reserve-keyword="false" placeholder="输入后回车，可多个" />
+      <el-select v-model="form.tags" multiple filterable allow-create default-first-option :reserve-keyword="false" placeholder="输入后回车，可多个" @visible-change="(open: boolean) => open && tags.search()">
+        <el-option v-for="t in tags.values.value" :key="t" :label="t" :value="t" />
+      </el-select>
     </el-form-item>
     <el-form-item label="说明" :error="errors.fe('description')">
       <el-input v-model="form.description" type="textarea" :autosize="{ minRows: 3, maxRows: 12 }" placeholder="用途、适用版本、注意事项；调试经验可以直接写在这里" />
@@ -319,6 +329,7 @@ watch(() => route.query.doc, (doc, previous) => {
 <style scoped>
 .tag {
   margin: 0 4px 2px 0;
+  cursor: pointer;
 }
 .muted {
   color: var(--lab-text-3);

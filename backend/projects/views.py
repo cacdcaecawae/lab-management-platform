@@ -16,7 +16,8 @@ from .serializers import ProjectLogSerializer, ProjectSerializer
 
 
 class ProjectPermission(permissions.BasePermission):
-    """Create: supervisors. Edit and add logs: supervisors or the project leader. Read: the whole group."""
+    """Create: supervisors. Edit: supervisors or the project leader. Add a progress log: also the project's current
+    members. Read: the whole group."""
 
     message = "仅管理员、导师或项目负责人可操作"
 
@@ -24,9 +25,13 @@ class ProjectPermission(permissions.BasePermission):
         return view.action != "create" or is_supervisor(request.user)
 
     def has_object_permission(self, request, view, project):
-        if request.method in permissions.SAFE_METHODS:
+        user = request.user
+        if request.method in permissions.SAFE_METHODS or is_supervisor(user) or project.leader_id == user.id:
             return True
-        return is_supervisor(request.user) or project.leader_id == request.user.id
+        if view.action == "logs" and project.members.filter(pk=user.pk).exists():
+            return True
+        self.message = "仅本项目成员、管理员或导师可以写进展" if view.action == "logs" else ProjectPermission.message
+        return False
 
 
 class ProjectViewSet(

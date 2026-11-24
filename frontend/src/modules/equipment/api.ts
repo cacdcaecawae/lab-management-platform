@@ -27,6 +27,9 @@ export const bookingsApi = {
   get: (id: number) => api.get<Booking>(`/api/bookings/${id}/`),
   create: (body: BookingWrite) => api.post<Booking>('/api/bookings/', body),
   cancel: (id: number) => api.post<Booking>(`/api/bookings/${id}/cancel/`),
+  endNow: (id: number) => api.post<Booking>(`/api/bookings/${id}/end-now/`),
+  // Paginated, newest first, no time window: the list view; reportable=1 also counts bookings under way.
+  page: (q?: ListQuery) => api.get<Page<Booking>>('/api/bookings/all/', q),
   report: (id: number, body: { condition: Condition; description: string; photo?: File | null }) => {
     const form = new FormData()
     form.append('condition', body.condition)

@@ -6,6 +6,7 @@
 
 - `datasets-create`：新建数据集后进入详情页，编号形如 `DS-2026-0001`。
 - `datasets-upload`：上传文件后出现"已入库"，文件表多一行，显示 SHA256，"当前版本"随之变化。
+- `datasets-drop`：把 3 个文件拖到"文件"卡片上，卡片出现虚线框和"松开上传"；松开后三个都有进度条并"已入库"，SHA256 与本地一致；同名文件被拒并提示；拖文件夹提示"不支持拖入文件夹"。（chrome-devtools 不能模拟拖放：用 `evaluate_script` 派发带 `DataTransfer` 的 `drop` 事件代替。）
 - `datasets-duplicate`：再次上传同名文件，显示"上传失败：已存在同名文件：<文件名>"，文件数和版本码都不变。
 - `datasets-download`：下载链接返回的内容，SHA256 与页面显示、本地文件一致。
 - `datasets-isolation`：同组另一个学生打开这个数据集的地址，看到"记录不存在或无权查看"；接口和下载链接都返回 404。

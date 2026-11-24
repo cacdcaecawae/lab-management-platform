@@ -60,17 +60,26 @@ const correcting = ref(false)
 const editable = computed(() => (record.value ? (status.value === 'draft' && mine.value) || (canCorrect.value && correcting.value) : isNew))
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 const { markSaved } = useUnsavedGuard(form, () => editable.value)
+// From a low-stock consumable (?name=&spec=&quantity=): the first row is filled in; not counted as an unsaved change.
+if (isNew && typeof route.query.name === 'string') {
+  form.items = [{ ...blankRow(), name: route.query.name, spec: String(route.query.spec ?? ''), quantity: Math.max(1, Number(route.query.quantity) || 1) }]
+  markSaved()
+}
 const canReview = computed(() => {
-  const role = auth.user?.role
   if (!record.value || mine.value) return false
-  return (status.value === 'pending_initial' && role === 'manager') || (status.value === 'pending_final' && role === 'advisor')
+  return (status.value === 'pending_initial' && auth.isManager) || (status.value === 'pending_final' && auth.isApprover)
 })
+// The group's only approver may do both reviews of a request (the roles note); the record says so.
+const sameReviewer = (i: number) => {
+  const [before, a] = [record.value!.approvals[i - 1], record.value!.approvals[i]]
+  return a.stage === 'final' && before?.stage === 'initial' && before.verdict === 'approve' && before.reviewer.id === a.reviewer.id
+}
 const lastReturn = computed<Approval | undefined>(() =>
   record.value?.returned ? [...record.value.approvals].reverse().find((a) => a.verdict === 'return') : undefined,
 )
 const formTotal = computed(() => itemsTotal(form.items))
 const waitingFor = computed(() =>
-  ({ pending_initial: '等待管理员初审', pending_final: '等待导师终审' } as Record<string, string>)[status.value ?? ''] ?? '',
+  ({ pending_initial: '等待管理员初审', pending_final: '等待终审人终审' } as Record<string, string>)[status.value ?? ''] ?? '',
 )
 const canMark = computed(() => auth.isManager && (status.value === 'approved' || status.value === 'purchased'))
 
@@ -94,7 +103,9 @@ function handleErrors(e: unknown) {
   clearErrors()
   const items: unknown = e instanceof ApiError ? e.body.errors?.items : undefined
   if (Array.isArray(items) && items.every((m) => typeof m === 'string')) itemsMessage.value = items.join('；')
-  else if (items && typeof items === 'object') rowErrors.value = items as Record<number, Record<string, string[]>>
+  // numbered by the items sent: back to the form's rows, which may include blank ones left out
+  else if (items && typeof items === 'object')
+    rowErrors.value = Object.fromEntries(Object.entries(items).map(([k, v]) => [sentRows[Number(k)] ?? Number(k), v]))
   errors.handle(e)
 }
 
@@ -114,9 +125,17 @@ async function load(id: number) {
   }
 }
 
+// The form row of each item sent (blank rows are not sent).
+let sentRows: number[] = []
+
+function removeRow(i: number) {
+  form.items.splice(i, 1)
+  rowErrors.value = {} // numbered by the rows before
+}
+
 function body(): PurchaseWrite {
-  const rows = form.items.filter((r) => r.name.trim() || r.spec.trim() || r.link.trim() || r.unit_price != null)
-  const items = rows.map((r) => ({
+  sentRows = form.items.flatMap((r, i) => (r.name.trim() || r.spec.trim() || r.link.trim() || r.unit_price != null ? [i] : []))
+  const items = sentRows.map((i) => form.items[i]).map((r) => ({
     name: r.name.trim(),
     spec: r.spec.trim(),
     quantity: r.quantity,
@@ -161,7 +180,7 @@ async function submit() {
   busy.value = true
   try {
     fill(await purchasesApi.submit(r.id))
-    ElMessage.success(record.value?.status === 'pending_final' ? '已提交，等待导师终审' : '已提交，等待管理员初审')
+    ElMessage.success(record.value?.status === 'pending_final' ? '已提交，等待终审人终审' : '已提交，等待管理员初审')
   } catch (e) {
     handleErrors(e)
   } finally {
@@ -242,7 +261,7 @@ if (route.params.id) load(Number(route.params.id))
     <el-card class="card">
       <template #header>
         <PageHeader :back="{ name: backTo }">
-          <template #title><span :class="{ code: record }">{{ record ? record.code : '新建采购申请' }}</span></template>
+          <template #title><span :class="{ code: record }">{{ record ? record.code : isNew ? '新建采购申请' : '' }}</span></template>
           <template v-if="record" #tags>
             <StatusTag :status="record.status" />
             <el-tag v-if="record.returned" class="status-tag" type="danger" disable-transitions>被退回</el-tag>
@@ -263,6 +282,14 @@ if (route.params.id) load(Number(route.params.id))
             <el-button v-if="canCorrect" :disabled="busy" @click="correcting = true">修改明细</el-button>
             <el-button v-if="canMark && status === 'approved'" type="primary" :loading="busy" @click="markPurchased">标记已采购</el-button>
             <el-button v-if="canMark && status === 'purchased'" type="primary" :loading="busy" @click="markArrived">标记已到货</el-button>
+            <template v-if="status === 'arrived'">
+              <el-button v-if="auth.isManager" @click="router.push({ name: 'consumables', query: { purchase: record.id, code: record.code } })">入库到耗材</el-button>
+              <el-button
+                v-if="auth.isManager"
+                @click="router.push({ name: 'equipment', query: { new: '1', purchase: record.id, code: record.code, name: record.items[0]?.name ?? '' } })"
+              >登记为设备</el-button>
+              <el-button v-if="mine" type="primary" @click="router.push({ name: 'reimbursements', query: { purchase: record.id } })">发起报销</el-button>
+            </template>
           </template>
         </PageHeader>
       </template>
@@ -302,7 +329,7 @@ if (route.params.id) load(Number(route.params.id))
         <div class="total"><span>合计</span><span class="amount">¥ {{ formatMoney(record.total) }}</span></div>
       </template>
 
-      <el-form v-else class="form-page" label-position="top" @submit.prevent>
+      <el-form v-else-if="editable" class="form-page" label-position="top" @submit.prevent>
         <div class="form-grid">
           <el-form-item class="span-2" label="经费来源" :error="errors.fe('fund_id')" required>
             <el-select v-model="form.fund_id" filterable placeholder="选择经费来源">
@@ -334,7 +361,7 @@ if (route.params.id) load(Number(route.params.id))
                   class="price"
                 />
                 <el-input v-model="row.link" placeholder="购买链接（可不填）" aria-label="链接" />
-                <el-button :icon="Delete" text aria-label="删除这一行" :disabled="form.items.length === 1" @click="form.items.splice(i, 1)" />
+                <el-button :icon="Delete" text aria-label="删除这一行" :disabled="form.items.length === 1" @click="removeRow(i)" />
               </div>
               <div v-if="rowError(i)" class="row-error">{{ rowError(i) }}</div>
             </template>
@@ -360,7 +387,7 @@ if (route.params.id) load(Number(route.params.id))
     <el-card v-if="record?.approvals.length" header="审批记录" class="card">
       <el-timeline>
         <el-timeline-item
-          v-for="a in record.approvals"
+          v-for="(a, i) in record.approvals"
           :key="a.id"
           :timestamp="formatTime(a.created_at)"
           :type="a.verdict === 'approve' ? 'success' : 'danger'"
@@ -369,6 +396,7 @@ if (route.params.id) load(Number(route.params.id))
           <div>
             {{ STAGE_LABELS[a.stage] }} · {{ a.reviewer.name }} · <b>{{ REVIEW_VERDICT_LABELS[a.verdict] }}</b>
             <span class="muted">（当时合计 ¥ {{ formatMoney(a.total) }}）</span>
+            <span v-if="sameReviewer(i)" class="muted">初审和终审为同一人</span>
           </div>
           <div v-if="a.comment" class="comment">{{ a.comment }}</div>
         </el-timeline-item>

@@ -10,7 +10,9 @@
 - 列表分页：`?page=1&page_size=20`（最大 100），响应 `{"count", "next", "previous", "results": [...]}`。
 - 内嵌用户统一为 `UserBrief = {"id": 1, "name": "陈同学"}`；内嵌项目为 `{"id", "name"}`。
 - 写入时引用其他对象用 `xxx_id` / `xxx_ids` 字段；读取时返回内嵌对象。
-- 编号 `code`（如 `EX-2026-0018`）只读，由年份和主键生成。
+- 编号 `code`（如 `EX-2026-0018`）只读，由年份和主键生成。列表的 `search` 是一个完整编号时（不分大小写），只返回这一条（实验记录 `EX`、处理记录 `RUN`、数据集 `DS`、采购 `PR`、报销 `RB`），仍在原有的可见范围内；年份按 UTC 记的创建时间（`core/filters.py`）。
+- 排序：下面写了"可排序"的列表接受 `?ordering=<列>`，前面加 `-` 为倒序；不在名单里的列忽略（保持默认顺序），同值按 ID 倒序，翻页不重复。导出带 `ordering` 时按同样顺序。
+- 文本筛选（如设备的 `category`、`location`）按原样精确匹配；外键筛选（如 `custodian`、`fund`、`owner`）要整数，不是整数或含 NUL 时返回空列表。
 - 只读字段（如数据集的 `project_id`、`kind`，成员的 `username`）在 PATCH 中提交会被忽略，不报错。
 - 列表过滤参数只作用于列表；带着过滤参数访问详情地址不受影响。非法的整数型参数返回 400。
 
@@ -42,8 +44,8 @@
 
 - 个人数据（实验、数据集/文件、处理记录、周报）：本人 + 本组管理员/导师可读；只有本人可写。
 - 组内公开（项目、成员公开字段；第二期的设备、预约、使用登记、耗材与流水）：本组全员可读。
-- 设备台账、耗材品类、入库、盘点调整只有本组**管理员**（`role=manager`，不含导师）可写。
-- 第三期：采购申请、报销和它们的附件是个人数据（本人 + 本组管理员、导师）；经费来源组内公开，只有管理员可写。
+- 设备台账、耗材品类、入库、盘点调整只有本组**管理员**（`is_manager=true`，任何基础角色；不含没有管理员标签的导师）可写。
+- 第三期：采购申请、报销和它们的附件是个人数据（本人 + 本组管理员、终审人）；经费来源组内公开，只有管理员可写。
 - 越权读取一律 404。
 - 系统管理 `/api/system/` 只有运维账号（超级用户）可用，其他账号 403；运维账号访问业务接口仍然 403 `no_group`。
 
@@ -63,9 +65,9 @@
 | POST | `/api/auth/password/` | `{old_password, new_password}` → 204；新密码按 Django 密码规则校验 |
 | POST | `/api/auth/register/` | 匿名，要 CSRF。`{code, username, name, email?, password}` → 201。`code` 是课题组注册链接里的码，在事务里按它锁住课题组后、先于其他字段核对（链接关闭或更换与在途申请不会交错），不对 400（`errors.code`），不会提示学号是否已存在；学号已存在 409；密码按 Django 规则校验。建成该组的学生账号，`is_active=false`、`pending=true`、`must_change_password=false`，并给本组管理员发站内通知。每组待审核超过 30 个时 409 `too_many_pending`；同一来源地址每小时 10 次，超过 429 |
 
-`Me = {id, username, name, role, is_supervisor, is_superuser, group: {id, name} | null, email, phone, wechat, research_direction, must_change_password, avatar_url}`（`is_superuser`：运维账号；`avatar_url`：本人头像，每次上传都会变，没有头像为 `null`）
+`Me = {id, username, name, role, is_manager, is_approver, is_supervisor, is_superuser, group: {id, name} | null, email, phone, wechat, research_direction, must_change_password, avatar_url}`（`is_supervisor`：导师或管理员）（`is_superuser`：运维账号；`avatar_url`：本人头像，每次上传都会变，没有头像为 `null`）
 
-`role`: `student` | `manager` | `advisor`
+`role`（基础角色）: `student` | `advisor`；`is_manager` 管理员、`is_approver` 终审人是可叠加的标签
 
 ## 工作台 `/api/dashboard/`（主代理，集成阶段实现）
 
@@ -76,6 +78,9 @@
   "my": {
     "reports_needing_revision": [WeeklyReportBrief],
     "draft_experiments": [ExperimentBrief],
+    "draft_runs": [RunBrief],           // 本人的处理记录草稿
+    "draft_purchases": [Purchase],      // 本人从没提交过的采购草稿（被退回的在 returned_purchases）
+    "reimbursements_without_invoice": [Reimbursement],  // 本人待提交、还没有发票的报销
     "current_week_report": WeeklyReportBrief | null,
     "upcoming_bookings": [Booking],     // 本人进行中和将来的预约，按开始时间
     "unreported_bookings": [Booking],   // 本人最近 14 天内结束、还没登记使用结果的"使用"类预约
@@ -85,13 +90,17 @@
     "borrowed_specimens": [BorrowedSpecimenReminder],  // 本人未还，到期日早的在前，无到期日在最后
     "borrowed_specimens_count": 0      // 真实总数，不限于预览
   },
-  "supervisor": {                      // 仅管理员/导师，否则为 null
+  "supervisor": {                      // 仅导师、管理员、终审人，否则为 null
     "week_start": "2026-11-16",
-    "missing_reports": [UserBrief],
-    "pending_reviews": [WeeklyReportBrief],
-    "purchases_to_review": [Purchase]  // 管理员：待初审；导师：待终审（都不含自己的）
+    "missing_reports": [UserBrief],      // 只给导师，其余为 []
+    "pending_reviews": [WeeklyReportBrief],  // 只给导师
+    "purchases_to_review": [Purchase]  // 管理员：待初审；终审人：待终审（都不含自己的）
   },
-  "manager": {                         // 仅管理员（不含导师），否则为 null
+  "overdue_tasks": 0,                  // 仅导师、管理员：本组项目里截止日期已过、还没完成的任务数
+  "manager": {                         // 仅有管理员标签的人，否则为 null
+    "pending_signups": [UserBrief],           // 待审核的注册申请
+    "to_purchase": [Purchase],                // 本组已批准、还没采购
+    "to_receive": [Purchase],                 // 本组已采购、还没到货
     "equipment_to_check": [EquipmentBrief],   // 状态为"待检查"的设备
     "low_stock": [Consumable],                // 库存低于安全库存的耗材
     "overdue_loans": [BorrowedSpecimenReminder + {borrower: UserBrief}],
@@ -114,9 +123,18 @@
 
 `SiteNotification = {id, title, body, link, created_at, read_at: datetime | null}`。标题为简要动作，不包含审批意见、设备故障描述、盲测参数等业务内容。
 
+除了采购、退回、行动项等原有的，这些事也发通知（issue #48 N6），都在原来的事务里写，回滚就不发：
+
+- 任务指派给你（指派给自己不发；改别的字段不重复发），正文是项目和任务名。
+- 你被排进组会议程（新加进来的汇报人；自己排自己不发）。
+- 学生提交周报，发给本组导师。
+- 报销被别人标为已到账或退回待提交，发给报销人。
+- 管理员取消了你的设备预约。
+- 耗材因一次领用、调整跌破安全库存时发给管理员；之后还在线下不再发，补货回到线上后再跌破才再发。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/notifications/?unread=1` | 可分页；默认 20、最多 100；最新在前；省略 unread 返回全部 |
+| GET | `/api/notifications/?unread=1&module=` | 可分页；默认 20、最多 100；最新在前；省略 unread 返回全部。`module` 按链接分组：`projects` 项目、`research` 科研记录（实验、处理、数据集）、`reports` 周报组会、`lab` 设备耗材（设备、预约、试件、耗材）、`money` 采购经费、`members` 成员；不认识的值返回空列表 |
 | GET | `/api/notifications/unread-count/` | `{count}` |
 | POST | `/api/notifications/{id}/read/` | 幂等，返回更新后的通知 |
 | POST | `/api/notifications/read-all/` | 标记当前范围内未读通知，返回 `{updated}` |
@@ -125,16 +143,18 @@
 
 ## 成员 `/api/members/`（Agent A）
 
-`Member`（本组成员可见的公开字段）：`{id, name, role, research_direction, is_active}`
+`Member`（本组成员可见的公开字段）：`{id, name, role, is_manager, is_approver, identity, enrollment_year, member_status, tags, research_direction, is_active}`（`identity`：`teacher` 教师 / `postdoc` 博士后 / `phd` 博士生 / `master` 硕士生 / `undergraduate` 本科生 / `assistant` 科研助理，可为空串；`member_status`：`active` 在籍 / `graduated` 已毕业 / `disabled` 已停用，只有在籍能登录；`tags`：本组自由填写的词条，最多 10 个、每个 20 字）
 `MemberDetail`（本组管理员/导师可见，本人看自己也返回）：在 `Member` 基础上增加 `{username, email, phone, wechat, must_change_password}`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/members/?search=&role=&is_active=` | 本组全员 | 只返回本组成员；`search` 匹配姓名、研究方向，管理员/导师另外匹配学号（学生看不到学号，也不能用搜索试探） |
+| GET | `/api/members/?search=&role=&identity=&flag=&tag=&year=&status=&is_active=` | 本组全员 | 只返回本组成员；可排序：`name`、`enrollment_year`；`flag`：`manager` / `approver`；不认识的筛选值返回空列表；`search` 匹配姓名、研究方向，管理员/导师另外匹配学号（学生看不到学号，也不能用搜索试探） |
 | GET | `/api/members/{id}/` | 本组全员 | 外组成员 404 |
-| POST | `/api/members/` | 管理员 | `{username, name, role, email?, phone?, wechat?, research_direction?, password}` → 201 `MemberDetail`；`role` 只能是 `student`；学号 / 工号已被任何账号使用 → 409 `conflict`（"这个学号 / 工号已经有账号在用"）；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
-| PATCH | `/api/members/{id}/` | 管理员 | 可改 `username, name, role, email, phone, wechat, research_direction, is_active`（本组学生和自己）；`username` 是登录名，用来改正注册时填错的学号，格式同新建，已被使用 → 409 `conflict`，改后用新登录名登录，记录不受影响；不可改课题组；管理员不能停用自己 |
+| POST | `/api/members/` | 管理员 | `{username, name, identity?, enrollment_year?, tags?, email?, phone?, wechat?, research_direction?, password}` → 201 `MemberDetail`；新账号是学生、在籍（`role` 和两个标签只读，传了也忽略）；学号 / 工号已被任何账号使用 → 409 `conflict`（"这个学号 / 工号已经有账号在用"）；课题组强制为操作者所在组；`must_change_password=true`；密码按 Django 规则校验 |
+| PATCH | `/api/members/{id}/` | 管理员 | 可改 `username, name, identity, enrollment_year, member_status, tags, email, phone, wechat, research_direction, is_active`（本组没有标签的学生和自己；`role`、`is_manager`、`is_approver` 只读）；`username` 是登录名，用来改正注册时填错的学号，格式同新建，已被使用 → 409 `conflict`，改后用新登录名登录，记录不受影响；不可改课题组；管理员不能停用自己 |
 | POST | `/api/members/{id}/reset-password/` | 管理员 | `{password}` → 204，并置 `must_change_password=true` |
+| POST | `/api/members/{id}/manager/` | 终审人 | `{is_manager: bool}` → `MemberDetail`；本组任何成员（运维账号 404） |
+| GET | `/api/members/export/?<同列表筛选>` | 导师、管理员 | 花名册 `.xlsx`（姓名、学号 / 工号、基础角色、管理员、终审人、身份、入学年份、状态、词条、邮箱、电话、研究方向），与列表筛选一致 |
 | GET | `/api/members/signup/` | 管理员 | 本组注册链接的码 `{code}`，空串表示关闭 |
 | POST | `/api/members/signup/` | 管理员 | `{open: true}` 生成新码（旧码失效），`{open: false}` 关闭 → `{code}` |
 | GET | `/api/members/pending/` | 管理员 | 本组待审核的申请 `[{id, username, name, email, date_joined}]`，不分页 |
@@ -143,9 +163,9 @@
 
 待审核的申请不是成员：成员列表、详情、修改都看不到它们（404），选人的地方也不接受。
 
-不提供删除（离组用 `is_active=false`）。管理员只能修改、停用、重置**学生**账号（以及修改自己的资料），`role` 只能设为 `student`，不能改自己的角色；导师、管理员账号由运维在"系统管理 → 账号"里管理，运维账号只在 `/admin/` 管理；对它们 PATCH / 重置密码返回 404。
+不提供删除（离组用 `is_active=false`）。管理员只能修改、停用、重置**没有标签的学生**账号（以及修改自己的资料），不能改任何人的基础角色和标签；导师、带标签的账号由运维在"系统管理 → 账号"里管理（终审人只能开关管理员标签），运维账号只在 `/admin/` 管理；对它们 PATCH / 重置密码返回 404。
 
-管理命令：`python manage.py import_members <file.csv> --group <课题组名>`。CSV 列：`username,name,role,email,phone,research_direction`（UTF-8，可带 BOM）。为每个新用户生成随机初始密码，`must_change_password=true`；已存在的用户名跳过并报告；结果（用户名, 初始密码）输出到 stdout 或 `--output` 指定的 CSV。
+管理命令：`python manage.py import_members <file.csv> --group <课题组名>`。CSV 列：`username,name,role,email,phone,research_direction`（UTF-8，可带 BOM；`role` 是 `student` 或 `advisor`，旧的 `manager` 按"学生 + 管理员"导入）。为每个新用户生成随机初始密码，`must_change_password=true`；已存在的用户名跳过并报告；结果（用户名, 初始密码）输出到 stdout 或 `--output` 指定的 CSV。
 
 ## 项目 `/api/projects/`（Agent A）
 
@@ -160,7 +180,7 @@
 | GET | `/api/projects/{id}/` | 本组全员 | |
 | PATCH | `/api/projects/{id}/` | 管理员/导师/项目负责人 | 同 POST 字段；**只有管理员/导师能改 `leader_id`**，负责人提交 `leader_id` 变更 → 403 |
 | GET | `/api/projects/{id}/logs/` | 本组全员 | 分页，按日期倒序 |
-| POST | `/api/projects/{id}/logs/` | 管理员/导师/项目负责人 | `{date, content}`，`author` 为当前用户 |
+| POST | `/api/projects/{id}/logs/` | 管理员/导师/项目负责人/项目成员 | `{date, content}`，`author` 为当前用户；不在项目里的学生 403 |
 
 不提供删除（结束用 `status=closed`）。
 
@@ -193,7 +213,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/datasets/?project=&kind=&owner=&search=` | 个人数据范围 | |
+| GET | `/api/datasets/?project=&kind=&owner=&search=` | 个人数据范围 | 可排序：`updated_at`、`total_size` |
 | POST | `/api/datasets/` | 登录成员 | `{project_id, name, kind, description}`；`owner` = 当前用户；项目必须在本组 |
 | GET | `/api/datasets/{id}/` | 个人数据范围 | |
 | PATCH | `/api/datasets/{id}/` | 本人 | 只可改 `name, description` |
@@ -222,7 +242,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/experiments/?project=&status=&owner=&search=` | 个人数据范围 | |
+| GET | `/api/experiments/?project=&status=&owner=&search=` | 个人数据范围 | 可排序：`date`、`updated_at` |
 | POST | `/api/experiments/` | 登录成员 | `{project_id, title, date, equipment_item_id, equipment, specimen, specimen_item_ids, params, steps, anomalies, dataset_ids}` → 草稿 |
 | GET | `/api/experiments/{id}/` | 个人数据范围 | |
 | PATCH | `/api/experiments/{id}/` | 本人，且为草稿 | 已提交时 409 `invalid_state` |
@@ -239,7 +259,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/runs/?project=&status=&owner=&search=` | 个人数据范围 | |
+| GET | `/api/runs/?project=&status=&owner=&search=` | 个人数据范围 | 可排序：`updated_at` |
 | POST | `/api/runs/` | 登录成员 | `{project_id, title, input_ids, script_dataset_id, script_repo, script_commit, script_path, method_version, params, environment, output_dataset_id, conclusion}` → 草稿 |
 | GET / PATCH / DELETE | `/api/runs/{id}/` | 同实验记录 | |
 | POST | `/api/runs/{id}/submit/` | 本人 | 可复现性校验：至少 1 个输入；脚本二选一（`script_dataset` 或 `script_repo`+`script_commit`）；`environment` 非空；有 `output_dataset`。不满足 → 400，`errors` 的键为 `inputs`、`script_dataset`（只填了一半时为 `script_repo` / `script_commit`）、`environment`、`output_dataset`。创建/修改时的校验错误用写入字段名（`input_ids` 等） |
@@ -258,7 +278,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/reports/?owner=&week_start=&status=&search=` | 个人数据范围 | `search` 匹配学生姓名及周报四段正文 |
+| GET | `/api/reports/?owner=&week_start=&status=&search=` | 个人数据范围 | `search` 匹配学生姓名及周报四段正文；可排序：`week_start`、`submitted_at` |
 | POST | `/api/reports/` | 登录成员 | `{week_start, goals, done, findings, next_plan, experiment_ids, dataset_ids, run_ids}`；`week_start` 必须是周一（400）；同人同周重复 → 409 `conflict` |
 | GET | `/api/reports/{id}/` | 个人数据范围 | |
 | PATCH | `/api/reports/{id}/` | 本人，状态为 `draft` 或 `needs_revision` | 否则 409 `invalid_state` |
@@ -266,9 +286,10 @@
 | POST | `/api/reports/{id}/submit/` | 本人 | `draft`/`needs_revision` → `submitted` |
 | POST | `/api/reports/{id}/feedback/` | 本组管理员/导师，且不是周报本人 | `{verdict, content}`；仅 `submitted` 状态可反馈；`needs_revision` 时 `content` 必填；状态随 `verdict` 变化；返回 `WeeklyReport` |
 | GET | `/api/reports/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
-| GET | `/api/reports/missing/?week_start=` | 本组管理员/导师 | 本组在籍学生中该周没有 `submitted`/`reviewed`/`needs_revision` 周报的人 → `[UserBrief]`；`week_start` 缺省为本周一 |
-| GET | `/api/reports/digest/?week_start=` | 本组管理员/导师 | 指定周（默认本周一）本组汇总：`{week_start, reports: [WeeklyReport], missing: [UserBrief]}`（不含草稿） |
-| GET | `/api/reports/digest/export/?week_start=` | 本组管理员/导师 | 导出指定周本组汇总 Markdown（`weekly-digest-<week_start>.md`，UTF-8，不含草稿） |
+| GET | `/api/reports/missing/?week_start=` | 本组导师 | 本组在籍学生中该周没有 `submitted`/`reviewed`/`needs_revision` 周报的人 → `[UserBrief]`；`week_start` 缺省为本周一 |
+| GET | `/api/reports/digest/?week_start=` | 本组导师 | 指定周（默认本周一）本组汇总：`{week_start, reports: [WeeklyReport], missing: [UserBrief]}`（不含草稿） |
+| GET | `/api/reports/digest/export/?week_start=` | 本组导师 | 导出指定周本组汇总 Markdown（`weekly-digest-<week_start>.md`，UTF-8，不含草稿） |
+| POST | `/api/reports/remind-missing/` | 本组导师 | `{week_start?}`（缺省本周一）：给该周的未交名单里每人发站内通知"请提交 <周一> 这一周的周报"，平台启用邮件时再发一封密送给有邮箱的人；同一人、同一周一天只提醒一次 → `{reminded, already}` |
 
 校验：关联的实验、数据集、处理记录必须属于周报所有者本人。状态变化与反馈写入在同一事务中。
 
@@ -282,7 +303,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/equipment/?status=&search=&calibration_within=30` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置；`calibration_within` 为 0 至 3650 的整数，包含已过期、不含停用和无到期日，按到期日再按 ID 排序；无效值 400 |
+| GET | `/api/equipment/?status=&search=&calibration_within=30&category=&location=&custodian=&idle=1` | 本组全员 | `search` 匹配编号、名称、型号、类别、存放位置；`idle=1` 现在没有进行中的预约；可排序：`code`、`calibration_due`；`calibration_within` 为 0 至 3650 的整数，包含已过期、不含停用和无到期日，按到期日再按 ID 排序；无效值 400 |
 | POST | `/api/equipment/` | 管理员 | `{code, name, model, category, location, custodian_id, status, purchase_date, calibration_due, notes, purchase_id}`；`code` 组内唯一（409 `conflict`）；保管人必须是本组在籍成员；`purchase_id` 只能选本组已到货的采购申请 |
 | GET | `/api/equipment/{id}/` | 本组全员 | `Equipment` 加 `recent_usage: [Booking]`：已开始、未取消的"使用"类预约，最近 20 条，含使用登记 |
 | PATCH | `/api/equipment/{id}/` | 管理员 | 同 POST 字段，只提交要改的字段；没提交的字段保留数据库里的最新值（在行锁下重读，不会把并发的"待检查"写回成旧值）。提交 `status` 时必须同时提交 `status_seen`（打开编辑框时看到的状态，缺了 400）；锁下的当前状态既不是 `status_seen` 也不是新状态时 → 409 `stale_status` |
@@ -292,16 +313,18 @@
 
 ## 预约与使用登记 `/api/bookings/`（第二期）
 
-`Booking = {id, equipment: EquipmentBrief, user: UserBrief, project: {id,name} | null, kind, start_at, end_at, purpose, cancelled_at, report: UsageReport | null, created_at}`
+`Booking = {id, equipment: EquipmentBrief, user: UserBrief, project: {id,name} | null, kind, start_at, end_at, purpose, cancelled_at, planned_end_at, report: UsageReport | null, created_at}`（`planned_end_at`：提前结束过的预约原定的结束时间，`end_at` 是实际结束；没有提前结束为 `null`）
 `kind`: `use` 使用 | `maintenance` 维护
 `UsageReport = {condition, description, photo_url, reported_at}`；`condition`: `normal` | `abnormal`；`photo_url` 为 `/api/bookings/{id}/photo/` 或 `null`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/bookings/?from=&to=&equipment=&mine=1` | 本组全员 | **不分页**。`from`、`to` 必填（ISO 8601），范围大于 0 且不超过 62 天；返回与 `[from, to)` 重叠的未取消预约，按开始时间排序 |
+| GET | `/api/bookings/all/?mine=1&pending=1&reportable=1&equipment=&project=&from=&to=` | 本组全员 | 预约页的列表视图：未取消的预约，分页，开始时间新的在前，不受 62 天限制。`pending=1` 待登记：已结束、14 天内、还没有使用登记的使用预约（和工作台"待登记使用"一样）；`reportable=1` 还包括已经开始、正在进行的；`from`、`to` 按开始日期（`YYYY-MM-DD`，含）筛选，格式不对 400 |
 | POST | `/api/bookings/` | 本组全员 | `{equipment_id, kind, start_at, end_at, project_id?, purpose?}` → 201 `Booking`。规则见下 |
 | GET | `/api/bookings/{id}/` | 本组全员 | |
 | POST | `/api/bookings/{id}/cancel/` | 本人（尚未开始）或管理员 | → `Booking`；已取消、已登记使用结果 → 409 `invalid_state`；本人取消已开始的预约 → 409；取消别人的 → 403 |
+| POST | `/api/bookings/{id}/end-now/` | 预约人或管理员 | 提前结束正在进行的使用预约 → `Booking`：`end_at` 改成现在（整分钟，至少比开始晚 1 分钟，不会比原来晚），原来的结束时间记在 `planned_end_at`，之后的时间别人马上能约。维护预约、已取消、还没开始、已经结束或已经提前结束过 → 409 `invalid_state`；别人的 → 403 |
 | POST | `/api/bookings/{id}/report/` | 预约人 | `multipart/form-data`：`condition`、`description`、可选 `photo` → 201 `Booking`。规则见下 |
 | GET | `/api/bookings/{id}/photo/` | 本组全员 | 照片原图（`Content-Disposition: inline`），没有照片 → 404 |
 
@@ -321,17 +344,19 @@
 
 ## 耗材 `/api/consumables/`（第二期）
 
-`Consumable = {id, name, spec, unit, location, safety_stock, stock, stock_version, low, notes, created_at, updated_at}`；`stock`（只读）为全部流水之和，`low` = `stock < safety_stock`
+`Consumable = {id, name, spec, unit, category, location, safety_stock, stock, stock_version, low, notes, created_at, updated_at}`；`stock`（只读）为全部流水之和，`low` = `stock < safety_stock`
 `StockTxn = {id, kind, quantity, handler: UserBrief, project: {id,name} | null, purchase: PurchaseRef | null, note, created_at}`
 `kind`: `in` 入库 | `out` 领用 | `return` 退回 | `adjust` 盘点调整；`quantity` 带符号（领用为负）
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/consumables/?search=&low=1` | 本组全员 | `search` 匹配名称、规格、存放位置；`low=1` 只列低于安全库存的 |
-| POST | `/api/consumables/` | 管理员 | `{name, spec, unit, location, safety_stock, notes}`；(name, spec) 组内唯一（409 `conflict`） |
+| GET | `/api/consumables/?search=&low=1&category=&location=` | 本组全员 | `search` 匹配名称、规格、分类、存放位置；`low=1` 只列低于安全库存的；可排序：`name`、`stock`、`nearest_expiry_on`（还有库存的批次里最早的有效期） |
+| POST | `/api/consumables/` | 管理员 | `{name, spec, unit, category?, location, safety_stock, notes}`（`category` 分类，自由填写）；(name, spec) 组内唯一（409 `conflict`） |
 | GET | `/api/consumables/{id}/` | 本组全员 | |
 | PATCH | `/api/consumables/{id}/` | 管理员 | 同 POST 字段 |
 | GET | `/api/consumables/{id}/txns/` | 本组全员 | 分页，最新在前 |
+| GET | `/api/stock-txns/?consumable=&kind=&handler=&project=&from=&to=` | 本组全员 | 全组所有耗材的流水（总账），分页，最新在前；每条是 `StockTxn` 加 `consumable: {id, name, spec, unit}`。导师、管理员看全组，其他人只看自己经手的。`from`、`to` 按日期（`YYYY-MM-DD`，含，本地时间），格式不对 400；`kind` 不认识返回空列表 |
+| GET | `/api/stock-txns/export/?<同上>` | 本组全员 | 同样范围和筛选的 `.xlsx`（时间、耗材、规格、类型、批号、数量、单位、经手人、项目、采购申请、备注） |
 | POST | `/api/consumables/{id}/txns/` | 见说明 | `{kind, quantity, project_id?, purchase_id?, note?}`（`purchase_id` 只用于入库，只能选本组已到货的采购申请，其他类型带了 400） → 201 `StockTxn`。`in`、`adjust` 只限管理员（403）；`out`、`return` 本组全员，经手人为当前用户。`in`/`out`/`return` 的 `quantity` 传正整数，`adjust` 传实际与账面之差（不能为 0）。结果库存小于 0 → 400（`errors.quantity`："库存不足：当前 N 单位"） |
 
 不提供删除；流水不可修改，记错用一笔盘点调整纠正。Django admin 的流水内联也只读，禁止新增/编辑/删除，写流水统一通过上述加锁 API。
@@ -351,12 +376,13 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1&overdue=1` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`on_loan=1` 借出未还的；`mine=1` 我借出未还的；`overdue=1` 借用已逾期（按应用时区）且未归还；可叠加 |
+| GET | `/api/specimens/?search=&kind=&status=&on_loan=1&mine=1&overdue=1&material=&location=&defects_public=` | 本组全员 | `search` 匹配编号、名称、材料、存放位置；`defects_public` 为 `1` / `0`；可排序：`code`；`on_loan=1` 借出未还的；`mine=1` 我借出未还的；`overdue=1` 借用已逾期（按应用时区）且未归还；可叠加 |
 | POST | `/api/specimens/` | 管理员 | `{code, name, kind, material, dimensions, location, custodian_id, status, defects_public, notes, defects: [{kind, size_mm, depth_mm, position, note}]}`；编号组内唯一（409） |
 | GET | `/api/specimens/{id}/` | 本组全员 | |
 | PATCH | `/api/specimens/{id}/` | 管理员 | 同 POST 字段；带 `defects` 时整份替换 |
 | GET | `/api/specimens/{id}/history/` | 本组全员 | `[HistoryEntry]` |
 | GET | `/api/specimens/{id}/loans/` | 本组全员 | 分页，最新在前 |
+| GET | `/api/specimen-loans/?project=&specimen=&open=1` | 本组全员 | 本组所有试件的借用，分页，借出时间新的在前；每条多一个 `specimen: {id, code, name}`（不含缺陷参数）；`open=1` 只看没还的。项目详情的"资产"用它 |
 | POST | `/api/specimens/{id}/borrow/` | 本组全员 | `{project_id?, purpose?, due_date?}` → 201 `Loan`，借用人是当前用户。状态不是"可用" → 409 `not_available`；已借出 → 409 `on_loan`（同一试件同时只有一条未归还的借用，数据库约束） |
 | POST | `/api/specimens/{id}/return/` | 借用人或管理员 | JSON 或 `multipart/form-data`：`{loan_id_seen, note?, return_location?, photo?}` → `Loan`；`loan_id_seen` 为打开归还弹窗时的借用 id（必填正整数）；`photo` 可选（JPG/PNG/WebP，≤ 10 MB）；填了 `return_location` 时同步更新试件的 `location`；当前借用不同 → 409 `stale_loan`；没借出 → 409 `not_on_loan`；别人借的 → 403 |
 | GET | `/api/specimens/{id}/loans/{loan_id}/photo/` | 本组全员 | 内联返回该条归还照片；无照片或外组 → 404 |
@@ -375,7 +401,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/funds/?active=1&search=` | 本组全员 | 填单时要选，所以组内公开；`search` 匹配经费号、名称 |
+| GET | `/api/funds/?active=1&search=&owner=` | 本组全员 | 填单时要选，所以组内公开；`search` 匹配经费号、名称 |
 | POST | `/api/funds/` | 管理员 | `{code, name, owner_id?, active, notes}`；`code` 组内唯一（409 `conflict`） |
 | PATCH | `/api/funds/{id}/` | 管理员 | 同 POST 字段 |
 
@@ -394,14 +420,15 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/purchases/?status=&mine=1&todo=1&search=` | 个人数据范围 | 本人 + 本组管理员、导师；`todo=1` 只列等当前用户审批的（管理员：待初审；导师：待终审；都不含自己的）；`search` 匹配用途、品名、申请人 |
+| GET | `/api/purchases/?status=&mine=1&todo=1&search=&fund=&owner=` | 个人数据范围 | 本人 + 本组管理员、终审人；`todo=1` 只列等当前用户审批的（管理员：待初审；终审人：待终审；都不含自己的）；`search` 匹配用途、品名、申请人或编号；可排序：`submitted_at`、`total_amount`（合计） |
 | POST | `/api/purchases/` | 本组全员 | `{purpose, fund_id?, items?: [{name, spec?, quantity, unit_price, link?}]}` → 201 `PurchaseDetail`（草稿）。`fund_id` 只能选本组可用的经费 |
+| GET | `/api/purchases/export/?<同列表>` | 个人数据范围 | 与列表同样的范围、筛选、搜索和排序的 `.xlsx`（编号、申请人、经费号、经费名称、用途、明细、合计、状态、提交时间） |
 | GET | `/api/purchases/{id}/` | 个人数据范围 | `PurchaseDetail` |
 | PATCH | `/api/purchases/{id}/` | 见说明 | 草稿：本人。已批准、已采购：本人或管理员。审批中 → 409 `invalid_state`（先撤回）；已到货 → 409。`items` 整体替换。已批准后品名、数量或单价有变化 → 回到待初审（管理员的申请回到待终审），审批记录保留，修改历史的 `reason` 写明改前改后；改后的整单要通过和提交时一样的检查（至少 1 条明细、合计大于 0 等），否则 400，这次修改不生效 |
 | DELETE | `/api/purchases/{id}/` | 本人 | 只能删从未提交过的草稿，否则 409；有报销关联这张草稿时 409 `in_use` |
 | POST | `/api/purchases/{id}/submit/` | 本人 | 草稿 → 待初审；管理员本人的申请 → 待终审。用途、经费来源、至少 1 条明细、合计大于 0，缺了 400；经费已停用 400 |
 | POST | `/api/purchases/{id}/withdraw/` | 本人 | 审批中 → 草稿 |
-| POST | `/api/purchases/{id}/review/` | 见说明 | `{verdict, comment, status_seen, total_seen, submitted_seen}`。初审只能管理员、终审只能导师，都不能审自己的（403）。退回必须写意见（400）。`submitted_seen` 必填，为详情的 `submitted_at`（缺失、null 或格式错误 → 400）；锁下的状态、合计或提交时间与 `status_seen`、`total_seen`、`submitted_seen` 不同 → 409 `stale`；状态不需要审批 → 409 `invalid_state`。初审通过 → 待终审（导师本人的申请直接已批准）；终审通过 → 已批准；退回 → 草稿 |
+| POST | `/api/purchases/{id}/review/` | 见说明 | `{verdict, comment, status_seen, total_seen, submitted_seen}`。初审只能管理员、终审只能终审人，都不能审自己的（403）；组里有别的终审人时，做过这次初审的人不能终审（403）。退回必须写意见（400）。`submitted_seen` 必填，为详情的 `submitted_at`（缺失、null 或格式错误 → 400）；锁下的状态、合计或提交时间与 `status_seen`、`total_seen`、`submitted_seen` 不同 → 409 `stale`；状态不需要审批 → 409 `invalid_state`。初审通过 → 待终审（终审人本人的申请、组里没有别的终审人时直接已批准）；终审通过 → 已批准；退回 → 草稿 |
 | POST | `/api/purchases/{id}/purchased/` | 管理员 | 已批准 → 已采购，否则 409 |
 | POST | `/api/purchases/{id}/arrived/` | 管理员 | 已采购 → 已到货，否则 409 |
 | POST | `/api/purchases/{id}/attachments/` | 本人或管理员 | `multipart/form-data`：`file`、`kind`（`quote` 报价单 \| `invoice` 发票 \| `other`）→ 201 `Attachment` |
@@ -427,15 +454,16 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/reimbursements/?…` | 个人数据范围 | 分页 |
+| GET | `/api/reimbursements/?…` | 个人数据范围 | 分页；另有 `search`（说明、报销人姓名或编号），统计和导出也认它；可排序：`occurred_on`、`amount` |
 | POST | `/api/reimbursements/` | 本组全员 | `{fund_id, category, amount, occurred_on, description?, purchase_id?}`；`amount` 大于 0；`purchase_id` 只能是报销人自己的采购申请 |
 | GET | `/api/reimbursements/{id}/` | 个人数据范围 | |
 | PATCH / DELETE | `/api/reimbursements/{id}/` | 本人或管理员 | 只有待提交可以改、删，否则 409 |
+| POST | `/api/reimbursements/batch-advance/` | 本人或管理员 | `{ids: [1–100 个], status: submitted \| paid}`：几笔一起交财务或标到账（标到账只限管理员，否则 403）。每笔单独锁行、单独检查（发票、状态、是不是自己的），做不了的不影响其他笔 → `{done: [id], failed: [{id, code, reason}]}`；看不到的那笔 `reason` 是"不存在或无权查看" |
 | POST | `/api/reimbursements/{id}/advance/` | 本人或管理员 | `{status}`：待提交 → 已交财务（必须已有发票类附件，400 `errors.attachments`）→ 已到账；已交财务 → 待提交只限管理员（403），修改历史记下退回人。其他变化 409 |
 | POST | `/api/reimbursements/{id}/attachments/` | 本人或管理员 | 同采购申请；只有待提交可以上传，否则 409 `invalid_state` |
 | GET | `/api/reimbursements/{id}/history/` | 个人数据范围 | |
-| GET | `/api/reimbursements/stats/?by=&…` | 管理员、导师 | `by`: `fund` \| `category`（默认）\| `owner` \| `month`。→ `{by, rows: [{key, label, count, total}], count, total}`，合计由数据库按同样条件求和 |
-| GET | `/api/reimbursements/export/?by=&…` | 管理员、导师 | `.xlsx`：工作表"汇总"（按 `by` 分组，最后一行合计）和"明细" |
+| GET | `/api/reimbursements/stats/?by=&…` | 管理员、终审人 | `by`: `fund` \| `category`（默认）\| `owner` \| `month`。→ `{by, rows: [{key, label, count, total}], count, total}`，合计由数据库按同样条件求和 |
+| GET | `/api/reimbursements/export/?by=&…` | 管理员、终审人 | `.xlsx`：工作表"汇总"（按 `by` 分组，最后一行合计）和"明细" |
 | POST | `/api/reimbursements/remind-finance/` | 管理员 | 给课题组的财务邮箱发一封"已交财务、尚未到账"的清单 → `{sent, to}`（`sent=0` 表示没有待到账的报销，没有发）。没设财务邮箱或平台没启用邮件 → 409 `not_configured`；SMTP 失败 → 502 `mail_failed` |
 | GET / PATCH | `/api/reimbursements/finance-email/` | 管理员 | 本组的财务邮箱 `{finance_email}`；PATCH 同样的结构，空字符串表示不设 |
 
@@ -455,7 +483,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/docs/?search=&category=&equipment=&tag=` | 本组全员 | 分页 `Doc`；`search` 按子串匹配标题、说明、标签、设备编号和设备名 |
+| GET | `/api/docs/?search=&category=&equipment=&tag=` | 本组全员 | 分页 `Doc`；`search` 按子串匹配标题、说明、标签、设备编号和设备名；可排序：`updated_at` |
 | POST | `/api/docs/` | 本组全员 | `{title, category, equipment_id?, tags?, description?}` → 201 `DocDetail`；标签最多 10 个，每个不超过 30 字 |
 | GET | `/api/docs/{id}/` | 本组全员 | `DocDetail` |
 | PATCH | `/api/docs/{id}/` | 作者或管理员 | 同 POST 字段；否则 403 |
@@ -466,20 +494,21 @@
 
 ### 组会 `/api/meetings/`
 
-`AgendaItem = {id, presenter: UserBrief, topic}`；`ActionItem = {id, owner: UserBrief, content, due_date, done_at}`（`due_date` 可空）；`MyActionItem = ActionItem + {meeting: {id, date, title}}`
+`AgendaItem = {id, presenter: UserBrief, topic}`；`ActionItem = {id, owner: UserBrief, content, due_date, done_at, carried_to: {id, date} | null}`（`due_date` 可空；`carried_to`：新组会带入了这一条，它算完成）；`MyActionItem = ActionItem + {meeting: {id, date, title}}`
 `MeetingFile = {id, name, size, uploaded_by: UserBrief, url, created_at}`；`url` 为 `/api/meeting-files/{id}/file/`
 `Meeting = {id, date, title, minutes, agenda: [AgendaItem], actions: [ActionItem], files: [MeetingFile], created_by: UserBrief, created_at, updated_at}`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/meetings/` | 本组全员 | 分页，日期新的在前 |
-| POST | `/api/meetings/` | 管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?}]}` → 201 |
+| GET | `/api/meetings/?search=` | 本组全员 | 分页，日期新的在前；`search` 匹配标题、纪要、议程的汇报内容和汇报人姓名 |
+| POST | `/api/meetings/` | 导师或管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；不是本组的或已完成的忽略 |
 | GET | `/api/meetings/{id}/` | 本组全员 | |
-| PATCH | `/api/meetings/{id}/` | 管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会 400 |
+| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会 400 |
 | DELETE | `/api/meetings/{id}/` | 管理员 | 连同附件文件一起删 |
-| POST | `/api/meetings/{id}/files/` | 议程里的汇报人或管理员 | `multipart/form-data`：`file` → 201 `MeetingFile`；任意类型，单个不超过上传上限 |
+| POST | `/api/meetings/{id}/files/` | 议程里的汇报人、导师或管理员 | `multipart/form-data`：`file` → 201 `MeetingFile`；任意类型，单个不超过上传上限 |
 | GET | `/api/meeting-files/{id}/file/` | 本组全员 | 下载 |
-| DELETE | `/api/meeting-files/{id}/` | 上传人或管理员 | |
+| DELETE | `/api/meeting-files/{id}/` | 上传人、导师或管理员 | |
+| GET | `/api/action-items/?open=1&overdue=1&owner=` | 本组全员 | 本组所有组会的行动项 `MyActionItem`，分页；`open=1` 未完成、`open=0` 已完成（含已转入新组会的）；`overdue=1` 未完成且截止日期已过；按截止日期（没有的在后）、组会日期倒序 |
 | POST | `/api/action-items/{id}/done/` | 负责人或管理员 | `{done}` → `ActionItem`；`done=true` 记下完成时间，`false` 清空 |
 | GET | `/api/meetings/{id}/history/` | 本组全员 | |
 
@@ -488,7 +517,7 @@
 `Achievement = {id, type, title, authors, members: [UserBrief], venue, date, status, link, fulltext_name, fulltext_url, notes, created_by: UserBrief, created_at, updated_at}`；写入时用 `member_ids`。`authors` 是按署名顺序的文本（含外单位），`members` 是署名里的本组成员。
 `type` 与可用的 `status`：`paper` 论文（`submitted` 投稿中 \| `accepted` 已录用 \| `published` 已发表）、`patent` 专利（`filed` 申请中 \| `granted` 已授权）、`award` 获奖（`awarded`）、`software` 软著（`registered`）。类型与状态不匹配 400。
 
-列表和导出共用过滤参数：`type`、`status`（可逗号分隔多个，如 `accepted,published`）、`year`（按 `date` 的年份）、`member`、`search`（标题、作者、出处）。非法值 400。
+列表和导出共用过滤参数：`type`、`status`（可逗号分隔多个，如 `accepted,published`）、`year`（按 `date` 的年份）、`member`、`search`（标题、作者、出处）、`has_fulltext`（`1` 有全文 / `0` 没有）。非法值 400。可排序：`date`。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
@@ -527,11 +556,11 @@
 | GET / POST | `/api/system/groups/` | 课题组 `{id, name, finance_email, member_count, created_at}`（`member_count`：在籍成员）；名称重复 400 |
 | PATCH | `/api/system/groups/{id}/` | `{name?, finance_email?}`；不能删除 |
 | GET | `/api/system/accounts/?search=&group=&role=&is_active=` | 所有课题组的成员账号，分页，不含运维账号 |
-| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, email?, phone?, wechat?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
-| PATCH | `/api/system/accounts/{id}/` | `{username?, name?, role?, email?, phone?, wechat?, research_direction?, is_active?}`；`username`（登录名）可以改正，已被任何账号使用 → 409 `conflict`；课题组创建后不能改；运维账号 404 |
+| POST | `/api/system/accounts/` | `{username, name, role, group_id, password, is_manager?, is_approver?, identity?, enrollment_year?, tags?, email?, phone?, wechat?, research_direction?}` → 201，`must_change_password=true`；用户名重复 409 |
+| PATCH | `/api/system/accounts/{id}/` | `{username?, name?, role?, is_manager?, is_approver?, identity?, enrollment_year?, member_status?, tags?, email?, phone?, wechat?, research_direction?, is_active?}`；`username`（登录名）可以改正，已被任何账号使用 → 409 `conflict`；课题组创建后不能改；运维账号 404 |
 | POST | `/api/system/accounts/{id}/reset-password/` | `{password}` → 204，对方下次登录需改密码 |
 
-`Account = {id, username, name, role, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
+`Account = {id, username, name, role, is_manager, is_approver, identity, enrollment_year, member_status, tags, group: {id, name} | null, email, phone, research_direction, is_active, must_change_password, pending, last_login}`（`pending`：学生自助注册、等待本组管理员审核；只能是未启用的学生，数据库约束保证。运维启用它即视为通过，改成别的角色则不再待审核）
 
 邮件的发送失败（业务通知和测试邮件都算）记为 `last_mail_error` / `last_mail_error_at`，格式同上（原因 + 要检查什么，见 `docs/mail-setup.md`），之后发送成功一次就清空。
 
@@ -578,7 +607,11 @@
 
 ### 全站搜索
 
-`GET /api/search/?q=关键字`：须为已改密、已分组的登录账号。去掉首尾空白后须为 2 至 100 个字符，否则返回 400。返回非空模块组的数组，每组为 `{module, label, items:[{id,title,subtitle,link}]}`；每组最多 5 条，按 ID 倒序。沿用各模块可见范围；不搜索试件缺陷、报告正文或附件。周报支持按 ISO 日期文本匹配。响应禁止缓存。
+`GET /api/search/?q=关键字`：须为已改密、已分组的登录账号。去掉首尾空白后须为 2 至 100 个字符，否则返回 400。返回非空模块组的数组，每组为 `{module, label, items:[{id,title,subtitle,link}]}`；每组最多 5 条，按 ID 倒序。沿用各模块可见范围；不搜索试件缺陷、报告正文或附件。周报按 ISO 日期文本或学生姓名匹配，副标题是姓名；组会还匹配纪要和议程，副标题是日期。另有成员（姓名、研究方向，导师和管理员还能按学号）、经费来源、报销（个人范围）、任务、里程碑、行动项、数据文件（个人范围，链接到所在数据集）。搜一个完整编号（`EX-`、`RUN-`、`DS-`、`PR-`、`RB-`）只出那一条。响应禁止缓存。
+
+### 填写提示 `/api/suggestions/`
+
+`GET /api/suggestions/<field>/?search=`：本组在这个自由文本字段里已经用过的写法，用得多的在前，最多 20 个，原样返回（不合并大小写、全角半角）。`search` 按子串过滤，含 NUL 400。只认这些字段，其余 404：`equipment.category`、`equipment.location`、`specimen.material`、`specimen.location`、`consumable.category`、`consumable.location`、`consumable.unit`、`member.research_direction`、`achievement.venue`、`doc.tags`。只是提示，保存时照样接受新写法。
 
 ### 耗材按批次管理
 

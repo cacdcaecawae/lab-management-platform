@@ -22,10 +22,10 @@ def notify(purchase_id, comment=""):
     purchase = PurchaseRequest.objects.select_related("owner").prefetch_related("items").get(pk=purchase_id)
     owner = purchase.owner
     head = f"{purchase.code} {owner.display_name}：{purchase.purpose[:40]}（合计 {purchase.total} 元）"
-    role = {S.PENDING_INITIAL: User.Role.MANAGER, S.PENDING_FINAL: User.Role.ADVISOR}.get(purchase.status)
-    if role:
-        reviewers = User.objects.filter(group_id=owner.group_id, role=role).exclude(pk=owner.pk)
-        stage = "初审" if role == User.Role.MANAGER else "终审"
+    tag = {S.PENDING_INITIAL: "is_manager", S.PENDING_FINAL: "is_approver"}.get(purchase.status)
+    if tag:
+        reviewers = User.objects.filter(group_id=owner.group_id, **{tag: True}).exclude(pk=owner.pk)
+        stage = "初审" if tag == "is_manager" else "终审"
         mail_users(reviewers, f"[采购待{stage}] {purchase.code}", f"{head}\n\n请登录 Phase，在“我的审批”中处理。")
         return
     subject, body = {

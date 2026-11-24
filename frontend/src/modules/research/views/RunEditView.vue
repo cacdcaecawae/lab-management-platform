@@ -8,6 +8,7 @@ import { projectsApi } from '@/modules/projects/api'
 import { runsApi } from '@/modules/research/api'
 import type { DatasetBrief, ProcessingRun, ProjectBrief, RunWrite } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
+import { useRemoteOptions } from '@/composables/useRemoteOptions'
 import { useAuthStore } from '@/stores/auth'
 import { KIND_LABELS, formatTime, mergeById } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
@@ -61,7 +62,7 @@ const canDelete = computed(() => !!record.value && editable.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot).
 // a parameter value without a name is not in form.params yet
 const { markSaved } = useUnsavedGuard(form, () => editable.value, () => paramsEditor.value?.validate() === false)
-const canReturn = computed(() => record.value?.status === 'submitted' && auth.isSupervisor)
+const canReturn = computed(() => record.value?.status === 'submitted' && auth.isAdvisor)
 const readonlyHint = computed(() => {
   const r = record.value
   if (!r || editable.value) return ''
@@ -72,13 +73,15 @@ const readonlyHint = computed(() => {
 
 const projects = useOptions(() => projectsApi.list({ page_size: 100 }))
 // Only the record owner's datasets can be referenced; whoever can edit is the owner.
-const mine = useOptions(() => datasetsApi.list({ owner: auth.user?.id, page_size: 100 }))
+const mine = (kind?: 'script' | 'result') =>
+  useRemoteOptions<DatasetBrief>((search) => datasetsApi.list({ owner: auth.user?.id, kind, search, page_size: 20 }))
+const inputs = mine()
+const scripts = mine('script')
+const results = mine('result')
 const projectOptions = computed(() => mergeById<ProjectBrief>(projects.value, [record.value?.project, copiedFrom.value?.project]))
-const datasetOptions = computed(() =>
-  mergeById<DatasetBrief>(mine.value, [...(record.value?.inputs ?? []), record.value?.script_dataset, record.value?.output_dataset]),
-)
-const scriptOptions = computed(() => datasetOptions.value.filter((d) => d.kind === 'script'))
-const resultOptions = computed(() => datasetOptions.value.filter((d) => d.kind === 'result'))
+const datasetOptions = computed(() => inputs.options([...form.input_ids, ...(record.value?.inputs ?? [])]))
+const scriptOptions = computed(() => scripts.options([form.script_dataset_id, record.value?.script_dataset]))
+const resultOptions = computed(() => results.options([form.output_dataset_id, record.value?.output_dataset]))
 
 function fill(r: ProcessingRun) {
   record.value = r
@@ -267,7 +270,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
   <el-card v-else v-loading="loading" class="card">
     <template #header>
       <PageHeader :back="{ name: 'runs' }">
-        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else>新建数据处理记录</template></template>
+        <template #title><template v-if="record"><span class="code">{{ record.code }}</span> {{ record.title }}</template><template v-else-if="isNew">新建数据处理记录</template></template>
         <template v-if="record" #tags><StatusTag :status="record.status" /></template>
         <IconButton v-if="record" :icon="CopyDocument" label="复制为新草稿" @click="copyAsDraft" />
         <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
@@ -281,7 +284,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
     </template>
     <el-alert v-if="readonlyHint" :title="readonlyHint" type="info" :closable="false" class="notice" />
     <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" class="notice" />
-    <el-form class="form-page" :disabled="!editable" label-position="top">
+    <el-form v-if="record || isNew" class="form-page" :disabled="!editable" label-position="top">
       <div class="form-grid">
         <el-form-item class="span-2" label="项目" :error="errors.fe('project_id')" required>
           <el-select v-model="form.project_id" filterable placeholder="选择项目">
@@ -293,7 +296,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
         </el-form-item>
       </div>
       <el-form-item label="输入数据集（只能选择自己的数据集）" :error="errors.fe('input_ids')" required>
-        <el-select v-model="form.input_ids" multiple filterable placeholder="选择输入数据">
+        <el-select v-model="form.input_ids" multiple filterable remote :remote-method="inputs.search" :loading="inputs.loading.value" placeholder="选择输入数据，可搜编号、名称">
           <el-option v-for="d in datasetOptions" :key="d.id" :label="`${d.code} ${d.name}（${KIND_LABELS[d.kind]}）`" :value="d.id" />
         </el-select>
       </el-form-item>
@@ -307,6 +310,9 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
             v-if="scriptMode === 'dataset'"
             v-model="form.script_dataset_id"
             filterable
+            remote
+            :remote-method="scripts.search"
+            :loading="scripts.loading.value"
             clearable
             placeholder="选择类型为「脚本」的数据集"
           >
@@ -331,7 +337,7 @@ else if (typeof route.query.copy === 'string' && Number(route.query.copy) > 0) l
         <ParamsEditor ref="paramsEditor" v-model="form.params" :disabled="!editable" />
       </el-form-item>
       <el-form-item label="结果数据集" :error="errors.fe('output_dataset_id')" required>
-        <el-select v-model="form.output_dataset_id" filterable clearable placeholder="选择类型为「处理结果」的数据集">
+        <el-select v-model="form.output_dataset_id" filterable remote :remote-method="results.search" :loading="results.loading.value" clearable placeholder="选择类型为「处理结果」的数据集">
           <el-option v-for="d in resultOptions" :key="d.id" :label="`${d.code} ${d.name}`" :value="d.id" />
         </el-select>
       </el-form-item>

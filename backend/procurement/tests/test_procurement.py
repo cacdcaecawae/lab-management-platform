@@ -223,7 +223,7 @@ def test_attachment_does_not_invalidate_current_submission(api, student_a, manag
 
 @pytest.fixture
 def manager_b(group):
-    return make_user("mgr_b", group, "manager")
+    return make_user("mgr_b", group, is_manager=True)
 
 
 @pytest.mark.django_db(transaction=True)

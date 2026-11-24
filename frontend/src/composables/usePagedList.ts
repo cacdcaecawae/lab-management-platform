@@ -32,5 +32,9 @@ export function usePagedList<T>(fetchPage: (q: ListQuery) => Promise<Page<T>>, f
   )
   watch(page, load)
   load()
-  return { items, count, page, pageSize, loading, load }
+  // <el-table @sort-change="sort">: a column's `prop` is the server's ordering name; sorted on the server, so pages agree.
+  const sort = ({ prop, order }: { prop: string | null; order: 'ascending' | 'descending' | null }) => {
+    filters.ordering = prop && order ? `${order === 'descending' ? '-' : ''}${prop}` : undefined
+  }
+  return { items, count, page, pageSize, loading, load, sort }
 }

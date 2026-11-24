@@ -3,6 +3,7 @@ from django.urls import include, path
 
 from workbench.storage import GroupStorageView, OpsStorageView
 from workbench.search import SearchView
+from workbench.suggestions import SuggestionsView
 from workbench.views import DashboardView
 
 admin.site.site_header = admin.site.site_title = "Phase 后台"
@@ -16,6 +17,7 @@ urlpatterns = [
     path("api/dashboard/", DashboardView.as_view()),
     path("api/", include("core.notification_urls")),
     path("api/search/", SearchView.as_view(), name="global-search"),
+    path("api/suggestions/<str:field>/", SuggestionsView.as_view(), name="suggestions"),
     path("api/members/", include("accounts.member_urls")),
     path("api/system/storage/", OpsStorageView.as_view(), name="ops-storage"),
     path("api/storage-usage/", GroupStorageView.as_view(), name="group-storage-usage"),

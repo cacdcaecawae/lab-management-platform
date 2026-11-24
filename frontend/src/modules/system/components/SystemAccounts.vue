@@ -2,15 +2,16 @@
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemApi } from '@/modules/system/api'
-import type { Account, Role, SystemGroup } from '@/api/types'
+import type { Account, Identity, Role, SystemGroup } from '@/api/types'
 import { usePagedList } from '@/composables/usePagedList'
-import { ROLE_LABELS, formatTime, renamedMessage } from '@/utils/format'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { IDENTITY_LABELS, MEMBER_STATUS, ROLE_LABELS, formatTime, renamedMessage, roleText } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
 
-const filters = reactive({ search: '', group: '' as number | '', role: '' })
-const keyword = ref('')
+const filters = reactive({ search: '', group: '' as number | '', role: '', flag: '' })
+const keyword = useLiveSearch(filters)
 const { items, count, page, pageSize, loading, load } = usePagedList(systemApi.accounts, filters)
 
 const groups = ref<SystemGroup[]>([])
@@ -30,6 +31,11 @@ const blank = {
   username: '',
   name: '',
   role: 'student' as Role,
+  is_manager: false,
+  is_approver: false,
+  identity: '' as Identity | '',
+  enrollment_year: null as number | null,
+  tags: [] as string[],
   group_id: null as number | null,
   email: '',
   phone: '',
@@ -43,8 +49,11 @@ const saving = ref(false)
 
 function openForm(a: Account | null) {
   editing.value = a
-  const { username, name, role, email, phone, wechat, research_direction } = a ?? blank
-  Object.assign(form, blank, { username, name, role, email, phone, wechat, research_direction, group_id: a?.group?.id ?? null })
+  const { username, name, role, is_manager, is_approver, identity, enrollment_year, tags, email, phone, wechat, research_direction } = a ?? blank
+  Object.assign(form, blank, {
+    username, name, role, is_manager, is_approver, identity, enrollment_year, tags: [...tags], email, phone, wechat, research_direction,
+    group_id: a?.group?.id ?? null,
+  })
   formErrors.clear()
   dialog.value = true
   loadGroups() // a group may have been created on the other tab meanwhile
@@ -53,9 +62,10 @@ function openForm(a: Account | null) {
 async function save() {
   saving.value = true
   try {
-    const { username, password, group_id, ...common } = form
-    if (editing.value) await systemApi.updateAccount(editing.value.id, { ...common, username })
-    else await systemApi.createAccount({ ...common, username, password, group_id: group_id! })
+    const { username, password, group_id, enrollment_year, ...common } = form
+    const year = enrollment_year ?? null
+    if (editing.value) await systemApi.updateAccount(editing.value.id, { ...common, enrollment_year: year, username })
+    else await systemApi.createAccount({ ...common, enrollment_year: year, username, password, group_id: group_id! })
     ElMessage.success(editing.value ? renamedMessage(editing.value.username, username) : '已新建，对方首次登录时需修改密码')
     dialog.value = false
     load()
@@ -96,13 +106,17 @@ function openReset(a: Account) {
   resetVisible.value = true
 }
 
+const resetting = ref(false)
 async function doReset() {
+  resetting.value = true
   try {
     await systemApi.resetPassword(resetTarget.value!.id, newPassword.value)
     ElMessage.success('密码已重置，对方下次登录时需修改密码')
     resetVisible.value = false
   } catch (e) {
     resetErrors.handle(e)
+  } finally {
+    resetting.value = false
   }
 }
 </script>
@@ -116,6 +130,10 @@ async function doReset() {
     <el-select v-model="filters.role" placeholder="全部角色" aria-label="角色" clearable>
       <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
     </el-select>
+    <el-select v-model="filters.flag" placeholder="全部权限" aria-label="权限" clearable>
+      <el-option label="管理员" value="manager" />
+      <el-option label="终审人" value="approver" />
+    </el-select>
     <template #actions>
       <el-button type="primary" @click="openForm(null)">新建账号</el-button>
     </template>
@@ -126,8 +144,8 @@ async function doReset() {
     <el-table-column label="课题组" min-width="140">
       <template #default="{ row }">{{ row.group?.name ?? '（未分配）' }}</template>
     </el-table-column>
-    <el-table-column label="角色" min-width="80">
-      <template #default="{ row }">{{ ROLE_LABELS[row.role] }}</template>
+    <el-table-column label="角色" min-width="130">
+      <template #default="{ row }">{{ roleText(row as Account) }}</template>
     </el-table-column>
     <el-table-column prop="email" label="邮箱" min-width="170" />
     <el-table-column label="状态" min-width="160">
@@ -135,7 +153,7 @@ async function doReset() {
         <!-- one tag: 未改初始密码 is an account in use that has not signed in for real yet -->
         <el-tag v-if="row.pending" class="status-tag" type="warning" disable-transitions>待审核</el-tag>
         <el-tag v-else-if="row.is_active && row.must_change_password" class="status-tag" type="warning" disable-transitions>未改初始密码</el-tag>
-        <el-tag v-else class="status-tag" :type="row.is_active ? 'success' : 'info'" disable-transitions>{{ row.is_active ? '在籍' : '已停用' }}</el-tag>
+        <el-tag v-else class="status-tag" :type="MEMBER_STATUS[row.member_status].type" disable-transitions>{{ MEMBER_STATUS[row.member_status].label }}</el-tag>
       </template>
     </el-table-column>
     <el-table-column label="最近登录" min-width="150">
@@ -173,9 +191,26 @@ async function doReset() {
           <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="角色" :error="formErrors.fe('role')" required>
+      <el-form-item label="基础角色" :error="formErrors.fe('role')" required>
         <el-select v-model="form.role">
           <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="权限" :error="formErrors.fe('is_manager') || formErrors.fe('is_approver')">
+        <el-checkbox v-model="form.is_manager">管理员</el-checkbox>
+        <el-checkbox v-model="form.is_approver">终审人</el-checkbox>
+      </el-form-item>
+      <el-form-item label="身份" :error="formErrors.fe('identity')">
+        <el-select v-model="form.identity" placeholder="未填" clearable>
+          <el-option v-for="(label, value) in IDENTITY_LABELS" :key="value" :label="label" :value="value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="入学年份" :error="formErrors.fe('enrollment_year')">
+        <el-input-number v-model="form.enrollment_year" :min="1950" :max="2100" :controls="false" placeholder="如 2024" />
+      </el-form-item>
+      <el-form-item class="span-2" label="词条" :error="formErrors.fe('tags')">
+        <el-select v-model="form.tags" multiple filterable allow-create default-first-option :reserve-keyword="false" placeholder="如 教授、博导">
+          <el-option v-for="t in form.tags" :key="t" :label="t" :value="t" />
         </el-select>
       </el-form-item>
       <el-form-item label="邮箱" :error="formErrors.fe('email')"><el-input v-model="form.email" /></el-form-item>
@@ -191,7 +226,7 @@ async function doReset() {
     <el-alert v-for="msg in formErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
   </FormDialog>
 
-  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" @submit="doReset">
+  <FormDialog v-model="resetVisible" title="重置密码" size="sm" confirm-text="重置" :loading="resetting" @submit="doReset">
     <template #before>
       <p>为 {{ resetTarget?.name }} 设置新的初始密码，对方下次登录时需修改。</p>
     </template>

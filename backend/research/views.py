@@ -1,14 +1,15 @@
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import filters, status, viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
+from core.filters import Ordering, Search
 from core.history import serialize_history
 from core.notifications import notify
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, IsSupervisor, scope_private
+from core.permissions import IsActiveMember, IsAdvisor, IsOwnerOrReadOnly, scope_private
 from datasets.versions import pin_versions
 
 from .models import Experiment, ProcessingRun, RecordStatus
@@ -21,12 +22,12 @@ class RecordViewSet(viewsets.ModelViewSet):
     notification a return sends the owner) and submit_errors()."""
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]  # PUT is not in the contract
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [Search, Ordering]
     search_fields = ["title"]
 
     def get_permissions(self):
         if self.action == "return_to_draft":
-            return [IsActiveMember(), IsSupervisor()]
+            return [IsActiveMember(), IsAdvisor()]
         return [IsActiveMember(), IsOwnerOrReadOnly()]
 
     def get_queryset(self):
@@ -58,7 +59,7 @@ class RecordViewSet(viewsets.ModelViewSet):
     def lock_draft(self):
         obj = self.lock_object()
         if obj.status != RecordStatus.DRAFT:
-            raise Conflict("已提交的记录不能修改或删除，请先由管理员或导师退回", code="invalid_state")
+            raise Conflict("已提交的记录不能修改或删除，请先由导师退回", code="invalid_state")
         return obj
 
     def update(self, request, *args, **kwargs):
@@ -117,6 +118,7 @@ class RecordViewSet(viewsets.ModelViewSet):
 
 class ExperimentViewSet(RecordViewSet):
     label, page = "实验记录", "/experiments/"  # the returned-record notification
+    code_prefix, ordering_fields = "EX", ["date", "updated_at"]
     queryset = Experiment.objects.select_related("owner", "project", "equipment_item").prefetch_related(
         "datasets", "specimen_items"
     )
@@ -129,6 +131,7 @@ class ExperimentViewSet(RecordViewSet):
 
 class ProcessingRunViewSet(RecordViewSet):
     label, page = "数据处理记录", "/runs/"
+    code_prefix, ordering_fields = "RUN", ["updated_at"]
     queryset = ProcessingRun.objects.select_related(
         "owner", "project", "script_dataset", "output_dataset"
     ).prefetch_related("inputs")

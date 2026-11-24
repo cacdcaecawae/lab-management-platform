@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { Camera } from '@element-plus/icons-vue'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { ROLE_LABELS } from '@/utils/format'
+import { roleText } from '@/utils/format'
 import { showError } from '@/utils/errors'
 import { squareJpeg } from '@/utils/image'
 
@@ -14,7 +14,7 @@ const props = defineProps<{ size: number; editable?: boolean }>()
 const auth = useAuthStore()
 const name = computed(() => auth.user?.name || auth.user?.username || '')
 const roleLine = computed(() =>
-  [auth.user?.is_superuser ? '运维' : ROLE_LABELS[auth.user?.role ?? ''], auth.user?.group?.name].filter(Boolean).join(' · '),
+  [auth.user?.is_superuser ? '运维' : auth.user && roleText(auth.user), auth.user?.group?.name].filter(Boolean).join(' · '),
 )
 const textSize = computed(() => ({ '--el-avatar-text-size': `${Math.round(props.size * 0.4)}px` }))
 const picker = ref<HTMLInputElement>()

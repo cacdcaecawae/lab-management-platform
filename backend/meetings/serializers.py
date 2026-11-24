@@ -1,7 +1,9 @@
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.serializers import UserBriefSerializer
+from core.exceptions import Conflict
 from core.notifications import notify
 from projects.serializers import AnyGroupMemberField
 
@@ -37,15 +39,21 @@ class ActionItemSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)  # an existing item when the meeting is edited
     owner = UserBriefSerializer(read_only=True)
     owner_id = AnyGroupMemberField(source="owner", write_only=True)
+    # A new item copied from an open item of an earlier meeting: that one is marked as carried over here.
+    carried_from = serializers.IntegerField(min_value=1, required=False, write_only=True)
+    carried_to = serializers.SerializerMethodField()
 
     def validate(self, attrs):
         if "id" not in attrs:
             return require_item_fields(self, attrs, ("owner_id", "content"))
         return attrs
 
+    def get_carried_to(self, item):
+        return {"id": item.carried_to_id, "date": item.carried_to.date.isoformat()} if item.carried_to_id else None
+
     class Meta:
         model = ActionItem
-        fields = ["id", "owner", "owner_id", "content", "due_date", "done_at"]
+        fields = ["id", "owner", "owner_id", "content", "due_date", "done_at", "carried_from", "carried_to"]
         read_only_fields = ["done_at"]
 
 
@@ -95,8 +103,10 @@ class MeetingSerializer(serializers.ModelSerializer):
         agenda, actions = validated_data.pop("agenda", []), validated_data.pop("actions", [])
         meeting = super().create(validated_data)
         self._write_agenda(meeting, agenda)
+        self._notify_presenters(meeting, {a["presenter"].pk for a in agenda})
+        carried = self._carry(meeting, actions)
         ActionItem.objects.bulk_create(ActionItem(meeting=meeting, **a) for a in actions)
-        self._notify_assignees(meeting, {a["owner"].pk for a in actions})
+        self._notify_assignees(meeting, {a["owner"].pk for i, a in enumerate(actions) if i not in carried})
         return meeting
 
     @transaction.atomic
@@ -104,16 +114,19 @@ class MeetingSerializer(serializers.ModelSerializer):
         agenda, actions = validated_data.pop("agenda", None), validated_data.pop("actions", None)
         meeting = super().update(meeting, validated_data)
         if agenda is not None:  # the list replaces the agenda
+            presenting = set(meeting.agenda.values_list("presenter_id", flat=True))
             meeting.agenda.all().delete()
             self._write_agenda(meeting, agenda)
+            self._notify_presenters(meeting, {a["presenter"].pk for a in agenda} - presenting)
         if actions is not None:
             # Matched by id so an item keeps its "done" state; items left out are removed.
             kept = {a["id"] for a in actions if "id" in a}
             # The meeting save locks its row until commit, so another edit cannot run before this read.
             previous_owners = dict(meeting.actions.filter(pk__in=kept).values_list("pk", "owner_id"))
             assigned = set()
+            carried = self._carry(meeting, actions)
             meeting.actions.exclude(id__in=kept).delete()
-            for a in actions:
+            for i, a in enumerate(actions):
                 fields = {k: v for k, v in a.items() if k != "id"}
                 if "id" in a:
                     changed = meeting.actions.filter(pk=a["id"]).update(**fields)
@@ -121,14 +134,47 @@ class MeetingSerializer(serializers.ModelSerializer):
                         assigned.add(a["owner"].pk)
                 else:
                     ActionItem.objects.create(meeting=meeting, **fields)
-                    assigned.add(a["owner"].pk)
+                    if i not in carried:  # a carried row is not a new assignment; the same person's new row still is
+                        assigned.add(a["owner"].pk)
             self._notify_assignees(meeting, assigned)
         return meeting
+
+    @staticmethod
+    def _carry(meeting, actions):
+        """Mark the earlier items that new rows were copied from as carried over to this meeting (done there). Returns
+        the positions of those rows in `actions`: their work is not new, so their owners are not told again. The items
+        are locked first, so two meetings saved at once cannot both carry one; an item gone (its meeting deleted),
+        already done or already carried makes the save a 409 rather than a second open copy."""
+        sources = [a.get("carried_from") for a in actions]
+        for a in actions:
+            a.pop("carried_from", None)
+        wanted = {pk for pk in sources if pk}
+        if not wanted:
+            return set()
+        earlier = list(
+            ActionItem.objects.select_for_update(of=("self",))
+            .filter(pk__in=wanted, meeting__group_id=meeting.group_id)
+            .exclude(meeting=meeting)
+            .order_by("pk")
+        )
+        if len(earlier) != len(wanted):
+            raise Conflict("要带入的事项已经不在了（所在组会可能已删除），请删掉带入的行，或重新带入", code="invalid_state")
+        if taken := next((item for item in earlier if item.done_at or item.carried_to_id), None):
+            raise Conflict(f"“{taken.content}”已经完成或转入别的组会，请删掉这一行，或重新带入", code="invalid_state")
+        ActionItem.objects.filter(pk__in=wanted).update(done_at=timezone.now(), carried_to=meeting)
+        return {i for i, pk in enumerate(sources) if pk}
 
     @staticmethod
     def _notify_assignees(meeting, owner_ids):
         if owner_ids:
             notify(meeting.group_id, "有新的组会行动项分配给你", f"/meetings/{meeting.pk}", recipient_ids=owner_ids)
+
+    def _notify_presenters(self, meeting, presenter_ids):
+        request = self.context.get("request")
+        exclude = [request.user.pk] if request else []
+        if presenter_ids:
+            notify(meeting.group_id, "你在组会上有汇报", f"/meetings/{meeting.pk}", recipient_ids=presenter_ids,
+                   exclude_ids=exclude, body=f"{meeting.date} {meeting.title}")
 
     @staticmethod
     def _write_agenda(meeting, agenda):

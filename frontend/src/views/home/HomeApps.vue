@@ -53,14 +53,16 @@
 </template>
 
 <style scoped>
+/* up to 68 px an icon, smaller where the card is narrower than the five (380-500 px wide phones) */
 .apps {
   display: grid;
-  grid-template-columns: repeat(5, 68px);
+  grid-template-columns: repeat(5, minmax(0, 68px));
   gap: 17px 16px;
+  width: 100%;
+  justify-content: center;
 }
 .app {
-  width: 68px;
-  height: 68px;
+  aspect-ratio: 1;
   overflow: hidden;
   border-radius: 22.5%;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
@@ -72,22 +74,14 @@ svg {
 }
 @media (min-width: 981px) and (max-width: 1220px) {
   .apps {
-    grid-template-columns: repeat(5, 56px);
+    grid-template-columns: repeat(5, minmax(0, 56px));
     gap: 14px 12px;
-  }
-  .app {
-    width: 56px;
-    height: 56px;
   }
 }
 @media (max-width: 480px) {
   .apps {
-    grid-template-columns: repeat(5, 50px);
+    grid-template-columns: repeat(5, minmax(0, 50px));
     gap: 12px 10px;
-  }
-  .app {
-    width: 50px;
-    height: 50px;
   }
 }
 </style>

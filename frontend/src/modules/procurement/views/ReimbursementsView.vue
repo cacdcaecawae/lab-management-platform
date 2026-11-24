@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { membersApi } from '@/modules/members/api'
 import { attachmentsApi, fundsApi, purchasesApi, reimbursementsApi } from '@/modules/procurement/api'
@@ -15,6 +16,8 @@ import type {
 } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { useRemoteOptions } from '@/composables/useRemoteOptions'
 import { useAuthStore } from '@/stores/auth'
 import { CATEGORY_LABELS, REIMBURSEMENT_STATUS, formatMoney, formatTime, mergeById, toDateStr } from '@/utils/format'
 import { showActionError, showError, useFieldErrors } from '@/utils/errors'
@@ -29,14 +32,23 @@ import IconButton from '@/components/IconButton.vue'
 const auth = useAuthStore()
 const tab = ref<'records' | 'stats'>('records')
 // Shared by the list, the statistics and the export, so their totals agree.
-const filters = reactive({ status: '', category: '', month: '', fund: '' as number | '', owner: '' as number | '' })
-const { items, count, page, pageSize, loading, load } = usePagedList(reimbursementsApi.list, filters)
+// ?status= comes from the workbench (报销缺发票 → 待提交)
+const route = inject(routeLocationKey, undefined)
+const routeQuery = route?.query ?? {}
+const filters = reactive({
+  search: '', status: String(routeQuery.status ?? '') in REIMBURSEMENT_STATUS ? String(routeQuery.status) : '', category: '', month: '',
+  from: '', to: '', fund: '' as number | '', owner: '' as number | '',
+})
+const keyword = useLiveSearch(filters)
+const { items, count, page, pageSize, loading, load, sort } = usePagedList(reimbursementsApi.list, filters)
+const dates = computed({
+  get: () => (filters.from && filters.to ? [filters.from, filters.to] : null),
+  set: (range: string[] | null) => Object.assign(filters, { from: range?.[0] ?? '', to: range?.[1] ?? '' }),
+})
 
 // All funds for filtering (a stopped one still has records); the form offers active ones only.
 const funds = useOptions(() => fundsApi.list({ page_size: 100 }))
-const members = auth.isSupervisor ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
-// shortcut: the 100 most recent purchase requests I can see; switch to remote search if that is not enough.
-const purchases = useOptions(() => purchasesApi.list({ page_size: 100 }))
+const members = auth.isFinance ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 const statusLabels = Object.fromEntries(Object.entries(REIMBURSEMENT_STATUS).map(([k, v]) => [k, v.label]))
 const historyValues = { status: statusLabels, category: CATEGORY_LABELS }
 
@@ -64,12 +76,19 @@ const fundOptions = computed(() =>
   mergeById<FundBrief>(funds.value, [current.value?.fund]).filter((f) => f.active || f.id === current.value?.fund.id),
 )
 // Only the reimbursing person's own purchase requests can be linked (also when a manager edits).
-const purchaseOptions = computed(() => {
-  const owner = current.value?.owner.id ?? auth.user?.id
-  return mergeById<PurchaseBrief>(purchases.value, [current.value?.purchase]).filter((p) => p.owner.id === owner)
-})
+const purchaseOwner = () => current.value?.owner.id ?? auth.user?.id
+const purchases = useRemoteOptions<PurchaseBrief>((search) => purchasesApi.list({ owner: purchaseOwner(), search, page_size: 20 }))
+const linked = ref<PurchaseBrief | null>(null) // fetched to fill in: keeps its label though not among the latest 20
+const purchaseOptions = computed(() =>
+  purchases.options([form.purchase_id, current.value?.purchase, linked.value]).filter((p) => p.owner.id === purchaseOwner()),
+)
+
+// Opening another record makes answers for the one before stale: they must not land on this one.
+let dialogGen = 0
 
 function openDialog(r: Reimbursement | null) {
+  dialogGen++
+  for (const key of Object.keys(filled) as (keyof FormState)[]) delete filled[key]
   current.value = r
   Object.assign(form, blank(), r && {
     fund_id: r.fund.id, purchase_id: r.purchase?.id ?? null, category: r.category, amount: Number(r.amount),
@@ -78,6 +97,72 @@ function openDialog(r: Reimbursement | null) {
   opened = { ...form }
   errors.clear()
   dialogOpen.value = true
+  purchases.search() // the person whose purchase requests may be linked may have changed
+}
+
+// Linking a purchase request fills in its fund, total and purpose, except a field the person already changed
+// (it differs from what the form opened with and from what was filled in last time).
+const filled: Partial<FormState> = {}
+async function fillFromPurchase(id: number | null) {
+  if (!id) return
+  const gen = dialogGen
+  try {
+    const p = await purchasesApi.get(id)
+    // a late answer: another record opened meanwhile, or another purchase picked; it must not touch this form
+    if (gen !== dialogGen || form.purchase_id !== id) return
+    linked.value = p
+    const values: Partial<FormState> = { fund_id: p.fund?.id ?? null, amount: Number(p.total), description: p.purpose.slice(0, 200) }
+    for (const key of ['fund_id', 'amount', 'description'] as const) {
+      if (form[key] !== opened[key] && form[key] !== filled[key]) continue // the person changed it
+      Object.assign(form, { [key]: values[key] })
+      Object.assign(filled, { [key]: values[key] })
+    }
+  } catch (e) {
+    if (gen === dialogGen) showError(e)
+  }
+}
+
+// ?item=<id> (the site search, a notification) opens that record, also when this page is already open. Injected, not
+// useRoute(): the page also mounts alone.
+watch(() => route?.query.item, async (item, _, onCleanup) => {
+  const id = Number(item)
+  if (!id) return
+  let expectedDialog: number | undefined = dialogGen
+  onCleanup(() => { expectedDialog = undefined })
+  try {
+    const record = await reimbursementsApi.get(id)
+    if (expectedDialog === dialogGen) openDialog(record)
+  } catch (e) {
+    if (expectedDialog === dialogGen) showError(e)
+  }
+}, { immediate: true })
+// ?purchase=<id> (发起报销 on an arrived purchase request): a new one, linked and filled in
+const routePurchase = Number(routeQuery.purchase) || 0
+if (routePurchase) {
+  openDialog(null)
+  form.purchase_id = routePurchase
+  void fillFromPurchase(routePurchase)
+}
+
+// Several at once (交财务 / 标到账): each goes on its own; the ones that cannot are listed with the reason.
+const picked = ref<Reimbursement[]>([])
+const batching = ref(false)
+async function batch(status: 'submitted' | 'paid') {
+  batching.value = true
+  try {
+    const { done, failed } = await reimbursementsApi.batchAdvance(picked.value.map((r) => r.id), status)
+    const what = status === 'submitted' ? '交财务' : '标为已到账'
+    if (failed.length) {
+      await ElMessageBox.alert(failed.map((f) => `${f.code || `#${f.id}`}：${f.reason}`).join('\n'), `${done.length} 笔已${what}，${failed.length} 笔没有`, {
+        confirmButtonText: '知道了',
+      }).catch(() => undefined)
+    } else ElMessage.success(`${done.length} 笔已${what}`)
+    load()
+  } catch (e) {
+    showError(e)
+  } finally {
+    batching.value = false
+  }
 }
 
 function body(): Partial<ReimbursementWrite> {
@@ -96,6 +181,7 @@ function body(): Partial<ReimbursementWrite> {
 }
 
 async function save() {
+  const gen = dialogGen
   saving.value = true
   try {
     const isNew = !current.value
@@ -106,7 +192,9 @@ async function save() {
         ? await reimbursementsApi.update(current.value!.id, data)
         : current.value!
     load()
-    if (isNew) {
+    if (gen !== dialogGen || !dialogOpen.value) {
+      ElMessage.success(isNew ? '已登记' : '已保存') // the dialog was closed or shows another record by now
+    } else if (isNew) {
       // Stay open: the invoice is uploaded next, onto the record that now exists.
       openDialog(saved)
       ElMessage.success('已登记，请上传发票')
@@ -115,7 +203,8 @@ async function save() {
       ElMessage.success('已保存')
     }
   } catch (e) {
-    errors.handle(e)
+    if (gen === dialogGen) errors.handle(e)
+    else showError(e)
   } finally {
     saving.value = false
   }
@@ -123,8 +212,10 @@ async function save() {
 
 async function refreshCurrent() {
   if (!current.value) return
+  const gen = dialogGen
   try {
-    current.value = await reimbursementsApi.get(current.value.id)
+    const fresh = await reimbursementsApi.get(current.value.id)
+    if (gen === dialogGen) current.value = fresh
   } catch (e) {
     showError(e)
   }
@@ -141,9 +232,10 @@ const NEXT: Record<string, { to: ReimbursementStatus; label: string; confirm: st
 async function saveEdits() {
   const data = body()
   if (!Object.keys(data).length) return true
+  const gen = dialogGen
   try {
     await reimbursementsApi.update(current.value!.id, data)
-    opened = { ...form }
+    if (gen === dialogGen) opened = { ...form }
     return true
   } catch (e) {
     errors.handle(e)
@@ -245,6 +337,7 @@ async function editFinanceEmail() {
 <template>
   <el-card class="card">
     <PageToolbar>
+      <el-input v-model="keyword" placeholder="搜索编号、说明、报销人" clearable @change="filters.search = keyword" />
       <el-select v-model="filters.status" placeholder="全部状态" clearable aria-label="状态">
         <el-option v-for="(s, k) in REIMBURSEMENT_STATUS" :key="k" :label="s.label" :value="k" />
       </el-select>
@@ -252,10 +345,11 @@ async function editFinanceEmail() {
         <el-option v-for="(label, k) in CATEGORY_LABELS" :key="k" :label="label" :value="k" />
       </el-select>
       <el-date-picker v-model="filters.month" type="month" value-format="YYYY-MM" placeholder="全部月份" class="month" />
+      <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="发生日期从" end-placeholder="到" />
       <el-select v-model="filters.fund" placeholder="全部经费" clearable filterable aria-label="经费来源">
         <el-option v-for="f in funds" :key="f.id" :label="`${f.code} ${f.name}`" :value="f.id" />
       </el-select>
-      <el-select v-if="auth.isSupervisor" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
+      <el-select v-if="auth.isFinance" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <template #actions>
@@ -265,22 +359,34 @@ async function editFinanceEmail() {
 
     <el-tabs v-model="tab">
       <el-tab-pane label="报销记录" name="records">
-        <el-table v-loading="loading" :data="items" empty-text="暂无报销记录">
+        <div v-if="picked.length" class="state">
+          <span>已选 {{ picked.length }} 笔</span>
+          <el-button :loading="batching" @click="batch('submitted')">交财务</el-button>
+          <el-button v-if="auth.isManager" :loading="batching" @click="batch('paid')">标到账</el-button>
+        </div>
+        <el-table
+          v-loading="loading"
+          :data="items"
+          empty-text="暂无报销记录"
+          @sort-change="sort"
+          @selection-change="(rows: Reimbursement[]) => (picked = rows)"
+        >
+          <el-table-column type="selection" width="44" />
           <el-table-column label="编号" min-width="120">
             <template #default="{ row }">
-              <el-button link class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
+              <el-button link type="primary" class="code" @click="openDialog(row as Reimbursement)">{{ row.code }}</el-button>
             </template>
           </el-table-column>
-          <el-table-column v-if="auth.isSupervisor" label="报销人" min-width="80">
+          <el-table-column v-if="auth.isFinance" label="报销人" min-width="80">
             <template #default="{ row }">{{ row.owner.name }}</template>
           </el-table-column>
           <el-table-column label="类别" min-width="80">
             <template #default="{ row }">{{ CATEGORY_LABELS[row.category] }}</template>
           </el-table-column>
-          <el-table-column label="金额（元）" min-width="110" align="right">
+          <el-table-column label="金额（元）" prop="amount" sortable="custom" min-width="120" align="right">
             <template #default="{ row }"><span class="amount">{{ formatMoney(row.amount) }}</span></template>
           </el-table-column>
-          <el-table-column prop="occurred_on" label="发生日期" min-width="100" />
+          <el-table-column prop="occurred_on" label="发生日期" sortable="custom" min-width="110" />
           <el-table-column label="经费来源" min-width="110" show-overflow-tooltip>
             <template #default="{ row }">{{ row.fund.code }}</template>
           </el-table-column>
@@ -323,7 +429,7 @@ async function editFinanceEmail() {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="auth.isSupervisor" label="统计" name="stats">
+      <el-tab-pane v-if="auth.isFinance" label="统计" name="stats">
         <PageToolbar>
           <el-radio-group v-model="by">
             <el-radio-button v-for="(label, k) in BY_LABELS" :key="k" :value="k">按{{ label }}</el-radio-button>
@@ -381,7 +487,7 @@ async function editFinanceEmail() {
         <el-date-picker v-model="form.occurred_on" type="date" value-format="YYYY-MM-DD" />
       </el-form-item>
       <el-form-item label="关联采购申请" :error="errors.fe('purchase_id')">
-        <el-select v-model="form.purchase_id" filterable clearable placeholder="可不选">
+        <el-select v-model="form.purchase_id" filterable remote @change="fillFromPurchase" :remote-method="purchases.search" :loading="purchases.loading.value" clearable placeholder="可不选，可搜编号、用途">
           <el-option v-for="p in purchaseOptions" :key="p.id" :label="`${p.code} ${p.purpose}`" :value="p.id" />
         </el-select>
       </el-form-item>

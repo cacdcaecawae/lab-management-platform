@@ -4,15 +4,26 @@ import { ElMessageBox } from 'element-plus'
 import { projectsApi } from '@/modules/projects/api'
 import type { MilestoneWrite, Project, ProjectMilestone, ProjectTask, TaskStatus, TaskWrite } from '@/api/types'
 import { errorMessage } from '@/utils/errors'
-import { toDateStr } from '@/utils/format'
+import { formatTime, toDateStr } from '@/utils/format'
 import FormDialog from '@/components/FormDialog.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 
 const props = defineProps<{ project: Project; sessionUserId?: number; canManage: boolean; tab: string }>()
 const cols = [{ key: 'todo', name: '待办' }, { key: 'doing', name: '进行中' }, { key: 'done', name: '完成' }] as const
+const CHANGE_LABELS: Record<string, string> = {
+  title: '标题', description: '说明', status: '状态', assignee: '负责人', milestone: '里程碑', due_date: '截止日期',
+}
+const STATUS_NAMES: Record<string, string> = Object.fromEntries(cols.map((c) => [c.key, c.name]))
+// A status by its column's name; an id (entries from before the history kept names) as 编号 n.
+const shown = (field: string, v: unknown) =>
+  v == null || v === '' ? '无' : field === 'status' ? (STATUS_NAMES[String(v)] ?? v) : typeof v === 'number' ? `编号 ${v}` : v
 const canEdit = computed(() => props.canManage || props.project.members.some(m => m.id === props.sessionUserId))
 const canDelete = (task: ProjectTask) => props.canManage || task.created_by === props.sessionUserId
 const mine = ref(false)
+const assignee = ref<number | ''>('')
+const onMilestone = ref<number | ''>('')
+// The board's filters: 只看我的 wins over a chosen assignee.
+const taskQuery = () => ({ assignee: mine.value ? props.sessionUserId : assignee.value || undefined, milestone: onMilestone.value || undefined })
 const error = ref('')
 const busy = ref(false)
 const lanes = reactive<Record<TaskStatus, { rows: ProjectTask[]; page: number; more: boolean }>>({
@@ -28,7 +39,7 @@ async function loadBoard() {
   const token = ++version
   try {
     const pages = await Promise.all(cols.map(({ key }) =>
-      projectsApi.tasks(props.project.id, { status: key, assignee: mine.value ? props.sessionUserId : undefined })))
+      projectsApi.tasks(props.project.id, { status: key, ...taskQuery() })))
     if (token !== version) return
     cols.forEach(({ key }, i) => Object.assign(lanes[key], { rows: pages[i].results, page: 1, more: !!pages[i].next }))
   } catch (e) {
@@ -43,7 +54,7 @@ async function nextTasks(key: TaskStatus) {
   busy.value = true
   error.value = ''
   try {
-    const result = await projectsApi.tasks(props.project.id, { status: key, page, assignee: mine.value ? props.sessionUserId : undefined })
+    const result = await projectsApi.tasks(props.project.id, { status: key, page, ...taskQuery() })
     if (token === version) Object.assign(lane, { rows: [...lane.rows, ...result.results], page, more: !!result.next })
   } catch (e) {
     if (token === version) error.value = errorMessage(e)
@@ -69,9 +80,9 @@ async function loadMilestones(reset = true) {
 watch(() => props.tab, tab => {
   error.value = ''
   if (tab === 'tasks') void loadBoard()
-  if (tab === 'milestones') void loadMilestones()
+  if (tab === 'tasks' || tab === 'milestones') void loadMilestones() // the board filters by milestone
 }, { immediate: true })
-watch(mine, () => { error.value = ''; void loadBoard() })
+watch([mine, assignee, onMilestone], () => { error.value = ''; void loadBoard() })
 
 const taskDialog = ref(false)
 const selectedTask = ref<ProjectTask | null>(null)
@@ -179,6 +190,12 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
   <template v-if="tab === 'tasks'">
     <PageToolbar>
       <el-checkbox v-model="mine">只看我的</el-checkbox>
+      <el-select v-if="!mine" v-model="assignee" placeholder="全部负责人" aria-label="负责人" clearable filterable>
+        <el-option v-for="m in memberChoices" :key="m.id" :label="m.name" :value="m.id" />
+      </el-select>
+      <el-select v-model="onMilestone" placeholder="全部里程碑" aria-label="里程碑" clearable filterable>
+        <el-option v-for="m in milestones" :key="m.id" :label="m.title" :value="m.id" />
+      </el-select>
       <template #actions>
         <el-button v-if="canEdit" type="primary" :disabled="busy" @click="editTask(null)">新建任务</el-button>
       </template>
@@ -191,7 +208,7 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
           <strong>{{ task.title }}</strong>
           <p v-if="task.description" class="pre">{{ task.description }}</p>
           <p>{{ task.assignee?.name || '未分配' }}<span v-if="task.assignee && !task.assignee.current">（已不在项目中）</span></p>
-          <p v-if="task.due_date" :class="{ late: late(task) }">截止 {{ task.due_date }}</p>
+          <p v-if="task.due_date" :class="{ late: late(task) }">截止 {{ task.due_date }}<template v-if="late(task)">，已逾期</template></p>
           <p v-if="task.milestone">里程碑：{{ task.milestone.title }}</p>
           <div class="actions">
             <template v-if="canEdit">
@@ -206,10 +223,9 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
             <summary>修改历史</summary>
             <ul>
               <li v-for="(entry, i) in task.history" :key="i">
-                {{ entry.actor }} · {{ new Date(entry.created_at).toLocaleString() }}
+                {{ entry.actor }} · {{ formatTime(entry.created_at) }}
                 <div v-for="(change, field) in entry.changes" :key="field">
-                  {{ ({ title: '标题', description: '说明', status: '状态', assignee: '负责人编号', milestone: '里程碑编号', due_date: '截止日期' })[field as string] || field }}：
-                  {{ change.before ?? '无' }} → {{ change.after ?? '无' }}
+                  {{ CHANGE_LABELS[field as string] ?? field }}：{{ shown(field as string, change.before) }} → {{ shown(field as string, change.after) }}
                 </div>
               </li>
             </ul>
@@ -227,7 +243,7 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
       </template>
     </PageToolbar>
     <el-empty v-if="!milestones.length" description="暂无里程碑" />
-    <el-card v-for="item in milestones" :key="item.id" class="task" shadow="never">
+    <el-card v-for="item in milestones" :key="item.id" class="task milestone" shadow="never">
       <strong>{{ item.title }}</strong>
       <p>{{ item.due_date ?? '无截止日期' }} · {{ item.done_at ? '已完成' : '未完成' }} · 任务 {{ item.task_done }} / {{ item.task_total }}</p>
       <el-button v-if="canManage" link :disabled="busy" @click="editMilestone(item)">编辑</el-button>
@@ -276,4 +292,6 @@ const transitions: Record<TaskStatus, { to: TaskStatus; label: string }[]> = {
 .board h3 { margin: 10px 0 4px; font-size: 15px; }
 .task { margin: 10px 0; overflow-wrap: anywhere; }
 .late { color: var(--el-color-danger); }
+/* on the page's white card, not a grey lane like the tasks: an edge of its own */
+.milestone { --el-card-border-color: var(--lab-border); }
 </style>

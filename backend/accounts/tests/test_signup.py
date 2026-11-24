@@ -178,7 +178,7 @@ def test_an_applicant_is_always_an_inactive_student(api, ops, manager):
     other.refresh_from_db()
     assert not other.pending
     # And the database refuses a pending account that is active or not a student.
-    for change in ({"is_active": True}, {"role": User.Role.MANAGER}):
+    for change in ({"is_active": True}, {"role": User.Role.ADVISOR}):
         with pytest.raises(IntegrityError), transaction.atomic():
             User.objects.filter(pk=applicant.pk).update(**{"pending": True, "role": User.Role.STUDENT, "is_active": False, **change})
 

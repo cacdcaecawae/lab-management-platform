@@ -26,7 +26,8 @@ async function setup(role: 'student' | 'manager' | 'ops', group: Me['group'] = {
   const pinia = createPinia()
   setActivePinia(pinia)
   const ops = role === 'ops'
-  useAuthStore().user = { role: ops ? 'student' : role, is_supervisor: role === 'manager', is_superuser: ops, group } as Me
+  // a manager: a student with the 管理员 tag
+  useAuthStore().user = { role: 'student', is_manager: role === 'manager', is_supervisor: role === 'manager', is_superuser: ops, group } as Me
   const router = createRouter({ history: createMemoryHistory(), routes })
   let nav!: ReturnType<typeof useNav>
   mount(defineComponent({ setup: () => { nav = useNav() }, template: '<div />' }), { global: { plugins: [pinia, router] } })

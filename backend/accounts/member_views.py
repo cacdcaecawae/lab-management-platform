@@ -2,18 +2,31 @@ import secrets
 
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.http import content_disposition_header
+from openpyxl import Workbook
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
-from core.permissions import IsManager, scope_group
+from core.export import xlsx_bytes
+from core.filters import Ordering
+from core.params import plain_int
+from core.permissions import IsApprover, IsManager, is_supervisor, scope_group
 
-from .member_serializers import IdsSerializer, MemberCreateSerializer, MemberSerializer, PendingMemberSerializer
+from .member_serializers import STATUSES, IdsSerializer, MemberCreateSerializer, MemberSerializer, PendingMemberSerializer
 from .mixins import ResetPasswordMixin
 from .models import User
 
 SIGNUP_ACTIONS = ("pending", "approve", "reject", "signup")
+STATUS_LOOKUPS = {
+    "active": {"is_active": True}, "graduated": {"is_active": False, "graduated": True},
+    "disabled": {"is_active": False, "graduated": False},
+}
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 class MemberViewSet(
@@ -28,7 +41,8 @@ class MemberViewSet(
 
     http_method_names = ["get", "post", "patch", "head", "options"]
     serializer_class = MemberSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, Ordering]
+    ordering_fields = ["name", "enrollment_year"]
 
     @property
     def search_fields(self):
@@ -40,6 +54,8 @@ class MemberViewSet(
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "reset_password", *SIGNUP_ACTIONS):
             return [*super().get_permissions(), IsManager()]
+        if self.action == "manager":
+            return [*super().get_permissions(), IsApprover()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -52,19 +68,61 @@ class MemberViewSet(
         pending = self.action in SIGNUP_ACTIONS
         members = scope_group(User.objects.filter(pending=pending).order_by("id"), self.request.user)
         if self.action in ("update", "partial_update", "reset_password"):
-            # Managers handle student accounts and their own profile. Advisor, manager and ops accounts are
-            # managed by ops in 系统管理: otherwise a manager could take one over (e.g. to pass the advisor's final approval).
-            members = members.filter(Q(role=User.Role.STUDENT) | Q(pk=self.request.user.pk), is_superuser=False, is_staff=False)
-        if self.action != "list":  # list filters must not turn detail URLs into 404s
+            # Managers handle plain student accounts and their own profile. Advisors, other managers, approvers and ops
+            # are managed in 系统管理: otherwise a manager could take one over (e.g. to pass the final approval).
+            plain = Q(role=User.Role.STUDENT, is_manager=False, is_approver=False)
+            members = members.filter(plain | Q(pk=self.request.user.pk), is_superuser=False, is_staff=False)
+        if self.action == "manager":
+            members = members.filter(is_superuser=False, is_staff=False)  # any member's 管理员 tag, never ops
+        if self.action not in ("list", "export"):  # list filters must not turn detail URLs into 404s
             return members
         params = self.request.query_params
-        if params.get("role"):
-            if params["role"] not in User.Role.values:
-                return members.none()
-            members = members.filter(role=params["role"])
+        choices = {"role": User.Role.values, "identity": User.Identity.values}
+        for name, values in choices.items():
+            if params.get(name):
+                members = members.filter(**{name: params[name]}) if params[name] in values else members.none()
+        if params.get("flag"):  # 管理员 / 终审人
+            members = members.filter(**{f"is_{params['flag']}": True}) if params["flag"] in ("manager", "approver") else members.none()
+        if params.get("tag"):
+            members = members.filter(tags__contains=[params["tag"]]) if "\x00" not in params["tag"] else members.none()
+        if params.get("year"):
+            year = plain_int(params["year"], 4)
+            members = members.filter(enrollment_year=year) if year else members.none()
+        if params.get("status"):
+            lookups = STATUS_LOOKUPS.get(params["status"])
+            members = members.filter(**lookups) if lookups else members.none()
         if params.get("is_active"):
             members = members.filter(is_active=serializers.BooleanField().to_internal_value(params["is_active"]))
         return members
+
+    @action(detail=True, methods=["post"])
+    def manager(self, request, pk=None):
+        """The 终审人 gives the 管理员 tag to an account of the group, or takes it back."""
+        on = serializers.BooleanField().run_validation(request.data.get("is_manager"))
+        member = self.get_object()
+        member.is_manager = on
+        member.save(update_fields=["is_manager"])
+        return Response(MemberSerializer(member, context=self.get_serializer_context()).data)
+
+    @action(detail=False)
+    def export(self, request):
+        """花名册: the filtered list as .xlsx. It holds login names and contact details: advisors and managers only."""
+        if not is_supervisor(request.user):
+            raise PermissionDenied("仅导师或管理员可以导出花名册")
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "花名册"
+        sheet.append(["姓名", "学号 / 工号", "基础角色", "管理员", "终审人", "身份", "入学年份", "状态", "词条", "邮箱", "电话", "研究方向"])
+        for m in self.filter_queryset(self.get_queryset()):
+            sheet.append([
+                m.name, m.username, m.get_role_display(), "是" if m.is_manager else "", "是" if m.is_approver else "",
+                m.get_identity_display(), f"{m.enrollment_year}级" if m.enrollment_year else "", STATUSES[m.member_status],
+                "、".join(m.tags), m.email, m.phone, m.research_direction,
+            ])
+        response = HttpResponse(xlsx_bytes(book), content_type=XLSX)
+        stamp = timezone.localdate().strftime("%Y%m%d")
+        response["Content-Disposition"] = content_disposition_header(as_attachment=True, filename=f"花名册-{stamp}.xlsx")
+        return response
 
     @action(detail=False)
     def pending(self, request):

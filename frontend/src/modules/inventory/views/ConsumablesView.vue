@@ -7,14 +7,20 @@ import { ApiError } from '@/api/client'
 import { consumablesApi } from '@/modules/inventory/api'
 import { purchasesApi } from '@/modules/procurement/api'
 import { projectsApi } from '@/modules/projects/api'
-import type { Consumable, ConsumableWrite, StockTxn, TxnKind } from '@/api/types'
+import type { Consumable, ConsumableWrite, PurchaseRef, StockTxn, TxnKind } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
+import { useLiveSearch } from '@/composables/useLiveSearch'
+import { useRemoteOptions } from '@/composables/useRemoteOptions'
+import { suggest, useSuggestions } from '@/api/suggestions'
 import { useAuthStore } from '@/stores/auth'
 import { TXN_KIND_LABELS, formatTime, toDateStr } from '@/utils/format'
 import { showError, useFieldErrors } from '@/utils/errors'
 import PageToolbar from '@/components/PageToolbar.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import IconButton from '@/components/IconButton.vue'
+import StockLedger from '../components/StockLedger.vue'
+import { Printer } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
 const route = inject(routeLocationKey, undefined)
@@ -22,15 +28,27 @@ const router = inject(routerKey, undefined)
 const routeItem = () => typeof route?.query.item === 'string' ? route.query.item : ''
 const routeLow = (): 1 | '' => (route?.query.low === '1' ? 1 : '')
 const routeExpiry = () => route?.query.expiring_within === '30' ? 30 : ''
-const filters = reactive({ item: routeItem(), search: '', low: routeLow(), expiring_within: routeExpiry() })
+const filters = reactive({ item: routeItem(), search: '', category: '', location: '', low: routeLow(), expiring_within: routeExpiry() })
 watch(routeLow, (low) => { filters.low = low })
 watch(routeExpiry, (days) => { filters.expiring_within = days })
 const dates = (d: string) => new Date(d + 'T00:00:00')
-const expiryTone = (d: string) => {
+const expiry = (d: string) => {
   const remaining = Math.round((+dates(d) - +dates(toDateStr(new Date()))) / 86_400_000)
-  return remaining < 0 ? 'danger' : remaining <= 30 ? 'warning' : 'info'
+  if (remaining < 0) return { type: 'danger', note: '已过期' } as const
+  if (remaining <= 30) return { type: 'warning', note: remaining ? `${remaining} 天后到期` : '今天到期' } as const
+  return { type: 'info', note: '' } as const
 }
-const keyword = ref('')
+const keyword = useLiveSearch(filters)
+// 耗材 / 流水 (?tab=ledger; ?project= from a project's 资产 filters the ledger)
+const tab = ref(route?.query.tab === 'ledger' ? 'ledger' : 'items')
+const ledgerProject = Number(route?.query.project) || ''
+watch(tab, (t) => void router?.replace({ query: t === 'ledger' ? { tab: 'ledger' } : {} }))
+// Labels (managers): tick rows, print; each label's code opens 领用 of that consumable (?item=&scan=1).
+const selected = ref<number[]>([])
+const printSelected = () => router?.push({ name: 'labels', query: { type: 'consumable', ids: selected.value.join(',') } })
+let scanning = route?.query.scan === '1' && !!routeItem()
+const categories = useSuggestions('consumable.category')
+const locations = useSuggestions('consumable.location')
 watch(routeItem, (item) => { filters.item = item })
 function showAll() {
   if (!route || !router) return
@@ -38,13 +56,15 @@ function showAll() {
   delete query.item
   return router.replace({ query, hash: route.hash })
 }
-const { items, count, page, pageSize, loading, load } = usePagedList(consumablesApi.list, filters)
+const { items, count, page, pageSize, loading, load, sort } = usePagedList(consumablesApi.list, filters)
 const projects = useOptions(() => projectsApi.list({ status: 'active', page_size: 100 }))
 // Stock-in (managers only) may name the arrived purchase request it came from.
-const arrived = auth.isManager ? useOptions(() => purchasesApi.list({ status: 'arrived', page_size: 100 })) : ref([])
+const arrived = useRemoteOptions<PurchaseRef & { purpose: string }>((search) =>
+  auth.isManager ? purchasesApi.list({ status: 'arrived', search, page_size: 20 }) : Promise.resolve({ count: 0, next: null, previous: null, results: [] }),
+)
 
 // ---- item create / edit (managers) ----
-const blankItem: ConsumableWrite = { name: '', spec: '', unit: '个', location: '', safety_stock: 0, notes: '' }
+const blankItem: ConsumableWrite = { name: '', spec: '', unit: '个', category: '', location: '', safety_stock: 0, notes: '' }
 const itemForm = reactive<ConsumableWrite>({ ...blankItem })
 const itemErrors = useFieldErrors(Object.keys(blankItem))
 const editing = ref<Consumable | null>(null)
@@ -53,7 +73,7 @@ const saving = ref(false)
 
 function openItem(c: Consumable | null) {
   editing.value = c
-  Object.assign(itemForm, blankItem, c && { name: c.name, spec: c.spec, unit: c.unit, location: c.location, safety_stock: c.safety_stock, notes: c.notes })
+  Object.assign(itemForm, blankItem, c && { name: c.name, spec: c.spec, unit: c.unit, category: c.category, location: c.location, safety_stock: c.safety_stock, notes: c.notes })
   itemErrors.clear()
   itemOpen.value = true
 }
@@ -128,12 +148,30 @@ function resetCounted() {
   txnForm.counted = bookStock.value ?? 0
 }
 
+// 发起采购 on a low-stock row: a new purchase request with this consumable as its first line, enough to reach twice
+// the safety stock.
+const orderMore = (c: Consumable) =>
+  router?.push({ name: 'purchase-new', query: { name: c.name, spec: c.spec, quantity: Math.max(1, c.safety_stock * 2 - c.stock) } })
+// ?purchase=&code= : 入库到耗材 on an arrived purchase request; the stock-in form starts with it chosen.
+const stockFor = Number(route?.query.purchase) ? { id: Number(route?.query.purchase), code: String(route?.query.code ?? ''), purpose: '' } : null
+
+// A scanned label: once the item is on the page, open 领用 (quantity 1). A manager may switch it to 入库.
+const scanned = ref(false)
+watch(txnOpen, (open) => open || (scanned.value = false)) // the 领用 / 入库 switch is for that scan only
+watch(items, (list) => {
+  if (!scanning || list.length !== 1) return
+  scanning = false
+  scanned.value = true
+  openTxn(list[0]!, 'out')
+})
+
 function openTxn(c: Consumable, kind: TxnKind) {
   txnTarget.value = c
   Object.assign(txnForm, {
     kind, quantity: 1, batch_id: null, batch_no: '', expires_on: '', project_id: null, purchase_id: null, note: '',
   })
   if (c.tracks_batches && kind === 'out') txnForm.batch_id = batchOptions.value[0]?.id ?? null
+  if (kind === 'in' && stockFor) txnForm.purchase_id = stockFor.id
   resetCounted()
   txnErrors.clear()
   txnOpen.value = true
@@ -173,14 +211,18 @@ const txns = ref<StockTxn[]>([])
 const txnPage = ref(1)
 const hasMore = ref(false)
 
+let txnSeq = 0
 async function loadTxns(c: Consumable, reset: boolean) {
-  txnPage.value = reset ? 1 : txnPage.value + 1
+  const mine = ++txnSeq // another item's drawer, or 加载更多 clicked again: an earlier answer is stale
+  const page = reset ? 1 : txnPage.value + 1
   try {
-    const res = await consumablesApi.txns(c.id, { page: txnPage.value })
+    const res = await consumablesApi.txns(c.id, { page })
+    if (mine !== txnSeq) return
+    txnPage.value = page
     txns.value = reset ? res.results : [...txns.value, ...res.results]
     hasMore.value = !!res.next
   } catch (e) {
-    showError(e)
+    if (mine === txnSeq) showError(e)
   }
 }
 
@@ -203,27 +245,51 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
 
 <template>
   <el-card class="card">
+    <el-tabs v-model="tab">
+      <el-tab-pane label="耗材" name="items" />
+      <el-tab-pane label="流水" name="ledger" />
+    </el-tabs>
+    <StockLedger v-if="tab === 'ledger'" :project="ledgerProject" />
+    <template v-else>
+    <el-alert v-if="stockFor && auth.isManager" class="notice" type="info" :closable="false" :title="`为 ${stockFor.code} 入库：在要入库的耗材那一行点“入库”，采购申请已经选好。`" />
     <PageToolbar>
       <el-button v-if="filters.item" @click="showAll">显示全部</el-button>
-      <el-input v-model="keyword" placeholder="搜索名称、规格、位置" clearable @change="filters.search = keyword" />
+      <el-input v-model="keyword" placeholder="搜索名称、规格、分类、位置" clearable @change="filters.search = keyword" />
+      <el-select v-model="filters.category" aria-label="分类" placeholder="全部分类" clearable filterable remote :remote-method="categories.search">
+        <el-option v-for="v in categories.values.value" :key="v" :label="v" :value="v" />
+      </el-select>
+      <el-select v-model="filters.location" aria-label="存放位置" placeholder="全部位置" clearable filterable remote :remote-method="locations.search">
+        <el-option v-for="v in locations.values.value" :key="v" :label="v" :value="v" />
+      </el-select>
       <el-checkbox v-model="filters.low" :true-value="1" false-value="">只看低于安全库存</el-checkbox>
       <el-checkbox v-model="filters.expiring_within" :true-value="30" false-value="">30 天内到期（含已过期）</el-checkbox>
       <template #actions>
+        <IconButton v-if="auth.isManager" :icon="Printer" label="打印标签" :disabled="loading || !selected.length" @click="printSelected" />
         <el-button v-if="auth.isManager" type="primary" @click="openItem(null)">新建耗材</el-button>
       </template>
     </PageToolbar>
-    <el-table empty-text="暂无耗材" v-loading="loading" :data="items">
-      <el-table-column prop="name" label="名称" min-width="130" />
+    <el-table
+      empty-text="暂无耗材"
+      v-loading="loading"
+      :data="items"
+      @sort-change="sort"
+      @selection-change="(rows: Consumable[]) => (selected = rows.map((r) => r.id))"
+    >
+      <el-table-column v-if="auth.isManager" type="selection" width="44" />
+      <el-table-column prop="name" label="名称" sortable="custom" min-width="130" />
       <el-table-column prop="spec" label="规格" min-width="100" />
-      <el-table-column label="库存" min-width="130">
+      <el-table-column label="库存" prop="stock" sortable="custom" min-width="130">
         <template #default="{ row }">
           <span class="stock" :class="{ low: row.low }">{{ row.stock }} {{ row.unit }}</span>
           <el-tag v-if="row.low" class="status-tag low-tag" type="danger" disable-transitions>不足</el-tag>
+          <el-button v-if="row.low" link type="primary" @click="orderMore(row as Consumable)">发起采购</el-button>
         </template>
       </el-table-column>
-      <el-table-column label="最近到期" min-width="115">
+      <el-table-column label="最近到期" prop="nearest_expiry_on" sortable="custom" min-width="120">
         <template #default="{ row }">
-          <el-tag v-if="row.nearest_expiry" :type="expiryTone(row.nearest_expiry)">{{ row.nearest_expiry }}</el-tag>
+          <el-tag v-if="row.nearest_expiry" class="status-tag" :type="expiry(row.nearest_expiry).type" disable-transitions>
+            {{ row.nearest_expiry }}<template v-if="expiry(row.nearest_expiry).note"> · {{ expiry(row.nearest_expiry).note }}</template>
+          </el-tag>
           <span v-else>{{ row.tracks_batches ? '—' : '未按批次' }}</span>
         </template>
       </el-table-column>
@@ -260,17 +326,19 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
       :page-size="pageSize"
       hide-on-single-page
     />
+    </template>
   </el-card>
 
   <FormDialog v-model="itemOpen" :title="editing ? '编辑耗材' : '新建耗材'" :loading="saving" @submit="saveItem">
     <div class="form-grid">
       <el-form-item class="span-2" label="名称" :error="itemErrors.fe('name')" required><el-input v-model="itemForm.name" /></el-form-item>
       <el-form-item label="规格" :error="itemErrors.fe('spec')"><el-input v-model="itemForm.spec" placeholder="如 1 m、250 mL" /></el-form-item>
-      <el-form-item label="单位" :error="itemErrors.fe('unit')" required><el-input v-model="itemForm.unit" /></el-form-item>
+      <el-form-item label="单位" :error="itemErrors.fe('unit')" required><el-autocomplete v-model="itemForm.unit" :fetch-suggestions="suggest('consumable.unit')" /></el-form-item>
+      <el-form-item label="分类" :error="itemErrors.fe('category')"><el-autocomplete v-model="itemForm.category" :fetch-suggestions="suggest('consumable.category')" placeholder="如 耦合剂、线缆" /></el-form-item>
       <el-form-item label="安全库存" :error="itemErrors.fe('safety_stock')">
         <el-input-number v-model="itemForm.safety_stock" :min="0" controls-position="right" />
       </el-form-item>
-      <el-form-item label="存放位置" :error="itemErrors.fe('location')"><el-input v-model="itemForm.location" /></el-form-item>
+      <el-form-item label="存放位置" :error="itemErrors.fe('location')"><el-autocomplete v-model="itemForm.location" :fetch-suggestions="suggest('consumable.location')" /></el-form-item>
     </div>
     <el-form-item label="备注" :error="itemErrors.fe('notes')">
       <el-input v-model="itemForm.notes" type="textarea" :autosize="{ minRows: 2 }" />
@@ -284,7 +352,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     <template v-else-if="batchTarget && batchTarget.stock > 0">
       <p>现有库存 {{ batchTarget.stock }} {{ batchTarget.unit }} 将全部分配到此批次，总数不变。</p>
       <el-form-item label="期初批号" required><el-input v-model="openingBatch.batch_no" maxlength="50" /></el-form-item>
-      <el-form-item label="期初批次有效期"><el-input v-model="openingBatch.expires_on" type="date" /></el-form-item>
+      <el-form-item label="期初批次有效期"><el-date-picker v-model="openingBatch.expires_on" type="date" value-format="YYYY-MM-DD" placeholder="可不填" /></el-form-item>
     </template>
     <el-alert v-if="batchModeError" type="error" :title="batchModeError" :closable="false" />
   </FormDialog>
@@ -299,11 +367,21 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
     @submit="saveTxn"
   >
     <template v-if="txnTarget">
+      <el-radio-group
+        v-if="scanned && auth.isManager"
+        :model-value="txnForm.kind"
+        class="scan-kind"
+        aria-label="登记什么"
+        @change="(k) => openTxn(txnTarget!, k as TxnKind)"
+      >
+        <el-radio-button value="out">领用</el-radio-button>
+        <el-radio-button value="in">入库</el-radio-button>
+      </el-radio-group>
       <p class="book">总账 {{ txnTarget.stock }} {{ txnTarget.unit }}<template v-if="txnTarget.tracks_batches && bookStock !== undefined">，该批次 {{ bookStock }} {{ txnTarget.unit }}</template></p>
       <template v-if="txnTarget.tracks_batches">
         <template v-if="txnForm.kind === 'in'">
           <el-form-item label="批号" :error="txnErrors.fe('batch_no')" required><el-input v-model="txnForm.batch_no" maxlength="50" /></el-form-item>
-          <el-form-item label="有效期至" :error="txnErrors.fe('expires_on')"><el-input v-model="txnForm.expires_on" type="date" /></el-form-item>
+          <el-form-item label="有效期至" :error="txnErrors.fe('expires_on')"><el-date-picker v-model="txnForm.expires_on" type="date" value-format="YYYY-MM-DD" placeholder="可不填" /></el-form-item>
         </template>
         <el-form-item v-else label="批次" :error="txnErrors.fe('batch_id')" required>
           <el-select v-model="txnForm.batch_id" placeholder="选择批次" @change="resetCounted">
@@ -325,8 +403,8 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
         </el-select>
       </el-form-item>
       <el-form-item v-if="txnForm.kind === 'in'" label="采购申请（已到货）" :error="txnErrors.fe('purchase_id')">
-        <el-select v-model="txnForm.purchase_id" filterable clearable placeholder="可不选">
-          <el-option v-for="p in arrived" :key="p.id" :label="`${p.code} ${p.purpose}`" :value="p.id" />
+        <el-select v-model="txnForm.purchase_id" filterable remote :remote-method="arrived.search" :loading="arrived.loading.value" clearable placeholder="可不选，可搜编号、用途">
+          <el-option v-for="p in arrived.options([txnForm.purchase_id, stockFor])" :key="p.id" :label="`${p.code} ${p.purpose}`" :value="p.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="备注" :error="txnErrors.fe('note')">
@@ -379,6 +457,12 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
 }
 .low-tag {
   margin-left: 8px;
+}
+.notice {
+  margin-bottom: 12px;
+}
+.scan-kind {
+  margin-bottom: 12px;
 }
 .book {
   margin: 0 0 16px;
