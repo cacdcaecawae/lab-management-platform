@@ -151,10 +151,13 @@ it('a purchase answering after another record was opened does not fill that reco
   document.body.innerHTML = ''
 })
 
-it('another search result while the page is open opens that record', async () => {
-  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(
-    url === '/api/reimbursements/7/' ? record : { count: 0, next: null, previous: null, results: [] },
-  ), { status: 200 }))))
+it('keeps the last reimbursement selected in search when the first request finishes late', async () => {
+  const other = { ...record, id: 8, code: 'RB-2026-0008' }
+  let answerFirst!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url === '/api/reimbursements/7/') return new Promise<Response>((resolve) => { answerFirst = resolve })
+    return Promise.resolve(Response.json(url === '/api/reimbursements/8/' ? other : { count: 0, results: [] }))
+  }))
   const pinia = createPinia()
   useAuthStore(pinia).user = { ...me, role: 'student', is_supervisor: false } as Me
   const route = reactive({ query: {} as Record<string, string> })
@@ -165,7 +168,12 @@ it('another search result while the page is open opens that record', async () =>
   await flushPromises()
   route.query = { item: '7' } // the site search, while already on this page
   await flushPromises()
-  expect(document.querySelector('.el-dialog__title')?.textContent).toBe(`报销 ${record.code}`)
+  route.query = { item: '8' }
+  await flushPromises()
+  expect(document.querySelector('.el-dialog__title')?.textContent).toBe(`报销 ${other.code}`)
+  answerFirst(Response.json(record))
+  await flushPromises()
+  expect(document.querySelector('.el-dialog__title')?.textContent).toBe(`报销 ${other.code}`)
   wrapper.unmount()
   document.body.innerHTML = ''
 })

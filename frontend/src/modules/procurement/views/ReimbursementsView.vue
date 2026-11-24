@@ -124,9 +124,17 @@ async function fillFromPurchase(id: number | null) {
 
 // ?item=<id> (the site search, a notification) opens that record, also when this page is already open. Injected, not
 // useRoute(): the page also mounts alone.
-watch(() => route?.query.item, (item) => {
-  const id = Number(item) || 0
-  if (id) reimbursementsApi.get(id).then(openDialog, showError)
+watch(() => route?.query.item, async (item, _, onCleanup) => {
+  const id = Number(item)
+  if (!id) return
+  let expectedDialog: number | undefined = dialogGen
+  onCleanup(() => { expectedDialog = undefined })
+  try {
+    const record = await reimbursementsApi.get(id)
+    if (expectedDialog === dialogGen) openDialog(record)
+  } catch (e) {
+    if (expectedDialog === dialogGen) showError(e)
+  }
 }, { immediate: true })
 // ?purchase=<id> (发起报销 on an arrived purchase request): a new one, linked and filled in
 const routePurchase = Number(routeQuery.purchase) || 0
