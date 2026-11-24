@@ -7,7 +7,7 @@ from core.exceptions import Conflict
 from core.notifications import notify
 from projects.serializers import AnyGroupMemberField
 
-from .models import ActionItem, AgendaItem, Meeting, MeetingFile
+from .models import ActionItem, AgendaItem, Meeting, MeetingFile, carry_order_error
 
 
 def require_item_fields(serializer, attrs, names):
@@ -92,6 +92,11 @@ class MeetingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Meeting
         fields = ["id", "date", "title", "minutes", "agenda", "actions", "files", "created_by", "created_at", "updated_at"]
+
+    def validate_date(self, date):
+        if self.instance and (error := carry_order_error(self.instance, date)):
+            raise serializers.ValidationError(error)
+        return date
 
     def validate_actions(self, actions):
         known = set(self.instance.actions.values_list("id", flat=True)) if self.instance else set()

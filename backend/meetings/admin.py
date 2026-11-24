@@ -1,8 +1,9 @@
+from django import forms
 from django.contrib import admin
 from django.db.models import Q
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import ActionItem, AgendaItem, Meeting, MeetingFile
+from .models import ActionItem, AgendaItem, Meeting, MeetingFile, carry_order_error
 
 
 class AgendaItemInline(admin.TabularInline):
@@ -17,8 +18,26 @@ def holds_carried(meeting):
     return ActionItem.objects.filter(carried | Q(carried_to=meeting)).exists()
 
 
+class ActionItemForm(forms.ModelForm):
+    def clean(self):
+        cleaned = super().clean()
+        # reopened here while its copy carries on in the later meeting, it would be one item open twice
+        if self.instance.carried_to_id and "done_at" in self.changed_data:
+            raise forms.ValidationError(f"已转入 {self.instance.carried_to.date} 的组会，完成状态在那边改")
+        return cleaned
+
+
+class MeetingForm(forms.ModelForm):
+    def clean_date(self):
+        date = self.cleaned_data["date"]
+        if self.instance.pk and (error := carry_order_error(self.instance, date)):
+            raise forms.ValidationError(error)
+        return date
+
+
 class ActionItemInline(admin.TabularInline):
     model = ActionItem
+    form = ActionItemForm
     fk_name = "meeting"
     extra = 0
     readonly_fields = ["carried_to", "carried_from"]  # set by carrying over; editing them by hand breaks the pairs
@@ -38,6 +57,7 @@ class MeetingFileInline(admin.TabularInline):
 class MeetingAdmin(SimpleHistoryAdmin):
     list_display = ["date", "title", "group", "created_by"]
     list_filter = ["group"]
+    form = MeetingForm
     inlines = [AgendaItemInline, ActionItemInline, MeetingFileInline]
 
     def has_delete_permission(self, request, obj=None):  # also asked per meeting by the bulk "delete selected"

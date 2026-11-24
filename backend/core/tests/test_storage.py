@@ -27,3 +27,14 @@ def test_a_file_already_there_is_left_alone(tmp_path):
     with pytest.raises(OSError):
         storage.save("x.pdf", Broken(b""))  # Django writes under another name; that one fails
     assert (tmp_path / "x.pdf").read_bytes() == b"someone else's"
+
+
+def test_a_name_taken_while_writing_keeps_that_file(tmp_path):
+    """Two writes given one name: the first lands, the second moves to a new name and fails there. The first file
+    stays, and the half-written second one goes."""
+    storage = CleanFileSystemStorage(location=tmp_path)
+    storage.save("x.pdf", ContentFile(b"the first write"))
+    with pytest.raises(OSError):
+        storage._save("x.pdf", Broken(b""))  # as if it had checked the name before the first write landed
+    assert (tmp_path / "x.pdf").read_bytes() == b"the first write"
+    assert [p.name for p in tmp_path.iterdir()] == ["x.pdf"]

@@ -65,6 +65,9 @@ def test_returned_and_missing_invoice_filters(api, student_a, manager, fund):
     PurchaseRequest.objects.create(owner=student_a, fund=fund, purpose="没交过的草稿")
     client = api(student_a)
     assert [p["purpose"] for p in client.get("/api/purchases/", {"mine": "1", "returned": "1"}).data["results"]] == ["退回的"]
+    # 采购草稿 counts the drafts never sent back; its "全部" asks for the same
+    assert [p["purpose"] for p in client.get("/api/purchases/", {"status": "draft", "returned": "0"}).data["results"]] == ["没交过的草稿"]
+    assert client.get("/api/purchases/", {"returned": "x"}).data["count"] == 0
     missing, _ = bill(student_a, fund, invoice=False), bill(student_a, fund)
     rows = client.get("/api/reimbursements/", {"status": "pending", "no_invoice": "1"}).data["results"]
     assert [r["id"] for r in rows] == [missing.pk]

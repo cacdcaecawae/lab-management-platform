@@ -171,8 +171,8 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             purchases = purchases.filter(owner=user)
         if params.get("todo") == "1":
             purchases = awaiting_review(purchases, user)
-        if params.get("returned") == "1":  # sent back by a reviewer, not handed in again yet
-            purchases = purchases.filter(returned=True)
+        if returned := params.get("returned"):  # 1: sent back, not handed in again yet; 0: not (as 采购草稿 counts)
+            purchases = purchases.filter(returned=returned == "1") if returned in ("0", "1") else purchases.none()
         # the total is not stored (PurchaseRequest.total); a subquery, so that joins from the search cannot multiply it
         line_totals = PurchaseItem.objects.filter(request=OuterRef("pk")).values("request")
         purchases = purchases.annotate(

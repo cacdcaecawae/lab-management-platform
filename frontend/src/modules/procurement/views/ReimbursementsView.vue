@@ -37,7 +37,7 @@ const route = inject(routeLocationKey, undefined)
 const routeQuery = route?.query ?? {}
 const filters = reactive({
   search: '', status: String(routeQuery.status ?? '') in REIMBURSEMENT_STATUS ? String(routeQuery.status) : '', category: '', month: '',
-  from: '', to: '', fund: '' as number | '', owner: '' as number | '',
+  from: '', to: '', fund: '' as number | '', owner: (Number(routeQuery.owner) || '') as number | '',
   no_invoice: (routeQuery.no_invoice === '1' ? 1 : '') as 1 | '',
 })
 const keyword = useLiveSearch(filters)

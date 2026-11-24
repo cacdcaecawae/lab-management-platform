@@ -92,11 +92,11 @@ const kinds = computed<Kind[]>(() => {
       rows: (my.draft_runs ?? []).map((x) => ({ key: x.id, to: { name: 'run-edit', params: { id: x.id } }, code: x.code, text: x.title, status: 'draft' })),
     },
     {
-      type: '采购草稿', count: my.draft_purchases?.length ?? 0, to: { name: 'purchases', query: { status: 'draft', mine: '1' } },
+      type: '采购草稿', count: my.draft_purchases?.length ?? 0, to: { name: 'purchases', query: { status: 'draft', mine: '1', returned: '0' } },
       rows: (my.draft_purchases ?? []).map((p) => ({ key: p.id, to: { name: 'purchase-detail', params: { id: p.id } }, code: p.code, text: p.purpose, hint: '去提交' })),
     },
     {
-      type: '报销缺发票', count: my.reimbursements_without_invoice?.length ?? 0, to: { name: 'reimbursements', query: { status: 'pending', no_invoice: '1' } },
+      type: '报销缺发票', count: my.reimbursements_without_invoice?.length ?? 0, to: { name: 'reimbursements', query: { status: 'pending', no_invoice: '1', owner: me } },
       rows: (my.reimbursements_without_invoice ?? []).map((r) => ({
         key: r.id, to: { name: 'reimbursements', query: { item: r.id } }, code: r.code, text: r.description || `¥ ${formatMoney(r.amount)}`, hint: '上传发票',
       })),

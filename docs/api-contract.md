@@ -420,7 +420,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/purchases/?status=&mine=1&todo=1&returned=1&search=&fund=&owner=` | 个人数据范围 | 本人 + 本组管理员、终审人；`todo=1` 只列等当前用户审批的（管理员：待初审；终审人：待终审；都不含自己的）；`returned=1` 只列被退回、还没重新提交的；`search` 匹配用途、品名、申请人或编号；可排序：`submitted_at`、`total_amount`（合计） |
+| GET | `/api/purchases/?status=&mine=1&todo=1&returned=1&search=&fund=&owner=` | 个人数据范围 | 本人 + 本组管理员、终审人；`todo=1` 只列等当前用户审批的（管理员：待初审；终审人：待终审；都不含自己的）；`returned=1` 只列被退回、还没重新提交的，`returned=0` 只列没被退回的（工作台"采购草稿"的全部）；`search` 匹配用途、品名、申请人或编号；可排序：`submitted_at`、`total_amount`（合计） |
 | POST | `/api/purchases/` | 本组全员 | `{purpose, fund_id?, items?: [{name, spec?, quantity, unit_price, link?}]}` → 201 `PurchaseDetail`（草稿）。`fund_id` 只能选本组可用的经费 |
 | GET | `/api/purchases/export/?<同列表>` | 个人数据范围 | 与列表同样的范围、筛选、搜索和排序的 `.xlsx`（编号、申请人、经费号、经费名称、用途、明细、合计、状态、提交时间） |
 | GET | `/api/purchases/{id}/` | 个人数据范围 | `PurchaseDetail` |
@@ -503,7 +503,7 @@
 | GET | `/api/meetings/?search=&before=` | 本组全员 | 分页，日期新的在前；`search` 匹配标题、纪要、议程的汇报内容和汇报人姓名；`before=YYYY-MM-DD` 只列这一天及以前的（新建组会带入事项时取它之前的最后一场），格式不对 400 |
 | POST | `/api/meetings/` | 导师或管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；新的那条记住它从哪条带入。不是本组的、已不存在、已完成或已转入别处的 → 409 `invalid_state`；同一条带入两次、或来源组会的日期晚于这场 → 400 |
 | GET | `/api/meetings/{id}/` | 本组全员 | |
-| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会、已有项带 `carried_from` → 400。删掉的是带入的那条时，原来那条恢复成未完成；删掉的那条已经转入后面的组会 → 409 `invalid_state` |
+| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会、已有项带 `carried_from` → 400；改 `date` 后早于带入来源的组会、或晚于转入去的组会 → 400。删掉的是带入的那条时，原来那条恢复成未完成；删掉的那条已经转入后面的组会 → 409 `invalid_state` |
 | DELETE | `/api/meetings/{id}/` | 管理员 | 连同附件文件一起删；带入这场的事项，原来那条恢复成未完成；有事项已转入后面的组会 → 409 `invalid_state` |
 | POST | `/api/meetings/{id}/files/` | 议程里的汇报人、导师或管理员 | `multipart/form-data`：`file` → 201 `MeetingFile`；任意类型，单个不超过上传上限 |
 | GET | `/api/meeting-files/{id}/file/` | 本组全员 | 下载 |

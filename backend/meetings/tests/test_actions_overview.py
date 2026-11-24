@@ -158,3 +158,42 @@ def test_the_admin_does_not_delete_carried_items(group, manager, ops, student_a)
     assert bulk.status_code == 403 and Meeting.objects.filter(pk__in=[a.pk, b.pk]).count() == 2
     assert "actions-0-DELETE" in client.get(f"/admin/meetings/meeting/{plain.pk}/change/").content.decode()
     assert client.post(f"/admin/meetings/meeting/{plain.pk}/delete/", {"post": "yes"}).status_code == 302
+
+
+def test_dates_keep_a_carry_over_in_order(api, group, manager, student_a, ops):
+    """A carry-over goes from an earlier meeting to a later one; editing a date (site or admin) cannot turn it round,
+    and the admin cannot reopen an item whose copy carries on."""
+    from django.test import Client
+
+    a, b = meeting(group, manager, 9), meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    copy = ActionItem.objects.create(meeting=b, owner=student_a, content="补实验", carried_from=item)
+    client = api(manager)
+    moved_back = client.patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-02"}, format="json")
+    assert moved_back.status_code == 400 and "2026-11-09" in str(moved_back.data)
+    moved_on = client.patch(f"/api/meetings/{a.pk}/", {"date": "2026-11-20"}, format="json")
+    assert moved_on.status_code == 400 and "2026-11-16" in str(moved_on.data)
+    assert client.patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-09"}, format="json").status_code == 200  # same day: fine
+
+    admin = Client()
+    admin.force_login(ops)
+    form = {
+        "date": "2026-11-09", "title": "组会", "minutes": "", "group": group.pk, "created_by": manager.pk,
+        "agenda-TOTAL_FORMS": "0", "agenda-INITIAL_FORMS": "0",
+        "files-TOTAL_FORMS": "0", "files-INITIAL_FORMS": "0",
+        "actions-TOTAL_FORMS": "1", "actions-INITIAL_FORMS": "1",
+        "actions-0-id": item.pk, "actions-0-meeting": a.pk, "actions-0-owner": student_a.pk, "actions-0-content": "补实验",
+        "actions-0-due_date": "", "actions-0-done_at_0": "", "actions-0-done_at_1": "",
+    }
+    reopened = admin.post(f"/admin/meetings/meeting/{a.pk}/change/", form)
+    assert reopened.status_code == 200 and "完成状态在那边改" in reopened.content.decode()  # the form again, with the error
+    item.refresh_from_db()
+    assert item.done_at is not None
+    assert ActionItem.objects.filter(done_at__isnull=True).count() == 1  # only the copy is open
+    form_b = {**form, "date": "2026-11-02", "actions-TOTAL_FORMS": "0", "actions-INITIAL_FORMS": "0"}
+    for key in [k for k in form_b if k.startswith("actions-0-")]:
+        del form_b[key]
+    later_first = admin.post(f"/admin/meetings/meeting/{b.pk}/change/", form_b)
+    assert later_first.status_code == 200 and "日期不能早于那天" in later_first.content.decode()
+    b.refresh_from_db()
+    assert b.date.isoformat() == "2026-11-09" and copy.carried_from_id == item.pk
