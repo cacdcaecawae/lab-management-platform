@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from accounts.models import ResearchGroup
 from core.files import stored_name
 
 
@@ -82,6 +83,11 @@ class MeetingFile(models.Model):
 
     def __str__(self):
         return self.name
+
+
+def lock_meeting_group(group_id):
+    """Order meeting edits and carry-overs before reading either end's date. Held until the write commits."""
+    ResearchGroup.objects.select_for_update(no_key=True).values_list("pk", flat=True).get(pk=group_id)
 
 
 def carry_order_error(meeting, date):

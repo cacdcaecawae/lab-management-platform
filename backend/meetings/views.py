@@ -15,7 +15,7 @@ from core.history import serialize_history
 from core.params import day_param, plain_int
 from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, is_supervisor, scope_group
 
-from .models import ActionItem, AgendaItem, Meeting, MeetingFile
+from .models import ActionItem, AgendaItem, Meeting, MeetingFile, lock_meeting_group
 from .serializers import ActionItemSerializer, MeetingFileSerializer, MeetingSerializer, MyActionItemSerializer
 
 
@@ -46,11 +46,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
             meetings = meetings.filter(date__lte=before)
         return meetings
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        lock_meeting_group(self.request.user.group_id)
         serializer.save(group=self.request.user.group, created_by=self.request.user)
+
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+        lock_meeting_group(request.user.group_id)
+        return super().partial_update(request, *args, **kwargs)
 
     def perform_destroy(self, meeting):
         with transaction.atomic():
+            lock_meeting_group(self.request.user.group_id)
             # Locked, then the files read afresh (not the list fetched with the page): an upload just before is included.
             meeting = get_object_or_404(Meeting.objects.select_for_update(), pk=meeting.pk)
             # Its items locked too: one carried on into a later meeting would be lost with it while its original

@@ -1,9 +1,10 @@
 from django import forms
 from django.contrib import admin
+from django.db import transaction
 from django.db.models import Q
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import ActionItem, AgendaItem, Meeting, MeetingFile, carry_order_error
+from .models import ActionItem, AgendaItem, Meeting, MeetingFile, carry_order_error, lock_meeting_group
 
 
 class AgendaItemInline(admin.TabularInline):
@@ -19,19 +20,23 @@ def holds_carried(meeting):
 
 
 class ActionItemForm(forms.ModelForm):
-    def clean(self):
-        cleaned = super().clean()
-        # reopened here while its copy carries on in the later meeting, it would be one item open twice
-        if self.instance.carried_to_id and "done_at" in self.changed_data:
-            raise forms.ValidationError(f"已转入 {self.instance.carried_to.date} 的组会，完成状态在那边改")
-        return cleaned
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.carried_to_id:
+            self.fields["done_at"].disabled = True
+
+    def clean_done_at(self):
+        # The admin widget displays minutes; keep the original timestamp when another field is saved.
+        return self.instance.done_at if self.instance.carried_to_id else self.cleaned_data["done_at"]
 
 
 class MeetingForm(forms.ModelForm):
     def clean_date(self):
         date = self.cleaned_data["date"]
-        if self.instance.pk and (error := carry_order_error(self.instance, date)):
-            raise forms.ValidationError(error)
+        if self.instance.pk:
+            lock_meeting_group(self.instance.group_id)
+            if error := carry_order_error(self.instance, date):
+                raise forms.ValidationError(error)
         return date
 
 
@@ -59,6 +64,11 @@ class MeetingAdmin(SimpleHistoryAdmin):
     list_filter = ["group"]
     form = MeetingForm
     inlines = [AgendaItemInline, ActionItemInline, MeetingFileInline]
+
+    @transaction.atomic
+    def history_form_view(self, *args, **kwargs):
+        # Django wraps the normal change form in a transaction; SimpleHistoryAdmin's revert form needs one too.
+        return super().history_form_view(*args, **kwargs)
 
     def has_delete_permission(self, request, obj=None):  # also asked per meeting by the bulk "delete selected"
         return super().has_delete_permission(request, obj) and not (obj and holds_carried(obj))

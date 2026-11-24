@@ -1,7 +1,10 @@
 """Issue #48 N4: action items across meetings, advisors running meetings, carrying open items into a new meeting."""
 import datetime
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
+from django.db import connection, connections, transaction
 from django.utils import timezone
 
 from core.models import Notification
@@ -185,10 +188,16 @@ def test_dates_keep_a_carry_over_in_order(api, group, manager, student_a, ops):
         "actions-0-id": item.pk, "actions-0-meeting": a.pk, "actions-0-owner": student_a.pk, "actions-0-content": "补实验",
         "actions-0-due_date": "", "actions-0-done_at_0": "", "actions-0-done_at_1": "",
     }
-    reopened = admin.post(f"/admin/meetings/meeting/{a.pk}/change/", form)
-    assert reopened.status_code == 200 and "完成状态在那边改" in reopened.content.decode()  # the form again, with the error
+    original_time = item.done_at
+    url = f"/admin/meetings/meeting/{a.pk}/change/"
+    inline = admin.get(url).context["inline_admin_formsets"][1].formset.forms[0]
+    assert inline.fields["done_at"].disabled
+    # The disabled field is absent in a real POST. Even a supplied blank must leave the full timestamp alone.
+    form.update(title="新标题", **{"actions-0-content": "更新说明"})
+    assert admin.post(url, form).status_code == 302
+    a.refresh_from_db()
     item.refresh_from_db()
-    assert item.done_at is not None
+    assert a.title == "新标题" and item.content == "更新说明" and item.done_at == original_time
     assert ActionItem.objects.filter(done_at__isnull=True).count() == 1  # only the copy is open
     form_b = {**form, "date": "2026-11-02", "actions-TOTAL_FORMS": "0", "actions-INITIAL_FORMS": "0"}
     for key in [k for k in form_b if k.startswith("actions-0-")]:
@@ -197,3 +206,44 @@ def test_dates_keep_a_carry_over_in_order(api, group, manager, student_a, ops):
     assert later_first.status_code == 200 and "日期不能早于那天" in later_first.content.decode()
     b.refresh_from_db()
     assert b.date.isoformat() == "2026-11-09" and copy.carried_from_id == item.pk
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("via_admin", [False, True], ids=["website", "admin"])
+def test_two_editors_cannot_reverse_a_carry(api, group, manager, advisor, ops, student_a, via_admin):
+    a, b = meeting(group, manager, 9), meeting(group, manager, 16)
+    source = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    copy = ActionItem.objects.create(meeting=b, owner=student_a, content=source.content, carried_from=source)
+    writing = Event()
+
+    def move_destination():
+        # Let the first transaction commit once this request reaches its lock (or, on the old code, its write).
+        def observe(execute, sql, params, many, context):
+            if "FOR NO KEY UPDATE" in sql or sql.startswith('UPDATE "meetings_meeting"'):
+                writing.set()
+            return execute(sql, params, many, context)
+
+        try:
+            with connection.execute_wrapper(observe):
+                if via_admin:
+                    return api(ops).post(f"/admin/meetings/meeting/{b.pk}/change/", {
+                        "date": "2026-11-12", "title": b.title, "group": group.pk, "created_by": manager.pk,
+                        "agenda-TOTAL_FORMS": 0, "agenda-INITIAL_FORMS": 0, "files-TOTAL_FORMS": 0, "files-INITIAL_FORMS": 0,
+                        "actions-TOTAL_FORMS": 1, "actions-INITIAL_FORMS": 1, "actions-0-id": copy.pk,
+                        "actions-0-owner": student_a.pk, "actions-0-content": copy.content,
+                    })
+                return api(advisor).patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-12"}, format="json")
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with transaction.atomic():
+            assert api(manager).patch(f"/api/meetings/{a.pk}/", {"date": "2026-11-14"}, format="json").status_code == 200
+            pending = pool.submit(move_destination)
+            assert writing.wait(10)
+        response = pending.result(timeout=10)
+        assert response.status_code == (200 if via_admin else 400)
+        assert "2026-11-14" in response.content.decode()
+    a.refresh_from_db()
+    b.refresh_from_db()
+    assert (a.date.day, b.date.day) == (14, 16)

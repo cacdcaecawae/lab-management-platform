@@ -57,23 +57,20 @@ def save_uploads(dataset, user, uploads, client_sha256):
     if client_sha256 and client_sha256 != hashes[0]:
         raise ValidationError({"sha256": ["校验值与服务器计算结果不一致，文件可能在传输中损坏"]})
 
-    storage = DataFile._meta.get_field("file").storage
     written = []
     try:
         with transaction.atomic():
             created = []
             for uploaded, name, digest in zip(uploads, names, hashes):
                 data_file = DataFile(dataset=dataset, name=name, size=uploaded.size, sha256=digest, uploaded_by=user)
-                planned = data_file.file.field.generate_filename(data_file, name)  # upload_to's server-generated path
-                written.append(planned)
-                data_file.file.name = storage.save(planned, uploaded, max_length=data_file.file.field.max_length)
-                written[-1] = data_file.file.name
+                data_file.file.save(name, uploaded, save=False)
+                written.append(data_file.file)
                 data_file.save()
                 created.append(data_file)
     except Exception as exc:
         # The rolled-back rows must not leave their files behind in storage.
-        for path in written:
-            storage.delete(path)
+        for file in written:
+            file.delete(save=False)
         if isinstance(exc, IntegrityError):  # a concurrent upload took the same name
             raise Conflict("已存在同名文件", code="file_exists") from exc
         raise

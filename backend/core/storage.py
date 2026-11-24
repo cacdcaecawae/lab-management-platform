@@ -1,33 +1,44 @@
-"""The site's file storage: Django's, except that a write failing halfway leaves nothing behind."""
-from contextvars import ContextVar
+"""Filesystem storage for immutable uploads on the server or its NAS mount."""
+import os
+from contextlib import suppress
 
+from django.core.files.move import file_move_safe
 from django.core.files.storage import FileSystemStorage
-
-# The names one _save tried: Django moves on to a new name when the one it was given is taken at the moment it writes.
-_tried = ContextVar("tried", default=None)
+from django.utils._os import safe_makedirs
 
 
 class CleanFileSystemStorage(FileSystemStorage):
-    """A file whose write fails halfway (disk full, an I/O error, a temp file that cannot be moved) is removed again:
-    no row will point at it, so nothing else would ever clean it up. Only the file this write made goes: the last name
-    it tried, which it created itself (O_EXCL) or never got. A name taken meanwhile holds someone else's file."""
-
-    def get_available_name(self, name, max_length=None):
-        name = super().get_available_name(name, max_length=max_length)
-        if (tried := _tried.get()) is not None:
-            tried.append(name)
-        return name
-
     def _save(self, name, content):
-        tried = [name]
-        token = _tried.set(tried)
-        try:
-            return super()._save(name, content)
-        except BaseException:
+        directory = os.path.dirname(self.path(name))
+        if self.directory_permissions_mode is None:
+            os.makedirs(directory, exist_ok=True)
+        else:
+            safe_makedirs(directory, self.directory_permissions_mode, exist_ok=True)
+
+        while True:
+            path = self.path(name)
             try:
-                self.delete(tried[-1])
-            except Exception:  # the write's own error is the one to report
-                pass
+                target = open(path, "xb")
+                break
+            except FileExistsError:
+                if self._allow_overwrite:
+                    return super()._save(name, content)
+                name = self.get_available_name(name)
+
+        # Only a successful exclusive open gives this write a file to clean up.
+        try:
+            with target:
+                if hasattr(content, "temporary_file_path"):
+                    target.close()
+                    file_move_safe(content.temporary_file_path(), path, allow_overwrite=True)
+                else:
+                    for chunk in content.chunks():
+                        target.write(chunk.encode() if isinstance(chunk, str) else chunk)
+            if self.file_permissions_mode is not None:
+                os.chmod(path, self.file_permissions_mode)
+            self._ensure_location_group_id(path)
+        except BaseException:
+            with suppress(Exception):  # preserve the write error if the disk or NAS is still unavailable
+                self.delete(name)
             raise
-        finally:
-            _tried.reset(token)
+        return name
