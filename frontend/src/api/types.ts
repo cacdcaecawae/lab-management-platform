@@ -125,9 +125,14 @@ export interface Project {
   status: ProjectStatus
   description: string
   latest_log: ProjectLog | null
+  // open tasks past their due date; not in the response to a create
+  overdue_tasks?: number
   created_at: string
   updated_at: string
 }
+
+// 项目文件 / 阶段资料: same shape as a meeting file; url is /api/project-files/{id}/file/
+export type ProjectFile = MeetingFile
 
 export interface ProjectWrite {
   name: string
@@ -321,8 +326,18 @@ export interface WeeklyReport extends WeeklyReportBrief {
   datasets: DatasetBrief[]
   runs: RunBrief[]
   feedback: Feedback[]
+  files: ReportFile[]
   created_at: string
   updated_at: string
+}
+
+// images and files of the week's work: same shape as a meeting file; url is /api/report-files/{id}/file/
+export type ReportFile = MeetingFile
+
+// GET /api/reports/week-records/: the user's own records created or submitted that week
+export interface WeekRecords {
+  experiments: ExperimentBrief[]
+  runs: RunBrief[]
 }
 
 export interface ReportWrite {
@@ -944,7 +959,10 @@ export interface MeetingFile {
 export interface Meeting {
   id: number
   date: string
+  time: string | null // HH:mm
+  location: string
   title: string
+  recorder: UserBrief | null
   minutes: string
   agenda: AgendaItem[]
   actions: ActionItem[]
@@ -956,7 +974,11 @@ export interface Meeting {
 
 export interface MeetingWrite {
   date: string
+  time: string | null
+  location: string
   title: string
+  // the recorder may change only minutes and actions
+  recorder_id: number | null
   minutes: string
   agenda: { presenter_id: number; topic: string }[]
   // an item with id is kept (and keeps its done state); items left out are removed

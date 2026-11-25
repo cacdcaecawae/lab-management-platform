@@ -85,13 +85,19 @@ class MeetingFileSerializer(serializers.ModelSerializer):
 
 class MeetingSerializer(serializers.ModelSerializer):
     created_by = UserBriefSerializer(read_only=True)
+    time = serializers.TimeField(format="%H:%M", required=False, allow_null=True)
+    recorder = UserBriefSerializer(read_only=True)
+    recorder_id = AnyGroupMemberField(source="recorder", write_only=True, required=False, allow_null=True)
     agenda = AgendaItemSerializer(many=True, required=False)
     actions = ActionItemSerializer(many=True, required=False)
     files = MeetingFileSerializer(many=True, read_only=True)
 
     class Meta:
         model = Meeting
-        fields = ["id", "date", "title", "minutes", "agenda", "actions", "files", "created_by", "created_at", "updated_at"]
+        fields = [
+            "id", "date", "time", "location", "title", "recorder", "recorder_id", "minutes", "agenda", "actions", "files",
+            "created_by", "created_at", "updated_at",
+        ]
 
     def validate_date(self, date):
         if self.instance and (error := carry_order_error(self.instance, date)):

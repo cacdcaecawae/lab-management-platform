@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit } from '@element-plus/icons-vue'
 import { projectsApi } from '@/modules/projects/api'
-import type { Project, ProjectLog } from '@/api/types'
+import type { Project, ProjectFile, ProjectLog } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime, toDateStr } from '@/utils/format'
 import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
@@ -12,6 +13,9 @@ import ProjectBoard from '@/modules/projects/components/ProjectBoard.vue'
 import ProjectAssets from '@/modules/projects/components/ProjectAssets.vue'
 import ProjectFormDialog from '@/modules/projects/components/ProjectFormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import AttachmentList from '@/components/AttachmentList.vue'
+import FormDialog from '@/components/FormDialog.vue'
+import IconButton from '@/components/IconButton.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -29,8 +33,10 @@ watch(boardTab, (tab) => {
   if (tab !== tabOf(route.query.tab)) void router.replace({ query: { ...route.query, tab: tab === 'progress' ? undefined : tab } })
 })
 const canEdit = computed(() => !!project.value && (auth.isSupervisor || project.value.leader.id === auth.user?.id))
-// progress logs: also the project's current members
+// progress logs and project files: also the project's current members
 const canLog = computed(() => canEdit.value || !!project.value?.members.some((m) => m.id === auth.user?.id))
+// a log is changed or deleted by whoever wrote it, the leader, advisors and managers
+const canChangeLog = (log: ProjectLog) => canEdit.value || log.author.id === auth.user?.id
 
 async function load() {
   try {
@@ -80,8 +86,58 @@ async function addLog() {
   }
 }
 
+const logEdit = reactive({ open: false, id: 0, date: '', content: '' })
+const logEditErrors = useFieldErrors(['date', 'content'])
+const savingLog = ref(false)
+
+function editLog(log: ProjectLog) {
+  Object.assign(logEdit, { open: true, id: log.id, date: log.date, content: log.content })
+  logEditErrors.clear()
+}
+
+async function saveLog() {
+  savingLog.value = true
+  try {
+    const saved = await projectsApi.updateLog(logEdit.id, { date: logEdit.date, content: logEdit.content })
+    logs.value = logs.value.map((l) => (l.id === saved.id ? saved : l))
+    logEdit.open = false
+    ElMessage.success('已保存')
+  } catch (e) {
+    logEditErrors.handle(e)
+  } finally {
+    savingLog.value = false
+  }
+}
+
+async function removeLog(log: ProjectLog) {
+  try {
+    await ElMessageBox.confirm(`删除 ${log.date} 的这条进展？删除后无法恢复。`, '删除进展', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  } catch {
+    return
+  }
+  try {
+    await projectsApi.removeLog(log.id)
+    logs.value = logs.value.filter((l) => l.id !== log.id)
+    ElMessage.success('已删除')
+  } catch (e) {
+    showError(e)
+  }
+}
+
+// ---- project files (开题、中期、结题报告等) ----
+const files = ref<ProjectFile[]>([])
+async function loadFiles() {
+  try {
+    files.value = await projectsApi.files(id)
+  } catch (e) {
+    showError(e)
+  }
+}
+const canDeleteFile = (f: ProjectFile) => canEdit.value || f.uploaded_by.id === auth.user?.id
+
 load()
 loadLogs(true)
+loadFiles()
 </script>
 
 <template>
@@ -109,6 +165,19 @@ loadLogs(true)
       </el-descriptions>
     </el-card>
 
+    <el-card class="card" header="项目文件">
+      <AttachmentList
+        :attachments="files"
+        :with-kinds="false"
+        accept=""
+        hint="开题、中期、结题报告等阶段资料，任意类型，单个不超过 2 GB"
+        :upload="canLog ? (file, _kind, onProgress) => projectsApi.upload(project!.id, file, onProgress) : undefined"
+        :can-delete="canDeleteFile"
+        :remove="projectsApi.removeFile"
+        @changed="loadFiles"
+      />
+    </el-card>
+
     <el-card class="card">
       <el-tabs v-model="boardTab">
         <el-tab-pane label="进展" name="progress" />
@@ -133,7 +202,13 @@ loadLogs(true)
         <el-timeline>
           <el-timeline-item v-for="log in logs" :key="log.id" :timestamp="log.date" placement="top">
             <pre class="pre">{{ log.content }}</pre>
-            <div class="meta">{{ log.author.name }} · {{ formatTime(log.created_at) }}</div>
+            <div class="meta actions">
+              <span>{{ log.author.name }} · {{ formatTime(log.created_at) }}</span>
+              <template v-if="canChangeLog(log)">
+                <IconButton :icon="Edit" label="编辑进展" @click="editLog(log)" />
+                <el-button link type="danger" @click="removeLog(log)">删除</el-button>
+              </template>
+            </div>
           </el-timeline-item>
         </el-timeline>
         <el-button v-if="hasMore" link type="primary" @click="more">加载更多</el-button>
@@ -141,6 +216,15 @@ loadLogs(true)
     </el-card>
 
     <ProjectFormDialog v-model="editing" :project="project" @saved="(p) => (project = p)" />
+    <FormDialog v-model="logEdit.open" title="编辑进展" size="sm" :loading="savingLog" @submit="saveLog">
+      <el-form-item label="日期" :error="logEditErrors.fe('date')" required>
+        <el-date-picker v-model="logEdit.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+      </el-form-item>
+      <el-form-item label="进展内容" :error="logEditErrors.fe('content')" required>
+        <el-input v-model="logEdit.content" type="textarea" :autosize="{ minRows: 3 }" />
+      </el-form-item>
+      <el-alert v-for="msg in logEditErrors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
+    </FormDialog>
   </template>
 </template>
 

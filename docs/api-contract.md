@@ -169,18 +169,24 @@
 
 ## 项目 `/api/projects/`（Agent A）
 
-`Project = {id, name, leader: UserBrief, members: [UserBrief], stage, status, description, latest_log: ProjectLog | null, created_at, updated_at}`
-`status`: `active` | `closed`
+`Project = {id, name, leader: UserBrief, members: [UserBrief], stage, status, description, latest_log: ProjectLog | null, overdue_tasks, created_at, updated_at}`
+`status`: `active` | `closed`；`overdue_tasks`：未完成、截止日期早于今天的任务数（与工作台同一口径；新建的响应里没有）
 `ProjectLog = {id, date, content, author: UserBrief, created_at}`
+`ProjectFile = {id, name, size, uploaded_by: UserBrief, url, created_at}`；`url` 为 `/api/project-files/{id}/file/`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/projects/?status=&search=&mine=1` | 本组全员 | `mine=1` 只看自己是负责人或成员的项目 |
+| GET | `/api/projects/?status=&search=&mine=1&leader=&overdue=1` | 本组全员 | `mine=1` 只看自己是负责人或成员的项目；`leader` 负责人编号（不是数字时为空列表）；`overdue=1` 只看有逾期任务的项目 |
 | POST | `/api/projects/` | 管理员/导师 | `{name, leader_id, member_ids, stage, status, description}`；负责人和成员必须是本组在籍成员；负责人自动计入成员；同组项目名唯一（409 `conflict`） |
 | GET | `/api/projects/{id}/` | 本组全员 | |
 | PATCH | `/api/projects/{id}/` | 管理员/导师/项目负责人 | 同 POST 字段；**只有管理员/导师能改 `leader_id`**，负责人提交 `leader_id` 变更 → 403 |
 | GET | `/api/projects/{id}/logs/` | 本组全员 | 分页，按日期倒序 |
 | POST | `/api/projects/{id}/logs/` | 管理员/导师/项目负责人/项目成员 | `{date, content}`，`author` 为当前用户；不在项目里的学生 403 |
+| PATCH / DELETE | `/api/project-logs/{id}/` | 记录人/项目负责人/管理员/导师 | `{date?, content?}`；其他人 403，外组 404 |
+| GET | `/api/projects/{id}/files/` | 本组全员 | 项目文件 / 阶段资料 `[ProjectFile]`，上传早的在前 |
+| POST | `/api/projects/{id}/files/` | 管理员/导师/项目负责人/项目成员 | `multipart/form-data`：`file` → 201 `ProjectFile`；任意类型，单个不超过上传上限；不在项目里的学生 403 |
+| GET | `/api/project-files/{id}/file/` | 本组全员 | 下载（PDF、图片在页面里打开） |
+| DELETE | `/api/project-files/{id}/` | 上传人/项目负责人/管理员/导师 | 连同存储里的文件 |
 
 不提供删除（结束用 `status=closed`）。
 
@@ -270,7 +276,8 @@
 
 ## 周报 `/api/reports/`（Agent D）
 
-`WeeklyReport = {id, owner: UserBrief, week_start, goals, done, findings, next_plan, experiments: [ExperimentBrief], datasets: [DatasetBrief], runs: [RunBrief], status, submitted_at, feedback: [Feedback], created_at, updated_at}`
+`WeeklyReport = {id, owner: UserBrief, week_start, goals, done, findings, next_plan, experiments: [ExperimentBrief], datasets: [DatasetBrief], runs: [RunBrief], status, submitted_at, feedback: [Feedback], files: [ReportFile], created_at, updated_at}`
+`ReportFile = {id, name, size, uploaded_by: UserBrief, url, created_at}`；`url` 为 `/api/report-files/{id}/file/`
 `WeeklyReportBrief = {id, owner: UserBrief, week_start, status, submitted_at}`
 `ExperimentBrief = {id, code, title, status}`；`RunBrief = {id, code, title, status}`
 `Feedback = {id, author: UserBrief, verdict, content, created_at}`
@@ -282,8 +289,13 @@
 | POST | `/api/reports/` | 登录成员 | `{week_start, goals, done, findings, next_plan, experiment_ids, dataset_ids, run_ids}`；`week_start` 必须是周一（400）；同人同周重复 → 409 `conflict` |
 | GET | `/api/reports/{id}/` | 个人数据范围 | |
 | PATCH | `/api/reports/{id}/` | 本人，状态为 `draft` 或 `needs_revision` | 否则 409 `invalid_state` |
-| DELETE | `/api/reports/{id}/` | 本人，仅 `draft` | |
+| DELETE | `/api/reports/{id}/` | 本人，仅 `draft` | 连同附件文件 |
 | POST | `/api/reports/{id}/submit/` | 本人 | `draft`/`needs_revision` → `submitted` |
+| POST | `/api/reports/{id}/withdraw/` | 本人，仅 `submitted`（导师还没批阅） | 回到提交前：第一次提交的回到 `draft`（清空 `submitted_at`），被要求补充后再交的回到 `needs_revision`（反馈保留）；清空固定的数据版本，下次提交重新固定；其他状态 409 `invalid_state` |
+| POST | `/api/reports/{id}/files/` | 本人，`draft`/`needs_revision` | `multipart/form-data`：`file` → 201 `ReportFile`；任意类型；其他状态 409 `invalid_state` |
+| GET | `/api/report-files/{id}/file/` | 个人数据范围 | 下载（PDF、图片在页面里打开） |
+| DELETE | `/api/report-files/{id}/` | 本人，`draft`/`needs_revision` | 其他状态 409 `invalid_state` |
+| GET | `/api/reports/week-records/?week_start=` | 登录成员 | 本人在这一周（周一到周日，北京时间）新建或提交的实验与处理记录 → `{experiments: [ExperimentBrief], runs: [RunBrief]}`；`week_start` 缺省本周一，不是周一 400 |
 | POST | `/api/reports/{id}/feedback/` | 本组管理员/导师，且不是周报本人 | `{verdict, content}`；仅 `submitted` 状态可反馈；`needs_revision` 时 `content` 必填；状态随 `verdict` 变化；返回 `WeeklyReport` |
 | GET | `/api/reports/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
 | GET | `/api/reports/missing/?week_start=` | 本组导师 | 本组在籍学生中该周没有 `submitted`/`reviewed`/`needs_revision` 周报的人 → `[UserBrief]`；`week_start` 缺省为本周一 |
@@ -291,7 +303,7 @@
 | GET | `/api/reports/digest/export/?week_start=` | 本组导师 | 导出指定周本组汇总 Markdown（`weekly-digest-<week_start>.md`，UTF-8，不含草稿） |
 | POST | `/api/reports/remind-missing/` | 本组导师 | `{week_start?}`（缺省本周一）：给该周的未交名单里每人发站内通知"请提交 <周一> 这一周的周报"，平台启用邮件时再发一封密送给有邮箱的人；同一人、同一周一天只提醒一次 → `{reminded, already}` |
 
-校验：关联的实验、数据集、处理记录必须属于周报所有者本人。状态变化与反馈写入在同一事务中。
+校验：关联的实验、数据集、处理记录必须属于周报所有者本人。状态变化与反馈写入在同一事务中。页面上不再选数据集，`dataset_ids` 仍然接受，旧周报的关联原样保留。
 
 ---
 
@@ -496,20 +508,20 @@
 
 `AgendaItem = {id, presenter: UserBrief, topic}`；`ActionItem = {id, owner: UserBrief, content, due_date, done_at, carried_to: {id, date} | null}`（`due_date` 可空；`carried_to`：新组会带入了这一条，它算完成）；`MyActionItem = ActionItem + {meeting: {id, date, title}}`
 `MeetingFile = {id, name, size, uploaded_by: UserBrief, url, created_at}`；`url` 为 `/api/meeting-files/{id}/file/`
-`Meeting = {id, date, title, minutes, agenda: [AgendaItem], actions: [ActionItem], files: [MeetingFile], created_by: UserBrief, created_at, updated_at}`
+`Meeting = {id, date, time, location, title, recorder: UserBrief | null, minutes, agenda: [AgendaItem], actions: [ActionItem], files: [MeetingFile], created_by: UserBrief, created_at, updated_at}`；`time` 为 `HH:MM` 或 `null`，`location` 是地点或会议号
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/meetings/?search=&before=` | 本组全员 | 分页，日期新的在前；`search` 匹配标题、纪要、议程的汇报内容和汇报人姓名；`before=YYYY-MM-DD` 只列这一天及以前的（新建组会带入事项时取它之前的最后一场），格式不对 400 |
-| POST | `/api/meetings/` | 导师或管理员 | `{date, title?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；新的那条记住它从哪条带入。不是本组的、已不存在、已完成或已转入别处的 → 409 `invalid_state`；同一条带入两次、或来源组会的日期晚于这场 → 400 |
+| POST | `/api/meetings/` | 导师或管理员 | `{date, time?, location?, title?, recorder_id?, minutes?, agenda?: [{presenter_id, topic}], actions?: [{owner_id, content, due_date?, carried_from?}]}` → 201；`recorder_id` 是本组成员（含已离组的，不含待审核）；`carried_from` 是更早组会里一条未完成的行动项（本组），保存后它记为完成、`carried_to` 指向这场，负责人不再收到"新的行动项"通知；新的那条记住它从哪条带入。不是本组的、已不存在、已完成或已转入别处的 → 409 `invalid_state`；同一条带入两次、或来源组会的日期晚于这场 → 400 |
 | GET | `/api/meetings/{id}/` | 本组全员 | |
-| PATCH | `/api/meetings/{id}/` | 导师或管理员 | `agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会、已有项带 `carried_from` → 400；改 `date` 后早于带入来源的组会、或晚于转入去的组会 → 400。删掉的是带入的那条时，原来那条恢复成未完成；删掉的那条已经转入后面的组会 → 409 `invalid_state` |
+| PATCH | `/api/meetings/{id}/` | 导师或管理员；本场记录人只能改 `minutes`、`actions` | 记录人带了别的字段 403；`agenda` 整体替换；`actions` 按 `id` 更新已有项、没有 `id` 的新增、没列出的删除，已有项的 `done_at` 保留；`id` 不属于这次组会、已有项带 `carried_from` → 400；改 `date` 后早于带入来源的组会、或晚于转入去的组会 → 400。删掉的是带入的那条时，原来那条恢复成未完成；删掉的那条已经转入后面的组会 → 409 `invalid_state` |
 | DELETE | `/api/meetings/{id}/` | 管理员 | 连同附件文件一起删；带入这场的事项，原来那条恢复成未完成；有事项已转入后面的组会 → 409 `invalid_state` |
 | POST | `/api/meetings/{id}/files/` | 议程里的汇报人、导师或管理员 | `multipart/form-data`：`file` → 201 `MeetingFile`；任意类型，单个不超过上传上限 |
 | GET | `/api/meeting-files/{id}/file/` | 本组全员 | 下载 |
 | DELETE | `/api/meeting-files/{id}/` | 上传人、导师或管理员 | |
 | GET | `/api/action-items/?open=1&overdue=1&owner=` | 本组全员 | 本组所有组会的行动项 `MyActionItem`，分页；`open=1` 未完成、`open=0` 已完成（含已转入新组会的）；`overdue=1` 未完成且截止日期已过；按截止日期（没有的在后）、组会日期倒序 |
-| POST | `/api/action-items/{id}/done/` | 负责人或管理员 | `{done}` → `ActionItem`；`done=true` 记下完成时间，`false` 清空 |
+| POST | `/api/action-items/{id}/done/` | 负责人、导师或管理员 | `{done}` → `ActionItem`；`done=true` 记下完成时间，`false` 清空 |
 | GET | `/api/meetings/{id}/history/` | 本组全员 | |
 
 ### 成果 `/api/achievements/`

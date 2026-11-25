@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from core.files import stored_name
+
 
 class WeeklyReport(models.Model):
     """周报：每人每周一份（week_start 为周一）。个人数据：本人 + 本组导师可见。
@@ -41,6 +43,28 @@ class WeeklyReport(models.Model):
 
     def cited_datasets(self):
         return list(self.datasets.all())
+
+
+def report_file_upload_to(instance, filename):
+    return stored_name("reports", filename)
+
+
+class ReportFile(models.Model):
+    """周报的附图、附件。可见范围同周报；本人在周报可编辑（草稿、需补充）时上传、删除。"""
+
+    report = models.ForeignKey(WeeklyReport, verbose_name="周报", on_delete=models.CASCADE, related_name="files")
+    file = models.FileField("文件", upload_to=report_file_upload_to, max_length=300)
+    name = models.CharField("文件名", max_length=255)
+    size = models.PositiveBigIntegerField("大小")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="上传人", on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "周报附件"
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return self.name
 
 
 class ReportFeedback(models.Model):

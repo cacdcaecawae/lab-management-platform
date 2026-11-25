@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from core.files import stored_name
+
 
 class Project(models.Model):
     """研究项目（课题）。组内公开：同组成员都能看到。经费项目是另一个概念，在第三期单独建表。"""
@@ -40,6 +42,28 @@ class ProjectLog(models.Model):
     class Meta:
         verbose_name = verbose_name_plural = "项目进展"
         ordering = ["-date", "-id"]
+
+
+def project_file_upload_to(instance, filename):
+    return stored_name("projects", filename)
+
+
+class ProjectFile(models.Model):
+    """项目文件 / 阶段资料（开题、中期、结题报告等）。组内公开；项目成员上传。"""
+
+    project = models.ForeignKey(Project, verbose_name="项目", on_delete=models.CASCADE, related_name="files")
+    file = models.FileField("文件", upload_to=project_file_upload_to, max_length=300)
+    name = models.CharField("文件名", max_length=255)
+    size = models.PositiveBigIntegerField("大小")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="上传人", on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "项目文件"
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return self.name
 
 
 class Milestone(models.Model):

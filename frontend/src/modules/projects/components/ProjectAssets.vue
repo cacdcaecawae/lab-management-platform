@@ -2,8 +2,7 @@
 import { reactive } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import type { Page } from '@/api/client'
-import { experimentsApi } from '@/modules/research/api'
-import { datasetsApi } from '@/modules/datasets/api'
+import { experimentsApi, runsApi } from '@/modules/research/api'
 import { bookingsApi } from '@/modules/equipment/api'
 import { specimensApi } from '@/modules/specimens/api'
 import { consumablesApi } from '@/modules/inventory/api'
@@ -11,7 +10,8 @@ import { TXN_KIND_LABELS, formatPeriod, formatTime } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
 
 // The project's 资产: the latest 10 of each kind of record that names this project, each from its own module's list
-// (the same scopes: a student sees their own experiments and datasets). Each block loads and fails on its own.
+// (the same scopes as there). Each block loads and fails on its own.
+// shortcut: no 成果归档 block until achievements can name a project (#58 P6-3); then list them here by ?project=.
 const props = defineProps<{ projectId: number }>()
 
 interface Line { key: number; to?: RouteLocationRaw; code?: string; text: string; hint?: string }
@@ -29,12 +29,12 @@ function block<T>(title: string, fetch: () => Promise<Page<T>>, line: (row: T) =
 }
 
 const blocks = [
-  block('实验记录', () => experimentsApi.list(q), (x) => ({
+  block('实验与原始数据', () => experimentsApi.list(q), (x) => ({
     key: x.id, to: { name: 'experiment-edit', params: { id: x.id } }, code: x.code, text: x.title, hint: `${x.owner.name} · ${x.date}`,
   }), { name: 'experiments', query: { project: props.projectId } }),
-  block('数据集', () => datasetsApi.list(q), (d) => ({
-    key: d.id, to: { name: 'dataset-detail', params: { id: d.id } }, code: d.code, text: d.name, hint: d.owner.name,
-  }), { name: 'datasets', query: { project: props.projectId } }),
+  block('数据处理', () => runsApi.list(q), (r) => ({
+    key: r.id, to: { name: 'run-edit', params: { id: r.id } }, code: r.code, text: r.title, hint: r.owner.name,
+  }), { name: 'runs', query: { project: props.projectId } }),
   block('设备预约', () => bookingsApi.page(q), (b) => ({
     key: b.id, to: { name: 'bookings', query: { booking: b.id } }, code: b.equipment.code, text: b.equipment.name,
     hint: `${b.user.name} · ${formatPeriod(b.start_at, b.end_at)}`,

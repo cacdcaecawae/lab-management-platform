@@ -21,13 +21,13 @@ const { items, count, page, pageSize, loading } = usePagedList(meetingsApi.actio
 const members = useOptions(() => membersApi.list({ page_size: 100 }))
 const today = toDateStr(new Date())
 const late = (a: MyActionItem) => !a.done_at && !!a.due_date && a.due_date < today
-const canToggle = (a: MyActionItem) => !a.carried_to && (a.owner.id === auth.user?.id || auth.isManager)
+const canToggle = (a: MyActionItem) => !a.carried_to && (a.owner.id === auth.user?.id || auth.isSupervisor)
 
 async function toggle(a: MyActionItem, done: boolean) {
   try {
     Object.assign(a, await meetingsApi.setDone(a.id, done))
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) ElMessage.error('只有负责人和管理员可以修改完成状态')
+    if (e instanceof ApiError && e.status === 403) ElMessage.error('只有负责人、导师和管理员可以修改完成状态')
     else showError(e)
   }
 }

@@ -214,7 +214,7 @@ const others = computed(() => {
   }
   const late = data.value?.overdue_tasks ?? 0
   if (late) {
-    groups.push({ title: '项目', rows: [{ key: 'overdue-tasks', to: { name: 'projects' }, text: `组里有 ${late} 个任务已逾期`, danger: '已逾期' }] })
+    groups.push({ title: '项目', rows: [{ key: 'overdue-tasks', to: { name: 'projects', query: { overdue: '1' } }, text: `组里有 ${late} 个任务已逾期`, danger: '已逾期' }] })
   }
   if (my.borrowed_specimens_count) {
     const rows: Row[] = my.borrowed_specimens.map((l) => ({

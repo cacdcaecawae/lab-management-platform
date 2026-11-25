@@ -11,11 +11,16 @@ def meeting_file_upload_to(instance, filename):
 
 
 class Meeting(models.Model):
-    """组会。组内公开；管理员建会、维护议程、纪要和行动项。"""
+    """组会。组内公开；导师、管理员建会、维护议程、纪要和行动项，本场记录人也能写纪要和行动项。"""
 
     group = models.ForeignKey("accounts.ResearchGroup", verbose_name="课题组", on_delete=models.PROTECT, related_name="meetings")
     date = models.DateField("日期")
+    time = models.TimeField("时间", null=True, blank=True)
+    location = models.CharField("地点 / 会议号", max_length=200, blank=True)
     title = models.CharField("标题", max_length=100, default="组会")
+    recorder = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="记录人", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
     minutes = models.TextField("纪要", blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="创建人", on_delete=models.PROTECT, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -45,7 +50,7 @@ class AgendaItem(models.Model):
 
 
 class ActionItem(models.Model):
-    """行动项。负责人或管理员标记完成（记 done_at）；新组会带入时转过去（carried_to），旧的这条算完成。"""
+    """行动项。负责人、导师或管理员标记完成（记 done_at）；新组会带入时转过去（carried_to），旧的这条算完成。"""
 
     meeting = models.ForeignKey(Meeting, verbose_name="组会", on_delete=models.CASCADE, related_name="actions")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="负责人", on_delete=models.PROTECT, related_name="action_items")
