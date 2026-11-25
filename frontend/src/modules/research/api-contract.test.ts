@@ -42,10 +42,26 @@ describe.each([
 describe('experiment write body', () => {
   it('uses the contract field names', async () => {
     const body = {
-      project_id: 1, title: 'T', date: '2026-11-16', equipment_item_id: 4, equipment: '', specimen: '', specimen_item_ids: [5],
-      params: { 频率: '5 MHz' }, steps: '', anomalies: '', dataset_ids: [3],
+      project_id: null, title: 'T', date: '2026-11-16', equipment_item_id: 4, equipment: '', specimen: '', specimen_item_ids: [5],
+      params: { 频率: '5 MHz' }, steps: '', anomalies: '',
     }
     await experimentsApi.create(body)
+    expect(lastCall().body).toEqual(body)
+  })
+
+  it('deletes a photo by its id', async () => {
+    await experimentsApi.removePhoto(12)
+    expect(lastCall()).toMatchObject({ url: '/api/experiment-photos/12/', method: 'DELETE' })
+  })
+})
+
+describe('run write body', () => {
+  it('cites experiments and names the algorithm three ways', async () => {
+    const body = {
+      project_id: 1, title: 'T', experiment_ids: [3, 4], script_dataset_id: 8, script_repo: '', script_commit: '', script_path: '',
+      method: 'Origin 平滑', method_version: '', params: {}, environment: '', conclusion: '峰值下降',
+    }
+    await runsApi.create(body)
     expect(lastCall().body).toEqual(body)
   })
 })

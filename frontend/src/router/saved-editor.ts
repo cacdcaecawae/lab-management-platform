@@ -14,9 +14,13 @@ export async function replaceSavedEditor(router: Router, from: RouteLocationNorm
   }
 }
 
+export function isSavedEditorReplacement(router: Router | undefined, from: RouteLocationNormalizedLoaded, to: RouteLocationNormalizedLoaded) {
+  const change = router && replacements.get(router)
+  return change?.from === from && change.to === to.fullPath
+}
+
 export function consumeSavedEditorReplacement(router: Router, from: RouteLocationNormalizedLoaded, to: RouteLocationNormalizedLoaded) {
-  const change = replacements.get(router)
-  if (change?.from !== from || change.to !== to.fullPath) return false
+  if (!isSavedEditorReplacement(router, from, to)) return false
   replacements.delete(router)
   return true
 }

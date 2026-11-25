@@ -34,5 +34,7 @@ describe('datasets', () => {
     expect(lastCall()).toMatchObject({ url: '/api/datasets/9/references/', method: 'GET' })
     expect(datasetsApi.downloadZipUrl(9)).toBe('/api/datasets/9/download-zip/')
     expect(datasetsApi.downloadZipUrl(9, 'abc123')).toBe('/api/datasets/9/download-zip/?version=abc123')
+    await datasetsApi.removeFile(31)
+    expect(lastCall()).toMatchObject({ url: '/api/files/31/', method: 'DELETE' })
   })
 })

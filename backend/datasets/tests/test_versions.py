@@ -98,6 +98,8 @@ def test_versions_follow_the_dataset_permissions(api, project, student_a, studen
     pinned = submitted_experiment(a, project, raw["id"])["datasets"][0]["version"]
     url = f"/api/datasets/{raw['id']}/files/"
     assert a.get(url, {"version": "0" * 64}).status_code == 404
-    for outsider in (student_b, manager, other_manager):
+    for outsider in (manager, other_manager):
         assert api(outsider).get(url, {"version": pinned}).status_code == 404
-    assert api(advisor).get(url, {"version": pinned}).status_code == 200
+    # the advisor, and student_b as a member of the project the submitted experiment names
+    for reader in (advisor, student_b):
+        assert api(reader).get(url, {"version": pinned}).status_code == 200

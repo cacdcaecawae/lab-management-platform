@@ -2,6 +2,8 @@
 scope_private(), scope_finance() or scope_group(); object lookups then 404 for out-of-scope rows.
 
 - Research records (experiments, datasets, runs, weekly reports): the owner + the advisors of the owner's group.
+  A submitted experiment or processing run of a project is also read by that project's current members
+  (scope_research; .agents/notes/implemented/feature/2026-11-25-research-records-merge-and-project-sharing.md).
 - Purchases and reimbursements: the owner + the group's managers and approvers (who review and process them).
 - Group records (projects, member list, equipment...): everyone in the same research group.
 
@@ -9,8 +11,11 @@ Who may do what: the base role (student / advisor) and two tags (管理员 is_ma
 .agents/notes/implemented/architecture/2026-11-23-roles-and-identity.md.
 """
 
+from django.db.models import Q
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
+
+SUBMITTED = "submitted"  # research.models.RecordStatus.SUBMITTED; core may not import research
 
 
 def member(user):
@@ -42,14 +47,36 @@ def is_finance(user):
     return member(user) and (user.is_manager or user.is_approver)
 
 
+def private_q(user, owner_field="owner"):
+    """The owner's own, or the whole group's for an advisor (call with a member)."""
+    if user.role == "advisor":
+        return Q(**{f"{owner_field}__group_id": user.group_id})
+    return Q(**{owner_field: user})
+
+
 def scope_private(queryset, user, owner_field="owner"):
     """Research records: the owner's own, or the whole group's for an advisor. A student with the 管理员 tag runs the
     group's affairs but does not see other students' records."""
     if not member(user):
         return queryset.none()
-    if user.role == "advisor":
-        return queryset.filter(**{f"{owner_field}__group_id": user.group_id})
-    return queryset.filter(**{owner_field: user})
+    return queryset.filter(private_q(user, owner_field))
+
+
+def project_member_q(user, project_field="project"):
+    """The project is one of the user's group that the user is a current member or the leader of."""
+    return (Q(**{f"{project_field}__members": user}) | Q(**{f"{project_field}__leader": user})) & Q(
+        **{f"{project_field}__group_id": user.group_id}
+    )
+
+
+def scope_research(queryset, user):
+    """Experiments and processing runs: scope_private, plus the submitted ones of a project the user is a current
+    member or the leader of. Drafts and records without a project stay with the owner and the advisors."""
+    if not member(user):
+        return queryset.none()
+    # A subquery: OR-ing the members join into the outer query would repeat rows once per project member.
+    shared = queryset.model.objects.filter(project_member_q(user), status=SUBMITTED).values("pk")
+    return queryset.filter(private_q(user) | Q(pk__in=shared))
 
 
 def scope_finance(queryset, user, owner_field="owner"):

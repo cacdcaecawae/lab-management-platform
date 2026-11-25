@@ -6,9 +6,10 @@ from simple_history.models import HistoricalRecords
 
 
 class Dataset(models.Model):
-    """数据集：一批原始数据、脚本或处理结果。个人数据：本人 + 本组导师可见。
+    """数据集：一条记录的一组文件（实验的原始数据，处理记录的脚本或结果），也有早期单独登记的。个人数据：本人 + 本组导师可见，
+    所属记录在项目里共享后项目成员也可见（datasets/queries.py）。
 
-    文件入库后只读；修改过的数据作为新的数据集登记。"""
+    文件入库后不能修改；没被已提交记录锁定的文件本人可以删除（datasets/versions.py）。"""
 
     class Kind(models.TextChoices):
         RAW = "raw", "原始数据"
@@ -17,7 +18,10 @@ class Dataset(models.Model):
         OTHER = "other", "其他"
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="创建人", on_delete=models.PROTECT, related_name="datasets")
-    project = models.ForeignKey("projects.Project", verbose_name="项目", on_delete=models.PROTECT, related_name="datasets")
+    # Follows the record that holds the files; records need not name a project.
+    project = models.ForeignKey(
+        "projects.Project", verbose_name="项目", null=True, blank=True, on_delete=models.PROTECT, related_name="datasets"
+    )
     name = models.CharField("名称", max_length=200)
     kind = models.CharField("类型", max_length=16, choices=Kind.choices, default=Kind.RAW)
     description = models.TextField("说明", blank=True)
@@ -43,7 +47,7 @@ def datafile_upload_to(instance, filename):
 
 
 class DataFile(models.Model):
-    """数据集中的一个文件。不可覆盖：同一数据集内文件名唯一；不提供修改接口。"""
+    """数据集中的一个文件。不可覆盖：同一数据集内文件名唯一（拖入文件夹时是相对路径）；不提供修改接口。"""
 
     dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="files")
     name = models.CharField("文件名", max_length=255)

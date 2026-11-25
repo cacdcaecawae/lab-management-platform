@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, reactive, ref } from 'vue'
+import { computed, inject, reactive, ref } from 'vue'
 import { routeLocationKey } from 'vue-router'
 import { runsApi } from '@/modules/research/api'
 import { projectsApi } from '@/modules/projects/api'
@@ -25,6 +25,11 @@ const filters = reactive({
   search: '',
 })
 const keyword = useLiveSearch(filters)
+// Students also see their teammates' submitted records of shared projects; 只看我的 narrows to their own.
+const mine = computed({
+  get: () => !!auth.user && filters.owner === auth.user.id,
+  set: (on: boolean) => (filters.owner = on && auth.user ? auth.user.id : ''),
+})
 const { items, count, page, pageSize, loading, sort } = usePagedList(runsApi.list, filters)
 </script>
 
@@ -38,12 +43,13 @@ const { items, count, page, pageSize, loading, sort } = usePagedList(runsApi.lis
       <el-select v-if="auth.isAdvisor" v-model="filters.owner" aria-label="提交人" placeholder="全部成员" clearable filterable>
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
+      <el-checkbox v-if="!auth.isAdvisor" v-model="mine">只看我的</el-checkbox>
       <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
         <el-option label="草稿" value="draft" />
         <el-option label="已提交" value="submitted" />
       </el-select>
       <template #actions>
-        <el-button type="primary" @click="$router.push({ name: 'run-new' })">新建处理记录</el-button>
+        <el-button type="primary" @click="$router.push({ name: 'run-new' })">新建数据处理</el-button>
       </template>
     </PageToolbar>
     <el-table @sort-change="sort" empty-text="暂无数据处理记录" v-loading="loading" :data="items">
@@ -54,7 +60,7 @@ const { items, count, page, pageSize, loading, sort } = usePagedList(runsApi.lis
       </el-table-column>
       <el-table-column prop="title" label="任务名称" min-width="180" />
       <el-table-column label="项目" min-width="140">
-        <template #default="{ row }">{{ row.project.name }}</template>
+        <template #default="{ row }">{{ row.project?.name ?? '—' }}</template>
       </el-table-column>
       <el-table-column label="提交人" min-width="90">
         <template #default="{ row }">{{ row.owner.name }}</template>

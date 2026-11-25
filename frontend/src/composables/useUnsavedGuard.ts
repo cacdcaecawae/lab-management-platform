@@ -1,6 +1,7 @@
 import { nextTick, onBeforeUnmount, onMounted } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { isSavedEditorReplacement } from '@/router/saved-editor'
 
 type Page = { ask: () => true | Promise<boolean>; leave: () => void }
 const onScreen = new Set<Page>()
@@ -20,6 +21,7 @@ export async function leavePage(then: () => Promise<unknown>) {
 // form from a load or a save), or when unsaved() says something on screen is not in the form yet (a parameter value
 // without a name). Only while editable() is true: a read-only record has nothing to lose.
 export function useUnsavedGuard(form: object, editable: () => boolean, unsaved?: () => boolean) {
+  const router = useRouter()
   let saved = JSON.stringify(form)
   let left = false
   const dirty = () => !left && editable() && (JSON.stringify(form) !== saved || !!unsaved?.())
@@ -37,7 +39,8 @@ export function useUnsavedGuard(form: object, editable: () => boolean, unsaved?:
       () => true,
       () => false,
     )
-  onBeforeRouteLeave(ask)
+  // A new record's first save only rewrites the address (/new -> /<id>); the page stays, uploads included.
+  onBeforeRouteLeave((to, from) => isSavedEditorReplacement(router, from, to) || ask())
   onBeforeRouteUpdate((to, from) => to.params.id === from.params.id || ask())
   const onUnload = (e: BeforeUnloadEvent) => dirty() && e.preventDefault()
   const page: Page = { ask, leave: () => (left = true) }

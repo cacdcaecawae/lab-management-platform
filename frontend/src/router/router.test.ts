@@ -54,6 +54,12 @@ describe('route guard', () => {
     expect(router.currentRoute.value.fullPath).toBe(path)
   })
 
+  it('takes the old 原始数据 list to 实验与原始数据, filters kept', async () => {
+    me.mockResolvedValue({ ...student })
+    await router.push('/datasets?project=3')
+    expect(router.currentRoute.value.fullPath).toBe('/experiments?project=3')
+  })
+
   it('retains the original route through sign-in and the initial password guard', async () => {
     const target = '/specimens/42?tab=history#anchor'
     me.mockRejectedValue(new ApiError(403, { code: 'not_authenticated', message: '请登录' }))

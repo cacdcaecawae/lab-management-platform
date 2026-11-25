@@ -5,22 +5,24 @@ import zipfile
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Prefetch, ProtectedError, Sum
+from django.db.models import Count, Prefetch, ProtectedError, Q, Sum
 from django.http import FileResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from core.exceptions import Conflict
-from core.files import FileTooLarge, clean_file_name, open_stored, sha256_of
+from core.files import FileTooLarge, clean_file_name, delete_on_commit, open_stored, sha256_of
 from core.filters import Ordering, Search
-from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private
+from core.permissions import IsActiveMember, IsOwnerOrReadOnly, scope_private, scope_research
 from core.preview import preview_response
 
-from .models import DataFile, Dataset
+from .models import DataFile, Dataset, DatasetSnapshot
+from .queries import scope_datasets
 from .serializers import DataFileSerializer, DatasetSerializer
+from .versions import lock_datasets, locked_file_ids
 
 DEFAULT_DATASET_ZIP_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
 
@@ -31,19 +33,28 @@ class DatasetTooLargeForZip(APIException):
     default_code = "too_large_for_zip"
 
 
-def save_uploads(dataset, user, uploads, client_sha256):
-    """Validate every upload first, then save all of them or none."""
+def clean_path(raw):
+    """A path inside a dropped folder ("采集/ch1/wave.csv"): its parts joined by "/", without empty, "." or ".." ones."""
+    parts = (part.strip() for part in raw.replace("\\", "/").split("/"))
+    return "/".join(part for part in parts if part and part not in (".", ".."))
+
+
+def save_uploads(dataset, user, uploads, client_sha256, path=""):
+    """Validate every upload first, then save all of them or none. `path`: the file's place in a dropped folder,
+    kept as its name so the same file name in two subfolders does not collide."""
     if not uploads:
         raise ValidationError({"file": ["请选择要上传的文件"]})
     if client_sha256 and len(uploads) > 1:
         raise ValidationError({"sha256": ["只有上传单个文件时才能提供校验值"]})
+    if path and len(uploads) > 1:
+        raise ValidationError({"path": ["只有上传单个文件时才能提供路径"]})
 
     names = []
     for uploaded in uploads:
-        # No length check: UploadedFile already cuts names to 255 chars, the DataFile.name limit.
-        name = clean_file_name(uploaded.name or "")
-        if not name:
-            raise ValidationError({"file": [f"文件名无效：{uploaded.name!r}"]})
+        # UploadedFile cuts its own names to 255 chars, the DataFile.name limit; a path may be longer.
+        name = clean_path(path) if path else clean_file_name(uploaded.name or "")
+        if not name or "\x00" in name or len(name) > 255:
+            raise ValidationError({"file": [f"文件名无效：{(path or uploaded.name)!r}"]})
         if uploaded.size > settings.MAX_UPLOAD_SIZE:
             raise FileTooLarge(f"{name} 超过单个文件上限 {settings.MAX_UPLOAD_SIZE} 字节")
         names.append(name)
@@ -89,7 +100,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # Explicit order_by: Django drops Meta.ordering on aggregated (GROUP BY) querysets.
         queryset = (
-            scope_private(Dataset.objects.select_related("project", "owner"), self.request.user)
+            scope_datasets(Dataset.objects.select_related("project", "owner"), self.request.user)
             .annotate(file_count=Count("files"), total_size=Sum("files__size", default=0))
             # name + sha256 of every file, for the current version code.
             # shortcut: list pages load these for every dataset on the page; store the version on Dataset if datasets reach many thousands of files.
@@ -121,8 +132,12 @@ class DatasetViewSet(viewsets.ModelViewSet):
         serializer.instance = self.get_queryset().get(pk=serializer.instance.pk)
 
     def perform_destroy(self, instance):
-        relations = ["files", "experiments", "used_by_runs", "script_of_runs", "produced_by_runs", "weekly_reports"]
-        if any(getattr(instance, relation).exists() for relation in relations):
+        # raw_of: the experiment whose own raw data this is; such a dataset goes with its record (research views).
+        relations = ["files", "raw_of", "experiments", "used_by_runs", "script_of_runs", "produced_by_runs", "weekly_reports"]
+        used = Q()
+        for relation in relations:
+            used |= Q(**{f"{relation}__isnull": False})
+        if Dataset.objects.filter(used, pk=instance.pk).exists():
             raise Conflict("数据集已有文件或已被实验、处理记录、周报引用，不能删除", code="invalid_state")
         try:
             with transaction.atomic():
@@ -148,9 +163,10 @@ class DatasetViewSet(viewsets.ModelViewSet):
         dataset = self.get_object()  # out of scope -> 404; POST by a non-owner -> 403
         if request.method == "GET":
             files = self._files_for_version(dataset, request.query_params.get("version"))
-            return Response(DataFileSerializer(files, many=True).data)
+            return Response(DataFileSerializer(files, many=True, context={"locked": locked_file_ids(dataset.pk)}).data)
         client_sha256 = request.data.get("sha256", "").strip().lower()
-        created = save_uploads(dataset, request.user, request.FILES.getlist("file"), client_sha256)
+        path = request.data.get("path", "")
+        created = save_uploads(dataset, request.user, request.FILES.getlist("file"), client_sha256, path)
         return Response(DataFileSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, url_path="download-zip")
@@ -173,7 +189,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
         try:
             with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
                 for data_file in files:
-                    arcname = clean_file_name(data_file.name) or f"file-{data_file.pk}"
+                    arcname = clean_path(data_file.name) or f"file-{data_file.pk}"  # a dropped folder's layout
                     with data_file.file.open("rb") as src, zf.open(arcname, "w") as dst:
                         shutil.copyfileobj(src, dst, 64 * 1024)
         except FileNotFoundError:
@@ -191,28 +207,37 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
     @action(detail=True)
     def references(self, request, pk=None):
-        """Reverse references via Django reverse managers (keeps datasets independent of research/reports)."""
+        """The records citing this dataset that the user may see, through reverse relations (datasets does not import
+        research or reports). The experiment holding it as its raw data is among the experiments, and runs and weekly
+        reports citing that experiment cite its data."""
         dataset = self.get_object()
+        experiment_model, run_model = dataset.experiments.model, dataset.used_by_runs.model
+        report_model = dataset.weekly_reports.model
+        holders = experiment_model.objects.filter(Q(pk__in=dataset.experiments.values("pk")) | Q(dataset=dataset))
         experiments = [
             {"id": e.id, "code": e.code, "title": e.title, "status": e.status}
-            for e in scope_private(
-                dataset.experiments.only("id", "title", "status", "created_at", "date", "owner_id"),
-                request.user,
-            ).order_by("-date", "-id")
+            for e in scope_research(holders.only("id", "title", "status", "created_at", "date", "owner_id"), request.user)
+            .order_by("-date", "-id")
         ]
         run_map = {}
-        for rel_name, role in (("used_by_runs", "input"), ("script_of_runs", "script"), ("produced_by_runs", "output")):
-            qs = scope_private(
-                getattr(dataset, rel_name).only("id", "title", "status", "created_at", "owner_id"),
-                request.user,
-            ).order_by("-created_at", "-id")
-            for run in qs:
+        sources = [
+            (dataset.used_by_runs.all(), "input"),
+            (run_model.objects.filter(experiments__dataset=dataset), "input"),
+            (dataset.script_of_runs.all(), "script"),
+            (dataset.produced_by_runs.all(), "output"),
+        ]
+        for runs, role in sources:
+            for run in scope_research(runs.only("id", "title", "status", "created_at", "owner_id"), request.user):
                 entry = run_map.setdefault(
                     run.id,
                     {"id": run.id, "code": run.code, "title": run.title, "status": run.status, "roles": []},
                 )
-                entry["roles"].append(role)
+                if role not in entry["roles"]:
+                    entry["roles"].append(role)
         runs = sorted(run_map.values(), key=lambda r: -r["id"])
+        citing = Q(pk__in=dataset.weekly_reports.values("pk")) | Q(
+            pk__in=report_model.objects.filter(experiments__dataset=dataset).values("pk")
+        )
         reports = [
             {
                 "id": r.id,
@@ -221,7 +246,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 "owner": {"id": r.owner_id, "name": r.owner.name},
             }
             for r in scope_private(
-                dataset.weekly_reports.select_related("owner").only(
+                report_model.objects.filter(citing).select_related("owner").only(
                     "id", "week_start", "status", "owner_id", "owner__id", "owner__name"
                 ),
                 request.user,
@@ -230,17 +255,37 @@ class DatasetViewSet(viewsets.ModelViewSet):
         return Response({"experiments": experiments, "runs": runs, "reports": reports})
 
 
-class DataFileViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class DataFileViewSet(mixins.RetrieveModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
     serializer_class = DataFileSerializer
 
     def get_queryset(self):
-        files = DataFile.objects.select_related("uploaded_by")
-        return scope_private(files, self.request.user, owner_field="dataset__owner")
+        files = DataFile.objects.select_related("uploaded_by", "dataset")
+        return scope_datasets(files, self.request.user, owner_field="dataset__owner", dataset_field="dataset_id")
+
+    def destroy(self, request, *args, **kwargs):
+        """The owner takes back a mistaken upload. A file in a version that a submitted record pins stays (409)."""
+        data_file = self.get_object()
+        if data_file.dataset.owner_id != request.user.id:
+            raise PermissionDenied("只能删除自己记录里的文件")
+        with transaction.atomic():
+            lock_datasets([data_file.dataset_id])  # a submit pinning this dataset now goes first or waits
+            data_file = DataFile.objects.filter(pk=data_file.pk).first()
+            if data_file is None:
+                raise NotFound("文件已删除")
+            if data_file.pk in locked_file_ids(data_file.dataset_id):
+                raise Conflict("文件在已提交记录引用的版本里，不能删除", code="invalid_state")
+            # No submitted record pins these snapshots (or the file would be locked); a snapshot left without the file
+            # would still be reused by a later pin of its version code.
+            DatasetSnapshot.objects.filter(files=data_file).delete()
+            delete_on_commit([data_file.file])
+            data_file.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True)
     def download(self, request, pk=None):
         data_file = self.get_object()
-        return FileResponse(open_stored(data_file.file), as_attachment=True, filename=data_file.name)
+        name = clean_file_name(data_file.name)  # a file from a dropped folder downloads under its own name
+        return FileResponse(open_stored(data_file.file), as_attachment=True, filename=name)
 
     @action(detail=True)
     def preview(self, request, pk=None):

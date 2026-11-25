@@ -57,6 +57,13 @@ describe('uploadFile', () => {
     expect(progress).toEqual([50])
   })
 
+  it('sends a file from a dropped folder with its path in the folder', async () => {
+    void uploadFile(9, file(), undefined, '采集/ch1/数据.csv')
+    expect(FakeXHR.last.body!.get('path')).toBe('采集/ch1/数据.csv')
+    void uploadFile(9, file())
+    expect(FakeXHR.last.body!.has('path')).toBe(false)
+  })
+
   it('turns 409 file_exists into ApiError', async () => {
     const p = uploadFile(9, file())
     FakeXHR.last.respond(409, JSON.stringify({ code: 'file_exists', message: '文件已存在：数据.csv' }))

@@ -93,6 +93,6 @@ def test_list_has_no_n_plus_1(api, student_a, project, django_assert_max_num_que
     for _ in range(5):
         make_experiment(student_a, project).datasets.add(make_dataset(student_a, project))
     client = api(student_a)
-    # session + user + count + page + datasets prefetch + specimens prefetch
-    with django_assert_max_num_queries(6):
+    # session + user + count + page + datasets prefetch + specimens prefetch + photos prefetch
+    with django_assert_max_num_queries(7):
         assert client.get(URL).json()["count"] == 5
