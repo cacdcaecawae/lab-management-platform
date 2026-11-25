@@ -76,20 +76,27 @@ def test_research_record_chain_review_flow_and_isolation(
     history = a.get(f"/api/reports/{rid}/history/").json()
     assert any(c["field"] == "findings" for entry in history for c in entry["changes"])
 
-    # Isolation: a classmate, a classmate with the 管理员 tag and the other group's manager get 404 on every private
-    # URL, including downloads; the group's advisor reads them.
-    private_urls = [
+    # Isolation: a classmate with the 管理员 tag and the other group's manager get 404 on every private URL, including
+    # downloads; the group's advisor reads them. A classmate in the project reads the submitted experiment and run and
+    # the data they hold (issue #58 P1-3), never the weekly report.
+    shared_urls = [
         f"/api/datasets/{raw['id']}/", f"/api/datasets/{raw['id']}/files/", f"/api/files/{raw_file['id']}/",
         raw_file["download_url"], f"/api/experiments/{exp['id']}/", f"/api/experiments/{exp['id']}/history/",
-        f"/api/runs/{run['id']}/", f"/api/reports/{rid}/", f"/api/reports/{rid}/history/",
+        f"/api/runs/{run['id']}/",
     ]
-    for outsider in (student_b, manager, other_manager):
+    report_urls = [f"/api/reports/{rid}/", f"/api/reports/{rid}/history/"]
+    for outsider in (manager, other_manager):
         client = api(outsider)
-        for url in private_urls:
+        for url in shared_urls + report_urls:
             assert client.get(url).status_code == 404, (outsider.username, url)
         assert client.get("/api/experiments/").json()["count"] == 0
+    client = api(student_b)
+    for url in shared_urls:
+        assert client.get(url).status_code == 200, (student_b.username, url)
+    for url in report_urls:
+        assert client.get(url).status_code == 404, (student_b.username, url)
     client = api(advisor)
-    for url in private_urls:
+    for url in shared_urls + report_urls:
         assert client.get(url).status_code == 200, (advisor.username, url)
 
 

@@ -12,6 +12,8 @@ export const datasetsApi = {
   downloadZipUrl: (id: number, version?: string) =>
     version ? `/api/datasets/${id}/download-zip/?version=${encodeURIComponent(version)}` : `/api/datasets/${id}/download-zip/`,
   uploadFile,
+  // the owner takes back a mistaken upload; 409 once a submitted record pins it
+  removeFile: (fileId: number) => api.delete(`/api/files/${fileId}/`),
 }
 
 // Non-JSON error bodies (e.g. a proxy's HTML 413 page) still become a uniform ApiError.
@@ -21,9 +23,13 @@ function fallbackBody(status: number): ApiErrorBody {
 }
 
 // One file per request so each file has its own progress and a 409 on one file does not block the others.
-export function uploadFile(datasetId: number, file: File, onProgress?: (percent: number) => void): Promise<DataFile[]> {
+// path: the file's place in a dropped folder ("采集/ch1/data.csv"), kept as its name.
+export function uploadFile(
+  datasetId: number, file: File, onProgress?: (percent: number) => void, path?: string,
+): Promise<DataFile[]> {
   const form = new FormData()
   form.append('file', file)
+  if (path) form.append('path', path)
   return uploadForm<DataFile[]>(`/api/datasets/${datasetId}/files/`, form, onProgress)
 }
 

@@ -42,7 +42,7 @@
 
 ### 权限速查
 
-- 个人数据（实验、数据集/文件、处理记录、周报）：本人 + 本组管理员/导师可读；只有本人可写。
+- 个人数据（实验、数据集/文件、处理记录、周报）：本人 + 本组导师可读；只有本人可写。关联了项目并已提交的实验和处理记录，连同它们的文件，该项目的当前成员（含负责人）也可读（`core.permissions.scope_research`、`datasets/queries.py`）。
 - 组内公开（项目、成员公开字段；第二期的设备、预约、使用登记、耗材与流水）：本组全员可读。
 - 设备台账、耗材品类、入库、盘点调整只有本组**管理员**（`is_manager=true`，任何基础角色；不含没有管理员标签的导师）可写。
 - 第三期：采购申请、报销和它们的附件是个人数据（本人 + 本组管理员、终审人）；经费来源组内公开，只有管理员可写。
@@ -207,66 +207,86 @@
 
 ## 数据集与文件（Agent C）
 
-`Dataset = {id, code, project: {id,name}, owner: UserBrief, name, kind, description, file_count, total_size, version, created_at, updated_at}`
+数据集是一条记录的一组文件：实验的原始数据（`Experiment.dataset`），处理记录的脚本文件和结果文件（`script_dataset` / `output_dataset`），都随记录创建，页面上不再单独新建数据集；早期单独登记的数据集在升级时并入记录（`research/migrations/0007`）。
+
+`Dataset = {id, code, project: {id,name} | null, owner: UserBrief, name, kind, description, file_count, total_size, version, created_at, updated_at}`
 `kind`: `raw` 原始数据 | `script` 脚本 | `result` 处理结果 | `other`
-`DataFile = {id, dataset_id, name, size, sha256, uploaded_by: UserBrief, uploaded_at, download_url, preview_url, preview_kind}`（`download_url` = `/api/files/{id}/download/`，`preview_url` = `/api/files/{id}/preview/`，`preview_kind`: `image` | `pdf` | `text` | `other`）
+`DataFile = {id, dataset_id, name, size, sha256, uploaded_by: UserBrief, uploaded_at, download_url, preview_url, preview_kind, locked}`（`download_url` = `/api/files/{id}/download/`，`preview_url` = `/api/files/{id}/preview/`，`preview_kind`: `image` | `pdf` | `text` | `other`；`locked`：文件在某条已提交记录固定的版本里，不能再删，只在数据集的文件列表里给出，其余为 `false`）
+
+下表的"数据范围"：本人 + 本组导师；数据集所属的实验或处理记录关联了项目并已提交时，该项目的当前成员（含负责人）也可读（`datasets/queries.py`）。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/datasets/?project=&kind=&owner=&search=` | 个人数据范围 | 可排序：`updated_at`、`total_size` |
-| POST | `/api/datasets/` | 登录成员 | `{project_id, name, kind, description}`；`owner` = 当前用户；项目必须在本组 |
-| GET | `/api/datasets/{id}/` | 个人数据范围 | |
+| GET | `/api/datasets/?project=&kind=&owner=&search=` | 数据范围 | 可排序：`updated_at`、`total_size` |
+| POST | `/api/datasets/` | 登录成员 | `{project_id（可空）, name, kind, description}`；`owner` = 当前用户；项目必须在本组 |
+| GET | `/api/datasets/{id}/` | 数据范围 | |
 | PATCH | `/api/datasets/{id}/` | 本人 | 只可改 `name, description` |
-| DELETE | `/api/datasets/{id}/` | 本人 | 仅当没有文件、且未被实验/处理记录/周报引用；否则 409 `invalid_state` |
-| GET | `/api/datasets/{id}/files/?version=` | 个人数据范围 | 不分页，按文件名排序；带 `version`（完整版本码）时只列该版本的文件，未知版本 404 |
-| POST | `/api/datasets/{id}/files/` | 本人 | `multipart/form-data`：一个或多个 `file` 字段；可选 `sha256`（仅单文件时，客户端算好的校验值）。→ 201 `[DataFile]` |
-| GET | `/api/datasets/{id}/download-zip/?version=` | 个人数据范围 | 整包下载 ZIP（支持可选 `version` 快照）；空数据集 409 `empty_dataset`，总大小超限（默认 200 MB）413 `too_large_for_zip`，底层文件缺失 404 |
-| GET | `/api/datasets/{id}/references/` | 个人数据范围 | 返回引用此数据集的可见记录：`{experiments: [ExperimentBrief], runs: [RunBrief & {roles}], reports: [{id, week_start, status, owner}]}` |
-| GET | `/api/files/{id}/` | 个人数据范围 | `DataFile` |
-| GET | `/api/files/{id}/download/` | 个人数据范围 | 流式下载，`Content-Disposition: attachment`（文件名用 RFC 5987 编码） |
-| GET | `/api/files/{id}/preview/?raw=1` | 个人数据范围 | 安全在线预览：文本/CSV/代码返回 JSON（最多前 256 KB / 200 行，自动识别 UTF-8 / GB18030）；白名单图片（不含 SVG）与 PDF 带 `?raw=1` 内联返回并附 `nosniff` / CSP / `Cache-Control: private`；不支持类型带 `?raw=1` 返回 415 |
+| DELETE | `/api/datasets/{id}/` | 本人 | 仅当没有文件、不是任何记录自己的文件、也未被实验/处理记录/周报引用；否则 409 `invalid_state`。记录自己的文件随记录删除 |
+| GET | `/api/datasets/{id}/files/?version=` | 数据范围 | 不分页，按文件名排序；带 `version`（完整版本码）时只列该版本的文件，未知版本 404 |
+| POST | `/api/datasets/{id}/files/` | 本人 | `multipart/form-data`：一个或多个 `file` 字段；可选 `sha256`（仅单文件时，客户端算好的校验值）；可选 `path`（仅单文件时，拖入的文件夹里的相对路径，如 `采集/ch1/data.csv`，作为文件名保存）。→ 201 `[DataFile]` |
+| GET | `/api/datasets/{id}/download-zip/?version=` | 数据范围 | 整包下载 ZIP（支持可选 `version` 快照），带路径的文件放在对应文件夹里；空数据集 409 `empty_dataset`，总大小超限（默认 200 MB）413 `too_large_for_zip`，底层文件缺失 404 |
+| GET | `/api/datasets/{id}/references/` | 数据范围 | 引用这批文件的可见记录：`{experiments: [ExperimentBrief], runs: [RunBrief & {roles}], reports: [{id, week_start, status, owner}]}`。`experiments` 含持有它的那条实验；引用这条实验的处理记录（`roles` 含 `input`）和周报也列出 |
+| GET | `/api/files/{id}/` | 数据范围 | `DataFile` |
+| DELETE | `/api/files/{id}/` | 本人 | 删掉传错的文件 → 204。文件在已提交记录固定的版本里 → 409 `invalid_state`；记录退回草稿后可以删 |
+| GET | `/api/files/{id}/download/` | 数据范围 | 流式下载，`Content-Disposition: attachment`（文件名取路径的最后一段，用 RFC 5987 编码） |
+| GET | `/api/files/{id}/preview/?raw=1` | 数据范围 | 安全在线预览：文本/CSV/代码返回 JSON（最多前 256 KB / 200 行，自动识别 UTF-8 / GB18030）；白名单图片（不含 SVG）与 PDF 带 `?raw=1` 内联返回并附 `nosniff` / CSP / `Cache-Control: private`；不支持类型带 `?raw=1` 返回 415 |
 
-上传规则（前端目前每个文件单独发一个请求，以便显示单文件进度；接口仍支持一次多文件）：
+上传规则（前端每个文件单独发一个请求，以便显示单文件进度；接口仍支持一次多文件）：
 - 同一数据集内已有同名文件、或同一请求内重名 → 409 `file_exists`，**整个请求不保存任何文件**。
 - 提供了 `sha256` 且与服务器计算值不一致 → 400 `validation_error`（`errors.sha256`），不保存。
 - 单文件超过 `MAX_UPLOAD_SIZE` → 413 `file_too_large`。
-- 文件只读：不提供 PATCH / DELETE / 覆盖接口。
-- 版本码 `version`（64 位十六进制，界面显示前 12 位）：数据集内所有文件按文件名排序，逐行拼接 `<文件 sha256>  <文件名>` 后再算 SHA256。文件相同则版本码相同，追加文件后版本码改变。数据集可以一直追加文件；实验、处理记录、周报**提交时**为引用的每个数据集记下当时的版本码和文件清单（退回草稿时清空，再次提交时重新记录）。错误的数据另建数据集；确需删除由运维在后台处理。
-- 文件名只取 basename，去掉路径分隔符；空文件名 400。
+- 文件不能修改或覆盖。没被已提交记录固定的文件，本人可以删除，删除时一并去掉含它的、已没有记录固定的旧快照。
+- 版本码 `version`（64 位十六进制，界面显示前 12 位）：数据集内所有文件按文件名排序，逐行拼接 `<文件 sha256>  <文件名>` 后再算 SHA256。文件相同则版本码相同。数据集可以一直追加文件；实验、处理记录、周报**提交时**为引用的每个数据集记下当时的版本码和文件清单（退回草稿时清空，再次提交时重新记录）。非草稿记录固定的版本里的文件不能删除。
+- 文件名：不带 `path` 时只取 basename；带 `path` 时去掉空段、`.` 和 `..` 后用 `/` 连接，超过 255 字符或含 NUL 时 400。
 
-## 实验记录 `/api/experiments/`（Agent B）
+## 实验与原始数据 `/api/experiments/`（Agent B）
 
-`Experiment = {id, code, project: {id,name}, owner: UserBrief, title, date, equipment_item: EquipmentBrief | null, equipment, specimen, specimen_items: [SpecimenBrief], params: object, steps, anomalies, datasets: [DatasetBrief], status, submitted_at, created_at, updated_at}`
-`DatasetBrief = {id, code, name, kind}`；内嵌在实验、处理记录、周报里的数据集另有 `version`（提交时记下的版本码，草稿和旧记录为 `null`）和 `changed`（提交后是否追加过文件）
+一条记录是一次采集：背景（项目、设备、试件、参数、步骤、现场照片）加这次的原始数据文件。
+
+`Experiment = {id, code, project: {id,name} | null, owner: UserBrief, title, date, equipment_item: EquipmentBrief | null, equipment, specimen, specimen_items: [SpecimenBrief], params: object, steps, anomalies, dataset: DatasetBrief, datasets: [DatasetBrief], photos: [ExperimentPhoto], file_count, status, submitted_at, created_at, updated_at}`
+- `dataset`：这条记录自己的原始数据，创建记录时一起建好；文件用上面的数据集接口上传、列出、删除。`file_count` 是它的文件数。
+- `datasets`：早期关联的数据集，只读展示（`dataset_ids` 仍可写，页面不再使用）。
+- `DatasetBrief = {id, code, name, kind}`；内嵌在实验、处理记录、周报里的数据集另有 `version`（提交时记下的版本码，草稿和旧记录为 `null`）和 `changed`（提交后是否追加过文件）。
+- `ExperimentPhoto = {id, name, size, uploaded_by: UserBrief, url, created_at}`（`url` = `/api/experiment-photos/{id}/file/`，图片内联打开，带 `sandbox` CSP）。
+
 `status`: `draft` | `submitted`
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/experiments/?project=&status=&owner=&search=` | 个人数据范围 | 可排序：`date`、`updated_at` |
-| POST | `/api/experiments/` | 登录成员 | `{project_id, title, date, equipment_item_id, equipment, specimen, specimen_item_ids, params, steps, anomalies, dataset_ids}` → 草稿 |
-| GET | `/api/experiments/{id}/` | 个人数据范围 | |
-| PATCH | `/api/experiments/{id}/` | 本人，且为草稿 | 已提交时 409 `invalid_state` |
-| DELETE | `/api/experiments/{id}/` | 本人，且为草稿、未被周报引用 | |
-| POST | `/api/experiments/{id}/submit/` | 本人 | 草稿 → 已提交；校验必填：`title, date, project`；返回 `Experiment` |
-| POST | `/api/experiments/{id}/return/` | 本组管理员/导师 | `{reason}`（必填）→ 已提交 → 草稿；返回 `Experiment`。给本人发站内通知"实验记录被退回"，正文是记录名称和原因（处理记录同样，"数据处理记录被退回"） |
-| GET | `/api/experiments/{id}/history/` | 个人数据范围 | `[HistoryEntry]` |
+| GET | `/api/experiments/?project=&status=&owner=&equipment_item=&specimen=&search=` | 科研记录范围 | 本人的，本组导师看全组；另加自己是当前成员或负责人的项目里**已提交**的记录（`core.permissions.scope_research`）。`equipment_item` / `specimen`：用了这台设备 / 这件台账试件的记录。可排序：`date`、`updated_at` |
+| POST | `/api/experiments/` | 登录成员 | `{project_id（可空）, title, date, equipment_item_id, equipment, specimen, specimen_item_ids, params, steps, anomalies}` → 草稿，同时建好 `dataset` |
+| GET | `/api/experiments/{id}/` | 科研记录范围 | |
+| PATCH | `/api/experiments/{id}/` | 本人，且为草稿 | 已提交时 409 `invalid_state`；改项目时它的原始数据跟着改 |
+| DELETE | `/api/experiments/{id}/` | 本人，且为草稿 | 原始数据文件和照片一起删除。被处理记录或周报引用、原始数据还被别的记录引用、或有文件被已提交记录固定时 409 `invalid_state` |
+| POST | `/api/experiments/{id}/submit/` | 本人 | 草稿 → 已提交；校验必填：`title, date`；固定 `dataset` 和 `datasets` 的版本；返回 `Experiment` |
+| POST | `/api/experiments/{id}/return/` | 本组导师 | `{reason}`（必填）→ 已提交 → 草稿；返回 `Experiment`。给本人发站内通知"实验记录被退回"，正文是记录名称和原因（处理记录同样，"数据处理记录被退回"） |
+| GET | `/api/experiments/{id}/history/` | 科研记录范围 | `[HistoryEntry]` |
+| POST | `/api/experiments/{id}/photos/` | 本人，且为草稿 | `multipart/form-data` 的 `file`：JPG、JPEG、PNG、WebP、GIF，不超过 20 MB → 201 `ExperimentPhoto`；已提交 409 `invalid_state` |
+| GET | `/api/experiment-photos/{id}/file/` | 能看到这条实验的人 | 照片 |
+| DELETE | `/api/experiment-photos/{id}/` | 实验的本人，且为草稿 | 已提交 409 `invalid_state` |
 
-校验：`project_id` 必须是本组项目；`equipment_item_id`（可为 `null`）必须是本组台账里的设备；`specimen_item_ids` 必须是本组的台账试件（`SpecimenBrief = {id, code, name, status}`，不带缺陷参数）；`dataset_ids` 必须是**记录所有者本人**的数据集；`params` 必须是 JSON 对象。`equipment` 是自由文本的"设备说明"。
+新建页可带 `?project=<id>&equipment=<id>&date=YYYY-MM-DD` 预填（例如登记完设备使用后"去记本次实验"）。
 
-## 数据处理记录 `/api/runs/`（Agent B）
+校验：`project_id` 可空，填了必须是本组项目；`equipment_item_id`（可为 `null`）必须是本组台账里的设备；`specimen_item_ids` 必须是本组的台账试件（`SpecimenBrief = {id, code, name, status}`，不带缺陷参数）；`dataset_ids` 必须是**记录所有者本人**的数据集；`params` 必须是 JSON 对象。`equipment` 是自由文本的"设备说明"，`specimen` 是"试件说明"。
 
-`ProcessingRun = {id, code, project: {id,name}, owner: UserBrief, title, inputs: [DatasetBrief], script_dataset: DatasetBrief | null, script_repo, script_commit, script_path, method_version, params: object, environment, output_dataset: DatasetBrief | null, conclusion, status, submitted_at, created_at, updated_at}`
+## 数据处理 `/api/runs/`（Agent B）
+
+`ProcessingRun = {id, code, project: {id,name} | null, owner: UserBrief, title, experiments: [CitedExperiment], inputs: [DatasetBrief], script_dataset: DatasetBrief, script_repo, script_commit, script_path, method, method_version, params: object, environment, output_dataset: DatasetBrief, conclusion, status, submitted_at, created_at, updated_at}`
+- `experiments`：引用的原始数据，`CitedExperiment = {id, code, title, status, owner: UserBrief, dataset_id, version, changed}`（`version` / `changed` 指那条实验的原始数据，提交时固定）。
+- `inputs`：早期引用的输入数据集，只读展示（`input_ids` 仍可写，页面不再使用）。
+- `script_dataset` / `output_dataset`：这条记录的脚本文件和结果文件，创建时一起建好，在本页上传。
+- `method`：软件/方法说明（用 Origin、Excel、仪器软件处理时写清楚做了什么）。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/runs/?project=&status=&owner=&search=` | 个人数据范围 | 可排序：`updated_at` |
-| POST | `/api/runs/` | 登录成员 | `{project_id, title, input_ids, script_dataset_id, script_repo, script_commit, script_path, method_version, params, environment, output_dataset_id, conclusion}` → 草稿 |
-| GET / PATCH / DELETE | `/api/runs/{id}/` | 同实验记录 | |
-| POST | `/api/runs/{id}/submit/` | 本人 | 可复现性校验：至少 1 个输入；脚本二选一（`script_dataset` 或 `script_repo`+`script_commit`）；`environment` 非空；有 `output_dataset`。不满足 → 400，`errors` 的键为 `inputs`、`script_dataset`（只填了一半时为 `script_repo` / `script_commit`）、`environment`、`output_dataset`。创建/修改时的校验错误用写入字段名（`input_ids` 等） |
-| POST | `/api/runs/{id}/return/` | 本组管理员/导师 | `{reason}` |
-| GET | `/api/runs/{id}/history/` | 个人数据范围 | |
+| GET | `/api/runs/?project=&status=&owner=&search=` | 科研记录范围 | 同实验。可排序：`updated_at` |
+| POST | `/api/runs/` | 登录成员 | `{project_id（可空）, title, experiment_ids, script_dataset_id（可选，复制记录时传原记录的，共用已上传的脚本）, script_repo, script_commit, script_path, method, method_version, params, environment, conclusion}` → 草稿，缺的脚本、结果数据集一起建好 |
+| GET / PATCH / DELETE | `/api/runs/{id}/` | 同实验 | PATCH 不能把 `script_dataset_id` / `output_dataset_id` 设为 `null`。DELETE 时只被这条记录用的脚本、结果文件一起删除，和复制出来的记录共用的保留 |
+| POST | `/api/runs/{id}/submit/` | 本人 | 可复现性校验：至少引用 1 条原始数据（`experiments` 或早期的 `inputs`），引用的实验都还看得到（被退回的队友记录不行）；算法三选一：上传了脚本文件、`script_repo`+`script_commit`、或 `method`；上传了结果文件或写了 `conclusion`。`environment` 选填。不满足 → 400，`errors` 的键为 `experiments`、`script`（git 只填了一半时为 `script_repo` / `script_commit`）、`results`。创建/修改时的校验错误用写入字段名（`experiment_ids` 等） |
+| POST | `/api/runs/{id}/return/` | 本组导师 | `{reason}` |
+| GET | `/api/runs/{id}/history/` | 科研记录范围 | |
 
-校验：引用的数据集必须属于记录所有者；`script_dataset` 的 `kind` 必须是 `script`，`output_dataset` 的 `kind` 必须是 `result`。
+校验：`experiment_ids` 必须是请求人看得到的实验（自己的，或项目里共享给自己的已提交记录），其他 id 与不存在的一样返回 400；引用的数据集必须属于记录所有者；`script_dataset` 的 `kind` 必须是 `script`，`output_dataset` 的 `kind` 必须是 `result`。
 
 ## 周报 `/api/reports/`（Agent D）
 

@@ -1,5 +1,8 @@
 import { api, type Page } from '@/api/client'
-import type { Experiment, ExperimentWrite, HistoryEntry, ListQuery, ProcessingRun, RunWrite } from '@/api/types'
+import type {
+  Experiment, ExperimentPhoto, ExperimentWrite, HistoryEntry, ListQuery, ProcessingRun, RunWrite,
+} from '@/api/types'
+import { uploadForm } from '@/modules/datasets/api'
 
 // Experiments and processing runs share the same endpoint shape (api-contract.md).
 function recordApi<T, W>(base: string) {
@@ -15,5 +18,14 @@ function recordApi<T, W>(base: string) {
   }
 }
 
-export const experimentsApi = recordApi<Experiment, ExperimentWrite>('/api/experiments/')
+export const experimentsApi = {
+  ...recordApi<Experiment, ExperimentWrite>('/api/experiments/'),
+  // scene photos and figures: added and removed while the record is a draft
+  uploadPhoto: (id: number, file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData()
+    form.append('file', file)
+    return uploadForm<ExperimentPhoto>(`/api/experiments/${id}/photos/`, form, onProgress)
+  },
+  removePhoto: (photoId: number) => api.delete(`/api/experiment-photos/${photoId}/`),
+}
 export const runsApi = recordApi<ProcessingRun, RunWrite>('/api/runs/')

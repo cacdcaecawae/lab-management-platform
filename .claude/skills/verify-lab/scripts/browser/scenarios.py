@@ -137,40 +137,37 @@ def record_path(session, section):
     return session.current_url.removeprefix(APP)
 
 
+def files_input(session, panel=1):
+    """The hidden file input of the n-th files panel (实验的原始数据; 数据处理的脚本文件, 结果文件). A page also has the
+    photo picker's input, so a bare input[type=file] is not enough."""
+    return WebDriverWait(session, 12).until(ec.presence_of_element_located(
+        (By.XPATH, f"(//section[contains(@class,'data-files')])[{panel}]//input[@type='file']")))
+
+
 def experiments(stack):
     student = browser(stack)
     login(student, "s_a")
     # Create and first-upload through the UI, not an ORM fixture. ORM is read-only evidence.
-    visit(student, "/datasets")
-    button(student, "新建数据集").click()
+    visit(student, "/experiments")
+    button(student, "新建实验与原始数据").click()
     option(student, "项目", "导波螺栓松动")
-    label_input(student, "名称").send_keys("验证-导波波形")
-    button(student, "保存", "//div[@role='dialog']").click()  # FormDialog's main button (DESIGN.md: 保存, not 创建)
-    dataset_path = record_path(student, "datasets")
-    dataset = Dataset.objects.get(pk=int(dataset_path.rsplit("/", 1)[1]), owner__username="s_a")
-    assert dataset.name == "验证-导波波形" and not dataset.files.exists()
+    label_input(student, "实验名称").send_keys(EXPERIMENT)
+    button(student, "保存草稿").click()
+    body_has(student, "草稿已保存")
+    detail = record_path(student, "experiments")
+    record = Experiment.objects.get(title=EXPERIMENT, owner__username="s_a")
+    dataset = record.dataset  # the record's own raw data, made with it
+    assert record.status == "draft" and dataset.owner.username == "s_a" and not dataset.files.exists()
     payload = EVIDENCE.parent / "wave_001.csv"
     data = b"t,amp\n0,0\n1,1\n"
     payload.write_bytes(data)
-    button(student, "上传文件")
-    WebDriverWait(student, 12).until(ec.presence_of_element_located((By.CSS_SELECTOR, "input[type=file]"))).send_keys(str(payload))
+    files_input(student).send_keys(str(payload))
     body_has(student, "已上传 1 个文件")
     WebDriverWait(student, 12).until(lambda _: dataset.files.filter(name="wave_001.csv").exists())
     first = dataset.files.get(name="wave_001.csv")
     assert first.size == len(data) and first.sha256 == sha256(data).hexdigest()
     with first.file.open("rb") as saved:
         assert saved.read() == data
-    screenshot(student, "experiments-dataset-first-upload")
-    visit(student, "/experiments")
-    button(student, "新建实验记录").click()
-    option(student, "项目", "导波螺栓松动")
-    label_input(student, "实验名称").send_keys(EXPERIMENT)
-    option(student, "关联数据集（只能选择自己的数据集）", dataset.name)
-    button(student, "保存草稿").click()
-    body_has(student, "草稿已保存")
-    detail = record_path(student, "experiments")
-    record = Experiment.objects.get(title=EXPERIMENT, owner__username="s_a")
-    assert record.status == "draft" and record.datasets.get().pk == dataset.pk
     screenshot(student, "experiments-draft")
 
     button(student, "提交").click()
@@ -183,20 +180,25 @@ def experiments(stack):
     assert list(dataset.snapshots.get(digest=pinned).files.values_list("name", flat=True)) == ["wave_001.csv"]
     screenshot(student, "experiments-submit")
 
-    # Append through the ordinary browser file chooser, then open the experiment again.
+    # Append on the same page after the submit: the new file is marked, the pinned version stays.
     payload = EVIDENCE.parent / "wave_002.csv"
     payload.write_text("t,amp\n0,0\n1,2\n", encoding="utf-8")
-    visit(student, f"/datasets/{dataset.pk}")
-    button(student, "上传文件")
-    WebDriverWait(student, 12).until(ec.presence_of_element_located((By.CSS_SELECTOR, "input[type=file]"))).send_keys(str(payload))
-    body_has(student, "wave_002.csv")
+    files_input(student).send_keys(str(payload))
+    body_has(student, "提交后新增")
     WebDriverWait(student, 12).until(lambda _: dataset.files.filter(name="wave_002.csv").exists())
-    visit(student, detail)
-    body_has(student, "提交后有新增")
     body_has(student, pinned[:12])
     record.refresh_from_db()
     assert record.data_versions == {str(dataset.pk): pinned} and current_version(dataset) != pinned
     screenshot(student, "experiments-pin")
+
+    # A classmate in the project reads the submitted record, read-only (issue #58 P1-3).
+    peer = browser(stack)
+    login(peer, "s_b")
+    visit(peer, detail)
+    body_has(peer, "学生甲 于")
+    body_has(peer, "记录已锁定。")
+    assert not peer.find_elements(By.XPATH, "//button[normalize-space(.)='上传文件' or normalize-space(.)='删除']")
+    screenshot(peer, "experiments-shared")
 
     advisor = browser(stack)
     login(advisor, "adv")
@@ -219,8 +221,7 @@ def experiments(stack):
     button(student, "保存草稿")
     button(student, "提交")
 
-    peer = browser(stack)
-    login(peer, "s_b")
+    # Returned to draft: private again.
     visit(peer, detail)
     body_has(peer, "记录不存在或无权查看")
     screenshot(peer, "experiments-isolation")
@@ -325,13 +326,13 @@ def login_logout(stack):
     wait_path(first, "/password")
     body_has(first, "首次登录，请先修改初始密码。")
     screenshot(first, "login-first-restricted")
-    visit(first, "/datasets")
+    visit(first, "/experiments")
     wait_path(first, "/password")
     new_password = "Verify-2026-new!"
     for label, value in (("原密码", SEED_PASSWORD), ("新密码", new_password), ("确认新密码", new_password)):
         label_input(first, label).send_keys(value)
     button(first, "确认修改").click()
-    wait_path(first, "/datasets")
+    wait_path(first, "/experiments")
     account(first, "新同学")
     user = User.objects.get(username="s_new")
     assert not user.must_change_password and user.check_password(new_password)
@@ -343,9 +344,9 @@ def login_logout(stack):
     wait_path(student, "/login")
     assert student.get_cookie(settings.SESSION_COOKIE_NAME) is None
     assert not Session.objects.filter(session_key=cookie["value"]).exists()
-    visit(student, "/datasets")
+    visit(student, "/experiments")
     WebDriverWait(student, 12).until(lambda b: urlsplit(b.current_url).path == "/login"
-                                  and parse_qs(urlsplit(b.current_url).query).get("next") == ["/datasets"])
+                                  and parse_qs(urlsplit(b.current_url).query).get("next") == ["/experiments"])
     evidence_text(student, "login-logout")
     evidence("login-db", {"initial_password_replaced": True, "must_change_password": False, "logged_out_session_removed": True})
 

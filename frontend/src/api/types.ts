@@ -145,7 +145,7 @@ export type DatasetKind = 'raw' | 'script' | 'result' | 'other'
 export interface Dataset {
   id: number
   code: string
-  project: ProjectBrief
+  project: ProjectBrief | null
   owner: UserBrief
   name: string
   kind: DatasetKind
@@ -170,7 +170,7 @@ export interface DatasetBrief {
 }
 
 export interface DatasetWrite {
-  project_id: number
+  project_id: number | null
   name: string
   kind: DatasetKind
   description: string
@@ -187,6 +187,8 @@ export interface DataFile {
   download_url: string
   preview_url?: string
   preview_kind?: 'image' | 'pdf' | 'text' | 'other'
+  // in a version a submitted record pins: no longer deletable (only in a dataset's file list)
+  locked?: boolean
 }
 
 export interface DatasetRunRef extends RunBrief {
@@ -213,7 +215,7 @@ export type RecordStatus = 'draft' | 'submitted'
 export interface Experiment {
   id: number
   code: string
-  project: ProjectBrief
+  project: ProjectBrief | null
   owner: UserBrief
   title: string
   date: string
@@ -224,11 +226,26 @@ export interface Experiment {
   params: Record<string, unknown>
   steps: string
   anomalies: string
+  // the record's own raw data files; null only for a record still being created
+  dataset: DatasetBrief | null
+  // datasets linked before records held their own files (read-only in the pages)
   datasets: DatasetBrief[]
+  photos: ExperimentPhoto[]
+  file_count: number
   status: RecordStatus
   submitted_at: string | null
   created_at: string
   updated_at: string
+}
+
+// A scene photo or figure of an experiment; `url` opens it inline (images only).
+export interface ExperimentPhoto {
+  id: number
+  name: string
+  size: number
+  uploaded_by: UserBrief
+  url: string
+  created_at: string
 }
 
 export interface ExperimentWrite {
@@ -242,7 +259,7 @@ export interface ExperimentWrite {
   params: Record<string, unknown>
   steps: string
   anomalies: string
-  dataset_ids: number[]
+  dataset_ids?: number[]
 }
 
 export interface ExperimentBrief {
@@ -252,17 +269,28 @@ export interface ExperimentBrief {
   status: RecordStatus
 }
 
+// An experiment a run cites: its raw data (dataset_id) is pinned when the run is submitted.
+export interface CitedExperiment extends ExperimentBrief {
+  owner: UserBrief
+  dataset_id: number | null
+  version?: string | null
+  changed?: boolean
+}
+
 export interface ProcessingRun {
   id: number
   code: string
-  project: ProjectBrief
+  project: ProjectBrief | null
   owner: UserBrief
   title: string
+  experiments: CitedExperiment[]
+  // input datasets cited before runs cited experiments (read-only in the pages)
   inputs: DatasetBrief[]
   script_dataset: DatasetBrief | null
   script_repo: string
   script_commit: string
   script_path: string
+  method: string
   method_version: string
   params: Record<string, unknown>
   environment: string
@@ -277,15 +305,16 @@ export interface ProcessingRun {
 export interface RunWrite {
   project_id: number | null
   title: string
-  input_ids: number[]
-  script_dataset_id: number | null
+  experiment_ids: number[]
+  // set on create only: a copy shares its source's uploaded scripts
+  script_dataset_id?: number
   script_repo: string
   script_commit: string
   script_path: string
+  method: string
   method_version: string
   params: Record<string, unknown>
   environment: string
-  output_dataset_id: number | null
   conclusion: string
 }
 

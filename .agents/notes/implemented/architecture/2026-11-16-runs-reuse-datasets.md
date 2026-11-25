@@ -9,7 +9,7 @@ Status: implemented
 ## 决策
 
 - 脚本和结果文件都存成数据集（`Dataset.kind` 为 `script` / `result`），复用 [文件上传与存储](./2026-11-16-file-upload-and-storage.md) 的同一套逻辑。
-- `ProcessingRun` 用 `script_dataset` 引用脚本数据集，或用 `script_repo` + `script_commit` + `script_path` 引用代码仓库；用 `output_dataset` 引用结果。
+- `ProcessingRun` 用 `script_dataset` 引用脚本数据集，或用 `script_repo` + `script_commit` + `script_path` 引用代码仓库，或用 `method` 写明软件/方法；用 `output_dataset` 引用结果。2026-11-25 起这两个数据集随记录创建，在数据处理页直接上传（[科研记录二合一与项目内共享](../feature/2026-11-25-research-records-merge-and-project-sharing.md)）。
 
 ## 曾考虑的替代方案
 
@@ -18,4 +18,4 @@ Status: implemented
 ## 后果
 
 - 收益：只有一套文件逻辑和一套权限测试。
-- 代价：数据集列表里混有脚本和结果，需要用 `GET /api/datasets/?kind=` 区分。
+- 代价：数据集里混有脚本和结果，接口用 `GET /api/datasets/?kind=` 区分（页面上已没有单独的数据集列表）。

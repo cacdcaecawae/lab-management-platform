@@ -33,10 +33,11 @@
 | [navigation.md](./navigation.md) | 可收起的侧栏分组、模块颜色、共用的顶栏标签、离开前提醒 | 2026-11-21，PR #39 分支（mgr，1440 宽） |
 | [search.md](./search.md) | 分组搜索、角色范围、导航、窄屏 | 2026-11-23 issue #48 其余提案分支走过新增类别（成员、经费、报销、任务、行动项、文件）、编号搜索和 ↑ / ↓ / Enter；里程碑、角色范围、窄屏未走 |
 | [lists.md](./lists.md) | 即时搜索、按列排序、新筛选、编号搜索、远程下拉、填写提示、上传中离开先问 | 2026-11-23 issue #48 其余提案分支走过设备、采购、任务看板；上传中离开先问、知识库标签筛选未走 |
-| [datasets.md](./datasets.md) | 新建数据集、上传、同名拒绝、下载与 SHA256、跨账号隔离 | 2026-11-17，代码 `d01c121`（界面改版后重走）；2026-11-23 `e10bbb5` 实测单文件预览与整包下载逐字节比对 |
+| [datasets.md](./datasets.md) | 数据集页：旧地址跳转、提交时的版本与 ZIP、被引用处、下载与 SHA256、隔离 | 2026-11-25 #58 P1 分支 `feat/p1-research-records` 走过（证据 `2026-11-25-p1-research/README.md`，文件夹拖入用合成 drop 事件；手机宽度未走）；改版前：2026-11-17 `d01c121`，2026-11-23 `e10bbb5` 实测预览与整包下载 |
 | [notifications.md](./notifications.md) | 通知角标、跳转、已读和账号隔离 | 2026-11-23 issue #48 其余提案分支走过按模块筛选、单条标为已读和新增的几类通知；账号隔离未走 |
 | [login.md](./login.md) | 首页、登录弹窗、首次登录改密、退出 | 2026-11-22 首页改版时走过 `home`、`home-next`、`login-ok`、`login-wrong`（见 login.md 顶部）；改版前没按本文件的步骤走过；2026-11-17 在本机试用栈（`scripts/trial.ps1`，不是 verify-lab 实例）上走过 `login-ok`、`login-wrong`、`login-first-change`（运维、管理员、学生各一次），`login-logout` 未走 |
-| [experiments.md](./experiments.md) | 新建实验记录、提交锁定、导师退回、修改历史 | 未走过 |
+| [experiments.md](./experiments.md) | 实验与原始数据：草稿（项目选填）、现场照片、上传与同名拒绝、拖入文件夹、删除未锁定文件、提交锁定、导师退回、修改历史、项目内共享、隔离、预填 | 2026-11-25 #58 P1 分支 `feat/p1-research-records` 走过（证据 `2026-11-25-p1-research/README.md`，文件夹拖入用合成 drop 事件；手机宽度未走） |
+| [runs.md](./runs.md) | 数据处理：缺项提示、只写方法说明也能提交、脚本与结果文件、版本固定、引用队友已提交的实验、被退回后不能提交、复制共用脚本 | 2026-11-25 #58 P1 分支 `feat/p1-research-records` 走过（证据 `2026-11-25-p1-research/README.md`，文件夹拖入用合成 drop 事件；手机宽度未走） |
 | [reports.md](./reports.md) | 写周报、提交、需补充、重新提交、已阅 | 其余流程待复验；2026-11-23 `e10bbb5` 实测跨年带入、上周缺报、未交名单失败后重试；`reports-manager-not-advisor` 在 R1 分支上走过 |
 | [signup.md](./signup.md) | 学生用注册链接申请、待审核不能登录、管理员通过 / 拒绝 / 全部通过、换链接后旧链接失效 | 2026-11-20，基于 `c22694e` 的改动：全部子功能走通（`signup-hidden` 用学生丙的视角看）；"复制链接"没有读回剪贴板 |
 | [members.md](./members.md) | 管理员新建学生、角色和标签、身份与花名册、重置密码 | 2026-11-17 在本机试用栈上走过 `members-create`、`members-no-edit-supervisors`；2026-11-23 在 R1 分支上走过 `members-identity`、`members-filters`、`members-manager-tag`（另外走过取消管理员、导师给自己加管理员），其余未走 |

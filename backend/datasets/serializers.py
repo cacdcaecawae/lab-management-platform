@@ -21,7 +21,9 @@ class DatasetBriefSerializer(serializers.ModelSerializer):
 
 class DatasetSerializer(serializers.ModelSerializer):
     project = ProjectBriefSerializer(read_only=True)
-    project_id = serializers.PrimaryKeyRelatedField(source="project", queryset=Project.objects.none(), write_only=True)
+    project_id = serializers.PrimaryKeyRelatedField(
+        source="project", queryset=Project.objects.none(), write_only=True, required=False, allow_null=True
+    )
     owner = UserBriefSerializer(read_only=True)
     # Filled by the viewset's annotate(); instances must come from DatasetViewSet.get_queryset().
     file_count = serializers.IntegerField(read_only=True)
@@ -54,13 +56,18 @@ class DataFileSerializer(serializers.ModelSerializer):
     download_url = serializers.SerializerMethodField()
     preview_url = serializers.SerializerMethodField()
     preview_kind = serializers.SerializerMethodField()
+    # In a version a submitted record pins: no longer deletable. Context "locked": the ids, from versions.locked_file_ids.
+    locked = serializers.SerializerMethodField()
 
     class Meta:
         model = DataFile
         fields = [
             "id", "dataset_id", "name", "size", "sha256", "uploaded_by", "uploaded_at",
-            "download_url", "preview_url", "preview_kind",
+            "download_url", "preview_url", "preview_kind", "locked",
         ]
+
+    def get_locked(self, obj):
+        return obj.pk in self.context.get("locked", ())
 
     def get_download_url(self, obj):
         return reverse("datafile-download", args=[obj.pk])

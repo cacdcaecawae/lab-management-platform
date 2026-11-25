@@ -16,7 +16,7 @@ Status: implemented
 - **科研记录与数据集效率增强（`backend/datasets/views.py` + `research`/`datasets` 前端）**：
   - 新增 `GET /api/datasets/{id}/download-zip/?version=`：复用快照版本查询，空集 409 `empty_dataset`，总大小超上限（默认 200 MB，可通过 `DATASET_ZIP_MAX_BYTES` 配置）413 `too_large_for_zip`，通过 `SpooledTemporaryFile` + `ZIP_STORED` 分块流式写入并捕获底层文件缺失返回 404。
   - 新增 `GET /api/datasets/{id}/references/`：直接通过 Django 反向关联管理器（`experiments`、`used_by_runs`、`script_of_runs`、`produced_by_runs`、`weekly_reports`）并施加 `scope_private` 返回反向引用，**不引入 `datasets → research/reports` 模块依赖**，完整遵守 `scripts/check_module_deps.py` 分层边界。
-  - 实验记录、数据处理记录与数据集列表为导师补齐成员（`?owner=`）筛选下拉；实验/处理详情页补齐「复制为新草稿」（仅复制本人可见的数据集引用，结果数据集与异常清空）与本人草稿「删除草稿」；数据集详情页补齐 `FormDialog` 编辑名称/说明、打包下载 ZIP、空且无引用时删除数据集、以及「被引用处」卡片。
+  - 实验记录、数据处理记录与数据集列表为导师补齐成员（`?owner=`）筛选下拉（数据集列表 2026-11-25 并入实验与原始数据，见 [科研记录二合一与项目内共享](./2026-11-25-research-records-merge-and-project-sharing.md)）；实验/处理详情页补齐「复制为新草稿」（仅复制本人可见的数据集引用，结果数据集与异常清空）与本人草稿「删除草稿」；数据集详情页补齐 `FormDialog` 编辑名称/说明、打包下载 ZIP、空且无引用时删除数据集、以及「被引用处」卡片。
 
 ## Alternatives considered
 

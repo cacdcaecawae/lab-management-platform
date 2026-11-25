@@ -1,46 +1,33 @@
-# 原始数据：新建、上传、同名拒绝、下载
+# 数据集页：一条记录的文件单独打开，看提交时的版本
 
-学生在"原始数据"里新建数据集并上传文件。文件入库后只读；同一数据集里不能有同名文件，重复上传会被拒绝且不覆盖原文件。页面显示每个文件的 SHA256 和数据集的当前版本码，下载得到的文件与上传的完全一致。别人的数据集打不开。
+侧栏不再有"原始数据"：文件跟着"实验与原始数据""数据处理"走。一批文件（数据集）仍有自己的页面，从"提交时的数据版本"、全站搜索的"数据集 / 数据文件"结果和旧链接打开：显示文件、当前版本码、某个提交时的版本（之后上传的标"提交后新增"）、打包下载 ZIP（看版本时只含那个版本），"被引用处"列出持有它的记录和引用它的数据处理、周报。旧的 `/datasets` 地址跳到"实验与原始数据"。
 
 ## Sub-features
 
-- `datasets-create`：新建数据集后进入详情页，编号形如 `DS-2026-0001`。
-- `datasets-upload`：上传文件后出现"已入库"，文件表多一行，显示 SHA256，"当前版本"随之变化。
-- `datasets-drop`：把 3 个文件拖到"文件"卡片上，卡片出现虚线框和"松开上传"；松开后三个都有进度条并"已入库"，SHA256 与本地一致；同名文件被拒并提示；拖文件夹提示"不支持拖入文件夹"。（chrome-devtools 不能模拟拖放：用 `evaluate_script` 派发带 `DataTransfer` 的 `drop` 事件代替。）
-- `datasets-duplicate`：再次上传同名文件，显示"上传失败：已存在同名文件：<文件名>"，文件数和版本码都不变。
-- `datasets-download`：下载链接返回的内容，SHA256 与页面显示、本地文件一致。
-- `datasets-isolation`：同组另一个学生打开这个数据集的地址，看到"记录不存在或无权查看"；接口和下载链接都返回 404。
+- `datasets-redirect`：打开 `/datasets?project=1`，地址变成 `/experiments?project=1`，侧栏"实验与原始数据"高亮。
+- `datasets-version`：从已提交记录的"提交时的数据版本"（或地址 `/datasets/<id>?version=<版本码>`）进入，文件表上方写"提交时的版本 xxxxxxxxxxxx"，之后上传的标"提交后新增"；卡片头的"打包下载这一版本 ZIP"只含那个版本的文件。
+- `datasets-references`：实验原始数据的数据集页，"被引用处"列出那条实验，以及引用它的数据处理（标"引用"）和周报。
+- `datasets-download`：下载链接返回的内容 SHA256 与页面显示、本地文件一致。
+- `datasets-isolation`：别人草稿的数据集地址，看到"记录不存在或无权查看"；接口和下载链接都返回 404。
 
 ## How to get to it (user POV)
 
-- 左侧展开 "科研记录" → menuitem "原始数据" → 按钮"新建数据集"。
-- 数据集列表里点编号链接，进入详情页；详情页"文件"卡片右上角的"上传文件"按钮。
-- 文件表最后一列的"下载"链接。
+- 已提交的记录里"早期关联的数据集"/"提交时的数据版本"的链接；全站搜索结果；旧书签。
+- 详情页卡片头：返回、"打包下载 ZIP"、"编辑数据集"（本人）、"删除数据集"（本人、空且没被引用）。
 
 ## Driving it with chrome-devtools MCP
 
-前提：
-
-- 刚启动的实例，`lab_verify` 里没有数据集，所以新建的就是 `DS-2026-0001`，数据集 id 为 1，第一个文件 id 为 1。
-- 证据目录：`backend/var/verify-evidence/<日期>-datasets/`。
+前提：按 `experiments.md` 走到"关联项目并提交"，有一条已提交的实验，原始数据里有 `wave_001.csv`，提交后又传了 `wave_002.csv`。用 query.sh 查出它的数据集 id 和版本码：`query.sh 'from research.models import Experiment; e = Experiment.objects.get(); print(e.dataset_id, e.data_versions)'`。证据目录：`backend/var/verify-evidence/<日期>-datasets/`。
 
 步骤：
 
-- **登录学生甲。** `new_page` 打开 `http://127.0.0.1:5273/login`，`isolatedContext` 为 `s_a`。在 textbox "学号 / 工号" 填 `s_a`，textbox "密码" 填 `Verify-2026!`，点 button "登录"。页面跳到工作台，左侧栏底部是账号按钮（写着"学生甲"，下一行"验证课题组"）。
-- **新建数据集。** 在左侧展开 "科研记录"、点 menuitem "原始数据"，再点 button "新建数据集"，出现 dialog "新建数据集"。点 combobox "*项目"，按 `ArrowDown`、`Enter`，下拉框旁显示"导波螺栓松动"。在 textbox "*名称" 填 `验证-导波波形`，radio "原始数据" 保持选中，点 button "保存"。页面跳到 `/datasets/1`，显示"DS-2026-0001 验证-导波波形"，"文件"一栏为"0 个，共 0 B"。
-- **上传文件。** 对 button "上传文件" 用 `upload_file`，路径为 `<launch.sh 打印的上传目录>\wave_001.csv`。用 `wait_for` 等 "已入库"。文件表出现 `wave_001.csv`、`27 B`，SHA256 为 `8125f9baec3d332ae9f28085aa36435d705a6880239a93d7e67a57dda7d5caf6`（与 `SHA256SUMS` 一致）；"文件"变为"1 个，共 27 B"，"当前版本"不再是空数据集的 `e3b0c44298fc`。
-- **同名拒绝。** 再对 button "上传文件" 上传同一个 `wave_001.csv`。用 `wait_for` 等 "上传失败"。出现 alert "上传失败：已存在同名文件：wave_001.csv"；文件表仍只有一行，"文件"和"当前版本"不变。
-- **留证。** `take_screenshot`（`fullPage: true`）和 `take_snapshot` 各存一份到证据目录。
-- **下载比对。** 用 `evaluate_script` 执行 `async () => { const r = await fetch('/api/files/1/download/'); const b = await r.arrayBuffer(); const h = await crypto.subtle.digest('SHA-256', b); return { status: r.status, sha256: [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join('') } }`，`filePath` 存到证据目录。`status` 为 200，`sha256` 与页面显示一致。这个地址就是"下载"链接的地址。
-- **第二视角。** 运行 `bash .claude/skills/verify-lab/scripts/query.sh 'from datasets.models import DataFile; print([(f.name, f.sha256, f.file.name) for f in DataFile.objects.all()])'`，只有一行 `wave_001.csv`，存储路径形如 `datasets/1/<32 位十六进制>`；`backend/var/verify/data/datasets/1/` 下只有一个文件。把输出和 `SHA256SUMS` 复制到证据目录。
-- **跨账号隔离。** `new_page` 打开登录页，`isolatedContext` 为 `s_b`，用 `s_b` / `Verify-2026!` 登录。`navigate_page` 到 `http://127.0.0.1:5273/datasets/1`，用 `wait_for` 等 "记录不存在或无权查看"，页面上有 button "返回数据列表"。再用 `evaluate_script` 请求 `/api/datasets/1/` 和 `/api/files/1/download/`，两者状态码都是 404。截图存证。
-
-- 导师用成员筛选定位数据集。在详情点“打包下载 ZIP”，核对文件名与内容；从已提交记录进入历史版本时核对 ZIP 中只有快照文件。查看“被引用处”，点链接核对记录；编辑本人数据集，只有空且无引用的数据集可以删除。
-- 在数据集详情的文件列表里点 CSV 文件的预览入口，切换“表格 / 原文”，核对表头、带引号的跨行单元格和截断提示。关闭弹窗后仍可单独下载原文件。
+- **旧地址跳转。** 以 `s_a` 登录，`navigate_page` 到 `http://127.0.0.1:5273/datasets?project=1`，地址变成 `/experiments?project=1`。
+- **版本视图。** 打开 `/datasets/<id>?version=<版本码>`。文件表上方写"提交时的版本"，`wave_002.csv` 标"提交后新增"，`wave_001.csv` 没有。用 `evaluate_script` 取 link "打包下载这一版本 ZIP" 的内容，ZIP 里只有 `wave_001.csv`。截图存证。
+- **被引用处。** 同一页"被引用处"列出"实验与原始数据（1）"那条实验；按 `runs.md` 建过引用它的数据处理后，"数据处理"一组里有它，标"引用"。
+- **下载比对。** 用 `evaluate_script` 执行 `async () => { const r = await fetch('/api/files/1/download/'); const b = await r.arrayBuffer(); const h = await crypto.subtle.digest('SHA-256', b); return { status: r.status, sha256: [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join('') } }`，`status` 为 200，`sha256` 与页面显示一致。
+- **隔离。** `s_a` 新建一条草稿并上传一个文件，`s_b` 打开它的数据集地址，看到"记录不存在或无权查看"，页面上有 button "返回实验与原始数据"；`evaluate_script` 请求 `/api/datasets/<id>/` 和那个文件的下载地址，都是 404。
 
 ## Gotchas
 
-- combobox "*项目" 的选项不在快照里，只能用键盘选；如果显示的不是"导波螺栓松动"，说明种子数据不对，先跑 doctor.sh。
-- "已入库""上传失败"是上传队列里的文字，刷新页面后就没了；要在上传后立刻 `wait_for`。
-- 页面上 SHA256 是完整的 64 位，"当前版本"只显示前 12 位。
-- 数据集和文件的 id 依赖刚启动的空库；如果之前已经在这个实例里建过数据，从列表里点编号进入，并以详情页的 URL 为准。
+- 数据集 id 依赖刚启动的空库；以 query.sh 读出的为准。
+- 看版本时的 ZIP 只含那个版本；不带 `?version=` 时是全部文件。

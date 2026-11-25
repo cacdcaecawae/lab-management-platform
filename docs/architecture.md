@@ -23,17 +23,17 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 | 层 | App | 职责 | 可以引用 |
 |---|---|---|---|
-| 底座 | `core` | 数据范围（`scope_private` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`）、站内通知 | 运行期只用 Django / DRF；通知迁移引用账号及课题组模型 |
+| 底座 | `core` | 数据范围（`scope_private` / `scope_research` / `scope_group`）、权限类、统一错误格式、分页、修改历史、文件存取（`files.py`）、Excel 导出、邮件发送与 SMTP 配置（`SiteSettings`）、站内通知 | 运行期只用 Django / DRF；通知迁移引用账号及课题组模型 |
 | 账号 | `accounts` | 课题组 `ResearchGroup`、自定义用户 `User`、登录/退出/改密、成员管理接口 | core |
 | 项目 | `projects` | 项目、项目成员、项目进展、任务、里程碑 | accounts、core |
-| 业务 | `datasets` | 数据集、数据文件、上传/下载、SHA256、不可覆盖、版本 | projects 及以下 |
+| 业务 | `datasets` | 记录的文件（数据集）：上传/下载、SHA256、不可覆盖、版本、未锁定文件的删除；文件的共享范围（`queries.py`） | projects 及以下 |
 | 业务 | `procurement` | 经费来源、采购申请与两级审批、报销与统计、财务提醒 | projects 及以下 |
 | 业务 | `meetings` | 组会、议程、行动项、附件 | projects 及以下 |
 | 业务 | `achievements` | 论文、专利、获奖、软著，导出 | projects 及以下 |
 | 业务 | `specimens` | 试样与标准件台账、缺陷参数（盲测时对学生隐藏）、借用登记 | projects 及以下 |
 | 业务 | `equipment` | 设备台账、预约（排他约束防冲突）、使用登记与照片、异常邮件 | procurement、projects 及以下 |
 | 业务 | `inventory` | 耗材品类、出入库流水（库存由流水汇总） | procurement、projects 及以下 |
-| 业务 | `research` | 实验记录（可关联台账设备和试件）、数据处理记录、提交/退回、修改历史 | datasets、equipment、specimens、projects 及以下 |
+| 业务 | `research` | 实验与原始数据（自带原始数据文件和现场照片，可关联台账设备和试件）、数据处理（引用实验，自带脚本和结果文件）、提交/退回、修改历史 | datasets、equipment、specimens、projects 及以下 |
 | 业务 | `knowledge` | 知识库文档与版本 | equipment、projects 及以下 |
 | 业务 | `reports` | 周报、反馈、状态流转、未交统计 | research、datasets、projects 及以下 |
 | 汇总 | `workbench` | 工作台与存储汇总接口、每日提醒发送去重账本 | 所有业务模块 |
@@ -52,7 +52,8 @@ AI 网关（Magpie）是独立系统，本期不开发，平台中不留 AI 相�
 
 | 数据类别 | 内容 | 读 | 写 |
 |---|---|---|---|
-| 个人数据 | 实验记录、数据集/文件、处理记录、周报 | 本人 + 本组导师 | 本人；提交后锁定，导师可退回、批阅 |
+| 个人数据 | 实验与原始数据、数据处理（含它们的文件和照片）、周报 | 本人 + 本组导师 | 本人；提交后锁定，导师可退回、批阅 |
+| 项目内共享 | 关联了项目并已提交的实验与原始数据、数据处理，连同文件和照片（[笔记](../.agents/notes/implemented/feature/2026-11-25-research-records-merge-and-project-sharing.md)） | 另加该项目的当前成员和负责人 | 只读；可以在自己的数据处理里引用 |
 | 个人数据（经费） | 采购申请、报销 | 本人 + 本组管理员和终审人 | 本人；初审：管理员；终审：终审人；报销退回、到账：管理员 |
 | 组内公开 | 项目与进展、成员公开信息 | 本组全员 | 项目：supervisor 或项目负责人；成员：管理员 |
 | 组内公开 | 项目任务与里程碑 | 本组全员 | 任务建改：项目成员、项目负责人、supervisor；删：任务创建者、项目负责人、supervisor；里程碑增删改：项目负责人或 supervisor |

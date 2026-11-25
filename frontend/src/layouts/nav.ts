@@ -20,8 +20,7 @@ const MODULES: Module[] = [
   {
     key: 'research', label: '科研记录', icon: Memo, color: true,
     pages: [
-      { name: 'experiments', label: '实验记录' },
-      { name: 'datasets', label: '原始数据' },
+      { name: 'experiments', label: '实验与原始数据' },
       { name: 'runs', label: '数据处理' },
     ],
   },

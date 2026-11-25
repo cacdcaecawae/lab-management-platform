@@ -39,7 +39,7 @@ def test_upload_single_file(api, student_a, dataset_a, upload, stored_files):
         "id": f.pk, "dataset_id": dataset_a.pk, "name": "波形1.csv", "size": len(content),
         "sha256": hashlib.sha256(content).hexdigest(), "uploaded_by": {"id": student_a.pk, "name": student_a.name},
         "uploaded_at": body["uploaded_at"], "download_url": f"/api/files/{f.pk}/download/",
-        "preview_url": f"/api/files/{f.pk}/preview/", "preview_kind": "text",
+        "preview_url": f"/api/files/{f.pk}/preview/", "preview_kind": "text", "locked": False,
     }
     [path] = stored_files()
     assert path.read_bytes() == content
@@ -226,12 +226,11 @@ def test_file_detail_and_download(api, student_a, dataset_a, upload):
     assert disposition.startswith("attachment") and quote("实验数据 v1.csv") in disposition
 
 
-def test_files_endpoint_has_no_list_update_or_delete(api, student_a, dataset_a, upload):
+def test_files_endpoint_has_no_list_or_update(api, student_a, dataset_a, upload):
     client = api(student_a)
     [meta] = upload(client, dataset_a, [("a.bin", b"1")]).json()
     assert client.get("/api/files/").status_code == 404
     assert client.patch(f"/api/files/{meta['id']}/", {"name": "b"}, format="json").status_code == 405
-    assert client.delete(f"/api/files/{meta['id']}/").status_code == 405
     assert DataFile.objects.get().name == "a.bin"
 
 

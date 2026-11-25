@@ -6,5 +6,6 @@ from . import views
 # SimpleRouter, not DefaultRouter: other apps share the /api/ prefix, so no API root view here.
 router = SimpleRouter()
 router.register("experiments", views.ExperimentViewSet)
+router.register("experiment-photos", views.ExperimentPhotoViewSet, basename="experiment-photo")
 router.register("runs", views.ProcessingRunViewSet)
 urlpatterns = router.urls
