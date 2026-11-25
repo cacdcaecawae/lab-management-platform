@@ -116,11 +116,11 @@ const carrying = ref(false)
 async function carryOver() {
   carrying.value = true
   try {
-    const last = (await meetingsApi.list({ page_size: 1 })).results[0]
+    const last = (await meetingsApi.list({ page_size: 1, before: form.date })).results[0]
     const taken = new Set(form.actions.map((r) => r.carried_from))
     const open = (last?.actions ?? []).filter((a) => !a.done_at && !taken.has(a.id))
     form.actions.push(...open.map((a) => ({ person: a.owner.id, text: a.content, due_date: a.due_date, carried_from: a.id })))
-    if (!open.length) ElMessage.info(last ? `${last.date} 的组会没有未完成的行动项` : '还没有组会')
+    if (!open.length) ElMessage.info(last ? `${last.date} 的组会没有未完成的行动项` : `${form.date} 之前没有组会`)
   } catch (e) {
     showError(e)
   } finally {

@@ -24,6 +24,7 @@ const routeStatus = String(route.query.status ?? '')
 const filters = reactive({
   status: PURCHASE_STATUSES.includes(routeStatus as (typeof PURCHASE_STATUSES)[number]) ? routeStatus : '',
   search: '', mine: (route.query.mine === '1' ? 1 : '') as 1 | '', fund: '' as number | '', owner: '' as number | '',
+  returned: ['0', '1'].includes(String(route.query.returned)) ? String(route.query.returned) : '',
   todo: (reviewing.value ? 1 : '') as 1 | '',
 })
 const keyword = useLiveSearch(filters)
@@ -33,7 +34,7 @@ const funds = auth.isFinance ? useOptions(() => fundsApi.list({ page_size: 100 }
 const members = auth.isFinance ? useOptions(() => membersApi.list({ page_size: 100 })) : ref([])
 
 watch(reviewing, (r) => {
-  Object.assign(filters, { todo: r ? 1 : '', status: '', mine: '', fund: '', owner: '', search: '' })
+  Object.assign(filters, { todo: r ? 1 : '', status: '', mine: '', fund: '', owner: '', returned: '', search: '' })
   keyword.value = ''
 })
 
@@ -56,6 +57,10 @@ const open = (id: number) => router.push(detail(id))
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
       <el-checkbox v-if="!reviewing && auth.isFinance" v-model="filters.mine" :true-value="1" false-value="">只看我的</el-checkbox>
+      <el-select v-if="!reviewing" v-model="filters.returned" placeholder="退回与否" clearable aria-label="退回">
+        <el-option label="被退回" value="1" />
+        <el-option label="没被退回" value="0" />
+      </el-select>
       <template #actions>
         <IconButton :icon="Download" label="导出 Excel" tag="a" :href="purchasesApi.exportUrl(filters)" />
         <el-button v-if="!reviewing" type="primary" @click="router.push({ name: 'purchase-new' })">新建采购申请</el-button>

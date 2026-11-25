@@ -1,11 +1,11 @@
 """Regression tests for the phase-1 security review (H1, M1, L3, L4, L6; M2 was replaced by dataset versions) and CSRF on logout / password change."""
 
 import pytest
-from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from conftest import PASSWORD, make_user
+from core.storage import CleanFileSystemStorage
 from datasets.models import DataFile, Dataset
 
 pytestmark = pytest.mark.django_db
@@ -36,18 +36,30 @@ def test_invalid_choice_filters_return_empty_not_500(api, project, student_a, ur
 
 def test_storage_write_failing_halfway_leaves_no_file(api, project, student_a, settings, monkeypatch):
     ds = Dataset.objects.create(owner=student_a, project=project, name="raw")
-    original_save = FileSystemStorage._save
+    client = api(student_a)
+    url = f"/api/datasets/{ds.pk}/files/"
+    assert client.post(url, {"file": SimpleUploadedFile("first.txt", b"original")}, format="multipart").status_code == 201
+    first = ds.files.get()
+    monkeypatch.setattr(first.file.field, "generate_filename", lambda instance, name: first.file.name)
+    original_save = CleanFileSystemStorage._save
 
-    def half_write(self, name, content):
-        original_save(self, name, SimpleUploadedFile("part", b"partial"))  # bytes reach the disk...
-        raise OSError("disk full")  # ...then the write fails
+    def fail_on_spare(self, name, content):
+        assert name != first.file.name
 
-    monkeypatch.setattr(FileSystemStorage, "_save", half_write)
-    with pytest.raises(OSError):
-        api(student_a).post(f"/api/datasets/{ds.id}/files/", {"file": SimpleUploadedFile("a.txt", b"x")}, format="multipart")
-    assert not DataFile.objects.exists()
-    data_dir = settings.MEDIA_ROOT / "datasets"
-    assert not any(p.is_file() for p in data_dir.rglob("*")) if data_dir.exists() else True
+        def broken_chunks():
+            yield b"partial"
+            raise OSError("disk full")
+
+        monkeypatch.setattr(content, "chunks", broken_chunks)
+        return original_save(self, name, content)
+
+    monkeypatch.setattr(CleanFileSystemStorage, "_save", fail_on_spare)
+    with pytest.raises(OSError, match="disk full"):
+        client.post(url, {"file": SimpleUploadedFile("second.txt", b"x")}, format="multipart")
+    assert list(DataFile.objects.values_list("pk", flat=True)) == [first.pk]
+    assert [p for p in settings.MEDIA_ROOT.rglob("*") if p.is_file()] == [settings.MEDIA_ROOT / first.file.name]
+    response = client.get(f"/api/files/{first.pk}/download/")
+    assert b"".join(response.streaming_content) == b"original"
 
 
 def test_user_without_group_cannot_use_business_api(api, db):

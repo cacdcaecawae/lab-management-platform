@@ -265,7 +265,7 @@ load()
             <el-tag v-if="versionFileIds && !versionFileIds.has(row.id)" class="status-tag" type="warning" disable-transitions>提交后新增</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="大小" min-width="90">
+        <el-table-column label="大小" prop="size" sortable min-width="90">
           <template #default="{ row }">{{ formatSize(row.size) }}</template>
         </el-table-column>
         <el-table-column label="SHA256" min-width="200" show-overflow-tooltip>

@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from openpyxl import load_workbook
 
-from procurement.models import Attachment, Fund, PurchaseItem, PurchaseRequest, Reimbursement
+from procurement.models import Approval, Attachment, Fund, PurchaseItem, PurchaseRequest, Reimbursement
 
 pytestmark = pytest.mark.django_db
 R = Reimbursement.Status
@@ -56,3 +56,18 @@ def test_purchase_export_follows_the_list(api, student_a, student_b, manager, fu
     assert [(r[1], r[4], r[5], r[6]) for r in rows] == [("s_b", "耦合剂", "耦合剂 Φ10 × 2", 91), ("s_a", "探头", "探头 Φ10 × 2", 2400)]
     mine = api(student_a).get("/api/purchases/export/").content
     assert len(list(load_workbook(io.BytesIO(mine)).active.iter_rows(min_row=2))) == 1  # the student's own only
+
+
+def test_returned_and_missing_invoice_filters(api, student_a, manager, fund):
+    """What the workbench's 采购被退回 and 报销缺发票 open: only those, not every draft or every pending one."""
+    sent_back = PurchaseRequest.objects.create(owner=student_a, fund=fund, purpose="退回的", submitted_at=datetime.datetime(2026, 11, 2, tzinfo=datetime.UTC))
+    Approval.objects.create(request=sent_back, stage=Approval.Stage.INITIAL, reviewer=manager, verdict=Approval.Verdict.RETURN, total=Decimal("0"))
+    PurchaseRequest.objects.create(owner=student_a, fund=fund, purpose="没交过的草稿")
+    client = api(student_a)
+    assert [p["purpose"] for p in client.get("/api/purchases/", {"mine": "1", "returned": "1"}).data["results"]] == ["退回的"]
+    # 采购草稿 counts the drafts never sent back; its "全部" asks for the same
+    assert [p["purpose"] for p in client.get("/api/purchases/", {"status": "draft", "returned": "0"}).data["results"]] == ["没交过的草稿"]
+    assert client.get("/api/purchases/", {"returned": "x"}).data["count"] == 0
+    missing, _ = bill(student_a, fund, invoice=False), bill(student_a, fund)
+    rows = client.get("/api/reimbursements/", {"status": "pending", "no_invoice": "1"}).data["results"]
+    assert [r["id"] for r in rows] == [missing.pk]

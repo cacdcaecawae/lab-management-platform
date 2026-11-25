@@ -2,8 +2,9 @@
 from pathlib import Path
 
 from django.conf import settings
-from django.core.files.storage import FileSystemStorage
 from rest_framework.exceptions import APIException
+
+from .storage import CleanFileSystemStorage
 
 MARKER = ".lab-storage-id"
 
@@ -30,7 +31,7 @@ def nas_ready(root):
         return False
 
 
-class NasFileStorage(FileSystemStorage):
+class NasFileStorage(CleanFileSystemStorage):
     def _on_nas(self, operation, *args, **kwargs):
         if not nas_ready(self.location):
             raise StorageUnavailable()

@@ -65,8 +65,14 @@ def open_stored(field_file):
 
 
 def download(field_file, name):
-    inline = Path(name).suffix.lower() in INLINE_TYPES
-    return FileResponse(open_stored(field_file), as_attachment=not inline, filename=name)
+    ext = Path(name).suffix.lower()
+    response = FileResponse(open_stored(field_file), as_attachment=ext not in INLINE_TYPES, filename=name)
+    response["Cache-Control"] = "private"  # members' files: never kept by a shared cache
+    if ext in INLINE_TYPES:  # opened here, as with core.preview: it shows, it never runs; a PDF only in this site's frames
+        response["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'self'" if ext == ".pdf" else "default-src 'none'; sandbox"
+        )
+    return response
 
 
 def delete_on_commit(field_files):

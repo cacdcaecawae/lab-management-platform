@@ -1,7 +1,10 @@
 """Issue #48 N4: action items across meetings, advisors running meetings, carrying open items into a new meeting."""
 import datetime
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
+from django.db import connection, connections, transaction
 from django.utils import timezone
 
 from core.models import Notification
@@ -92,3 +95,155 @@ def test_carried_items_close_the_old_ones_and_are_not_new_assignments(api, group
     # a form still holding the deleted meeting's copy cannot bring it back as a second one
     late = client.post("/api/meetings/", {**payload, "date": "2026-11-30", "actions": [{**carried, "carried_from": copy.pk}]}, format="json")
     assert late.status_code == 409 and "不在了" in late.data["message"]
+
+
+def test_a_carried_row_removed_again_opens_its_original(api, group, manager, student_a):
+    a = meeting(group, manager, 2)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验")
+    row = {"owner_id": student_a.pk, "content": "补实验", "carried_from": item.pk}
+    base = {"title": "组会", "minutes": "", "agenda": []}
+    client = api(manager)
+    # one item twice in one save (two open copies), or an existing row claiming to be a copy: refused, nothing closed
+    assert client.post("/api/meetings/", {**base, "date": "2026-11-09", "actions": [row, row]}, format="json").status_code == 400
+    b = client.post("/api/meetings/", {**base, "date": "2026-11-09", "actions": [row]}, format="json").data["id"]
+    copy = ActionItem.objects.get(meeting_id=b)
+    assert copy.carried_from_id == item.pk
+    other = ActionItem.objects.create(meeting=a, owner=student_a, content="交数据")
+    bad = client.patch(f"/api/meetings/{b}/", {"actions": [{"id": copy.pk, "carried_from": other.pk}]}, format="json")
+    assert bad.status_code == 400
+    other.refresh_from_db()
+    assert other.done_at is None
+    # carried on again into C: B keeps that row, as B could not be deleted
+    c = client.post("/api/meetings/", {**base, "date": "2026-11-16", "actions": [{**row, "carried_from": copy.pk}]}, format="json")
+    kept = client.patch(f"/api/meetings/{b}/", {"actions": []}, format="json")
+    assert kept.status_code == 409 and "2026-11-16" in kept.data["message"]
+    # C drops its row (picked by mistake): B's is open again; then B drops it: the original is open again, never lost
+    assert client.patch(f"/api/meetings/{c.data['id']}/", {"actions": []}, format="json").status_code == 200
+    copy.refresh_from_db()
+    assert copy.done_at is None and copy.carried_to_id is None
+    assert client.patch(f"/api/meetings/{b}/", {"actions": []}, format="json").status_code == 200
+    item.refresh_from_db()
+    assert item.done_at is None and item.carried_to_id is None
+    assert list(ActionItem.objects.filter(done_at__isnull=True).values_list("content", flat=True)) == ["补实验", "交数据"]
+    assert api(student_a).post(f"/api/action-items/{item.pk}/done/", {"done": True}, format="json").status_code == 200
+
+
+def test_an_old_meeting_cannot_take_items_of_a_later_one(api, group, manager, student_a):
+    later = meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=later, owner=student_a, content="补实验")
+    earlier = meeting(group, manager, 2)
+    client = api(manager)
+    # the page asks for the last meeting on or before the one being written
+    assert [m["id"] for m in client.get("/api/meetings/", {"before": "2026-11-09"}).data["results"]] == [earlier.pk]
+    assert client.get("/api/meetings/", {"before": "2026-13-45"}).status_code == 400
+    row = {"owner_id": student_a.pk, "content": "补实验", "carried_from": item.pk}
+    filled_in = client.post("/api/meetings/", {"date": "2026-11-09", "title": "补录", "agenda": [], "actions": [row]}, format="json")
+    assert filled_in.status_code == 400 and "晚于这场组会" in str(filled_in.data)
+    item.refresh_from_db()
+    assert item.done_at is None and item.carried_to_id is None
+
+
+def test_the_admin_does_not_delete_carried_items(group, manager, ops, student_a):
+    from django.test import Client
+
+    a, b, plain = meeting(group, manager, 2), meeting(group, manager, 9), meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    ActionItem.objects.create(meeting=b, owner=student_a, content="补实验", carried_from=item)
+    ActionItem.objects.create(meeting=plain, owner=student_a, content="交数据")
+    client = Client()
+    client.force_login(ops)
+    for held in (a, b):  # the one carried out of, and the one carried into
+        assert client.post(f"/admin/meetings/meeting/{held.pk}/delete/", {"post": "yes"}).status_code == 403
+        page = client.get(f"/admin/meetings/meeting/{held.pk}/change/").content.decode()
+        assert "actions-0-DELETE" not in page  # no row of its items can be ticked for deletion
+    # the bulk "delete selected" refuses them too, and leaves a meeting without carried items deletable
+    bulk = client.post("/admin/meetings/meeting/", {"action": "delete_selected", "_selected_action": [a.pk, b.pk], "post": "yes"})
+    assert bulk.status_code == 403 and Meeting.objects.filter(pk__in=[a.pk, b.pk]).count() == 2
+    assert "actions-0-DELETE" in client.get(f"/admin/meetings/meeting/{plain.pk}/change/").content.decode()
+    assert client.post(f"/admin/meetings/meeting/{plain.pk}/delete/", {"post": "yes"}).status_code == 302
+
+
+def test_dates_keep_a_carry_over_in_order(api, group, manager, student_a, ops):
+    """A carry-over goes from an earlier meeting to a later one; editing a date (site or admin) cannot turn it round,
+    and the admin cannot reopen an item whose copy carries on."""
+    from django.test import Client
+
+    a, b = meeting(group, manager, 9), meeting(group, manager, 16)
+    item = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    copy = ActionItem.objects.create(meeting=b, owner=student_a, content="补实验", carried_from=item)
+    client = api(manager)
+    moved_back = client.patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-02"}, format="json")
+    assert moved_back.status_code == 400 and "2026-11-09" in str(moved_back.data)
+    moved_on = client.patch(f"/api/meetings/{a.pk}/", {"date": "2026-11-20"}, format="json")
+    assert moved_on.status_code == 400 and "2026-11-16" in str(moved_on.data)
+    assert client.patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-09"}, format="json").status_code == 200  # same day: fine
+
+    admin = Client()
+    admin.force_login(ops)
+    form = {
+        "date": "2026-11-09", "title": "组会", "minutes": "", "group": group.pk, "created_by": manager.pk,
+        "agenda-TOTAL_FORMS": "0", "agenda-INITIAL_FORMS": "0",
+        "files-TOTAL_FORMS": "0", "files-INITIAL_FORMS": "0",
+        "actions-TOTAL_FORMS": "1", "actions-INITIAL_FORMS": "1",
+        "actions-0-id": item.pk, "actions-0-meeting": a.pk, "actions-0-owner": student_a.pk, "actions-0-content": "补实验",
+        "actions-0-due_date": "", "actions-0-done_at_0": "", "actions-0-done_at_1": "",
+    }
+    original_time = item.done_at
+    url = f"/admin/meetings/meeting/{a.pk}/change/"
+    inline = admin.get(url).context["inline_admin_formsets"][1].formset.forms[0]
+    assert inline.fields["done_at"].disabled
+    # The disabled field is absent in a real POST. Even a supplied blank must leave the full timestamp alone.
+    form.update(title="新标题", **{"actions-0-content": "更新说明"})
+    assert admin.post(url, form).status_code == 302
+    a.refresh_from_db()
+    item.refresh_from_db()
+    assert a.title == "新标题" and item.content == "更新说明" and item.done_at == original_time
+    assert ActionItem.objects.filter(done_at__isnull=True).count() == 1  # only the copy is open
+    form_b = {**form, "date": "2026-11-02", "actions-TOTAL_FORMS": "0", "actions-INITIAL_FORMS": "0"}
+    for key in [k for k in form_b if k.startswith("actions-0-")]:
+        del form_b[key]
+    later_first = admin.post(f"/admin/meetings/meeting/{b.pk}/change/", form_b)
+    assert later_first.status_code == 200 and "日期不能早于那天" in later_first.content.decode()
+    b.refresh_from_db()
+    assert b.date.isoformat() == "2026-11-09" and copy.carried_from_id == item.pk
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("via_admin", [False, True], ids=["website", "admin"])
+def test_two_editors_cannot_reverse_a_carry(api, group, manager, advisor, ops, student_a, via_admin):
+    a, b = meeting(group, manager, 9), meeting(group, manager, 16)
+    source = ActionItem.objects.create(meeting=a, owner=student_a, content="补实验", done_at=timezone.now(), carried_to=b)
+    copy = ActionItem.objects.create(meeting=b, owner=student_a, content=source.content, carried_from=source)
+    writing = Event()
+
+    def move_destination():
+        # Let the first transaction commit once this request reaches its lock (or, on the old code, its write).
+        def observe(execute, sql, params, many, context):
+            if "FOR NO KEY UPDATE" in sql or sql.startswith('UPDATE "meetings_meeting"'):
+                writing.set()
+            return execute(sql, params, many, context)
+
+        try:
+            with connection.execute_wrapper(observe):
+                if via_admin:
+                    return api(ops).post(f"/admin/meetings/meeting/{b.pk}/change/", {
+                        "date": "2026-11-12", "title": b.title, "group": group.pk, "created_by": manager.pk,
+                        "agenda-TOTAL_FORMS": 0, "agenda-INITIAL_FORMS": 0, "files-TOTAL_FORMS": 0, "files-INITIAL_FORMS": 0,
+                        "actions-TOTAL_FORMS": 1, "actions-INITIAL_FORMS": 1, "actions-0-id": copy.pk,
+                        "actions-0-owner": student_a.pk, "actions-0-content": copy.content,
+                    })
+                return api(advisor).patch(f"/api/meetings/{b.pk}/", {"date": "2026-11-12"}, format="json")
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with transaction.atomic():
+            assert api(manager).patch(f"/api/meetings/{a.pk}/", {"date": "2026-11-14"}, format="json").status_code == 200
+            pending = pool.submit(move_destination)
+            assert writing.wait(10)
+        response = pending.result(timeout=10)
+        assert response.status_code == (200 if via_admin else 400)
+        assert "2026-11-14" in response.content.decode()
+    a.refresh_from_db()
+    b.refresh_from_db()
+    assert (a.date.day, b.date.day) == (14, 16)

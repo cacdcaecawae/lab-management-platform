@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from accounts.models import ResearchGroup
 from core.files import stored_name
 
 
@@ -55,6 +56,10 @@ class ActionItem(models.Model):
     carried_to = models.ForeignKey(
         Meeting, verbose_name="转入组会", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # On that copy: the item it came from, so removing the copy again opens the original instead of losing it.
+    carried_from = models.ForeignKey(
+        "self", verbose_name="带入自", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         verbose_name = verbose_name_plural = "行动项"
@@ -78,3 +83,20 @@ class MeetingFile(models.Model):
 
     def __str__(self):
         return self.name
+
+
+def lock_meeting_group(group_id):
+    """Order meeting edits and carry-overs before reading either end's date. Held until the write commits."""
+    ResearchGroup.objects.select_for_update(no_key=True).values_list("pk", flat=True).get(pk=group_id)
+
+
+def carry_order_error(meeting, date):
+    """Why `meeting` cannot move to `date`, or "": an item was carried into it from a meeting after that day, or carried
+    on from it into a meeting before that day. A carry-over always goes from an earlier meeting to a later one."""
+    came = ActionItem.objects.filter(carried_to=meeting, meeting__date__gt=date).select_related("meeting").first()
+    if came:
+        return f"“{came.content}”是从 {came.meeting.date} 的组会带入的，日期不能早于那天"
+    went = ActionItem.objects.filter(meeting=meeting, carried_to__date__lt=date).select_related("carried_to").first()
+    if went:
+        return f"“{went.content}”已转入 {went.carried_to.date} 的组会，日期不能晚于那天"
+    return ""

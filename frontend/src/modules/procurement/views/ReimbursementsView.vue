@@ -37,7 +37,8 @@ const route = inject(routeLocationKey, undefined)
 const routeQuery = route?.query ?? {}
 const filters = reactive({
   search: '', status: String(routeQuery.status ?? '') in REIMBURSEMENT_STATUS ? String(routeQuery.status) : '', category: '', month: '',
-  from: '', to: '', fund: '' as number | '', owner: '' as number | '',
+  from: '', to: '', fund: '' as number | '', owner: (Number(routeQuery.owner) || '') as number | '',
+  no_invoice: (routeQuery.no_invoice === '1' ? 1 : '') as 1 | '',
 })
 const keyword = useLiveSearch(filters)
 const { items, count, page, pageSize, loading, load, sort } = usePagedList(reimbursementsApi.list, filters)
@@ -352,6 +353,7 @@ async function editFinanceEmail() {
       <el-select v-if="auth.isFinance" v-model="filters.owner" placeholder="全部人员" clearable filterable aria-label="人员">
         <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
       </el-select>
+      <el-checkbox v-model="filters.no_invoice" :true-value="1" false-value="">缺发票</el-checkbox>
       <template #actions>
         <el-button type="primary" @click="openDialog(null)">登记报销</el-button>
       </template>
