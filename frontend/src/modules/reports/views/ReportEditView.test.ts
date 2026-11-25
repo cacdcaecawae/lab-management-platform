@@ -1,7 +1,7 @@
 // Supervisor feedback on a submitted report: the "需补充 needs content" rule and the request body.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -24,6 +24,7 @@ const report: WeeklyReport = {
   datasets: [],
   runs: [],
   feedback: [],
+  files: [],
   created_at: '2026-11-16T09:00:00+08:00',
   updated_at: '2026-11-20T18:00:00+08:00',
 }
@@ -174,5 +175,70 @@ describe('ReportEditView feedback', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(wrapper.text()).toContain('下一份待反馈')
+  })
+})
+
+describe('ReportEditView owner tools', () => {
+  async function mountAsOwner(start: string, respond: (url: string, init?: RequestInit) => unknown) {
+    const page = { count: 0, next: null, previous: null, results: [] }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      new Response(JSON.stringify(respond(url, init) ?? page), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pinia = createPinia()
+    const stub = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        ...['reports', 'experiment-edit', 'dataset-detail', 'run-edit'].map((name) => ({ path: `/${name}/:id?`, name, component: stub })),
+        { path: '/reports/new', name: 'report-new', component: ReportEditView },
+        { path: '/r/:id', name: 'report-edit', component: ReportEditView },
+      ],
+    })
+    await router.push(start)
+    await router.isReady()
+    useAuthStore(pinia).user = { id: 2, name: '陈同学', role: 'student' } as Me
+    const wrapper = mount(RouterView, { global: { plugins: [ElementPlus, pinia, router] } })
+    await flushPromises()
+    const click = async (text: string) => {
+      await wrapper.findAll('button').find((b) => b.text() === text)!.trigger('click')
+      await flushPromises()
+    }
+    return { wrapper, fetchMock, click }
+  }
+
+  it('ticks the week’s own records with 一键带入本周记录', async () => {
+    const week = {
+      experiments: [{ id: 5, code: 'EX-2026-0005', title: '重复性', status: 'draft' }],
+      runs: [{ id: 6, code: 'RUN-2026-0006', title: '包络提取', status: 'submitted' }],
+    }
+    const { wrapper, fetchMock, click } = await mountAsOwner('/reports/new?week_start=2026-11-16', (url, init) => {
+      if (url === '/api/reports/week-records/?week_start=2026-11-16') return week
+      if (url === '/api/reports/' && init?.method === 'POST') return { ...report, status: 'draft', ...JSON.parse(init.body as string) }
+    })
+    await click('一键带入本周记录')
+    await click('一键带入本周记录') // twice: nothing is ticked twice
+    expect(wrapper.text()).toContain('EX-2026-0005 重复性')
+    await click('保存草稿')
+    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/reports/' && init?.method === 'POST')!
+    const body = JSON.parse(post[1]!.body as string)
+    expect([body.experiment_ids, body.run_ids, body.dataset_ids]).toEqual([[5], [6], []])
+    wrapper.unmount()
+  })
+
+  it('takes a submitted report back to edit it', async () => {
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const mine = { ...report, owner: { id: 2, name: '陈同学' } }
+    const { wrapper, fetchMock, click } = await mountAsOwner('/r/8', (url) => {
+      if (url === '/api/reports/8/') return mine
+      if (url === '/api/reports/8/withdraw/') return { ...mine, status: 'draft', submitted_at: null }
+    })
+    expect(wrapper.find('form').exists()).toBe(false) // submitted: read-only
+    await click('撤回修改')
+    expect(confirm).toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/reports/8/withdraw/' && init?.method === 'POST')).toBe(true)
+    expect(wrapper.find('form').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('撤回修改')
+    confirm.mockRestore()
+    wrapper.unmount()
   })
 })

@@ -42,10 +42,11 @@ const openActions = (m: Meeting) => m.actions.filter((a) => !a.done_at).length
     <el-table v-loading="loading" :data="items" empty-text="暂无组会记录">
       <el-table-column label="日期" min-width="110">
         <template #default="{ row }">
-          <RouterLink :to="{ name: 'meeting-detail', params: { id: row.id } }">{{ row.date }}</RouterLink>
+          <RouterLink :to="{ name: 'meeting-detail', params: { id: row.id } }">{{ row.date }}{{ row.time ? ` ${row.time}` : '' }}</RouterLink>
         </template>
       </el-table-column>
       <el-table-column prop="title" label="标题" min-width="140" />
+      <el-table-column prop="location" label="地点 / 会议号" min-width="140" show-overflow-tooltip />
       <el-table-column label="汇报人" min-width="200">
         <template #default="{ row }">{{ presenters(row as Meeting) }}</template>
       </el-table-column>

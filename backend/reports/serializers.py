@@ -7,7 +7,7 @@ from datasets.versions import add_pinned_versions
 from research.models import Experiment, ProcessingRun
 from research.serializers import ExperimentBriefSerializer, RunBriefSerializer
 
-from .models import ReportFeedback, WeeklyReport
+from .models import ReportFeedback, ReportFile, WeeklyReport
 
 
 class WeeklyReportBriefSerializer(serializers.ModelSerializer):
@@ -46,12 +46,25 @@ class FeedbackSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ReportFileSerializer(serializers.ModelSerializer):
+    uploaded_by = UserBriefSerializer(read_only=True)
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportFile
+        fields = ["id", "name", "size", "uploaded_by", "url", "created_at"]
+
+    def get_url(self, report_file):
+        return f"/api/report-files/{report_file.id}/file/"
+
+
 class WeeklyReportSerializer(serializers.ModelSerializer):
     owner = UserBriefSerializer(read_only=True)
     experiments = ExperimentBriefSerializer(many=True, read_only=True)
     datasets = DatasetBriefSerializer(many=True, read_only=True)
     runs = RunBriefSerializer(many=True, read_only=True)
     feedback = FeedbackSerializer(many=True, read_only=True)
+    files = ReportFileSerializer(many=True, read_only=True)
     experiment_ids = OwnRecordField(
         source="experiments", queryset=Experiment.objects.all(), many=True, write_only=True, required=False
     )
@@ -63,7 +76,7 @@ class WeeklyReportSerializer(serializers.ModelSerializer):
         fields = [
             "id", "owner", "week_start", "goals", "done", "findings", "next_plan",
             "experiments", "datasets", "runs", "experiment_ids", "dataset_ids", "run_ids",
-            "status", "submitted_at", "feedback", "created_at", "updated_at",
+            "status", "submitted_at", "feedback", "files", "created_at", "updated_at",
         ]
         read_only_fields = ["status", "submitted_at", "created_at", "updated_at"]
         validators = []  # a duplicate week is a 409 raised by the view, not DRF's unique-together 400

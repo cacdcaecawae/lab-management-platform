@@ -31,12 +31,17 @@ const historyOpen = ref(false)
 const members = useOptions(() => membersApi.list({ is_active: true, page_size: 100 }))
 // Former members stay selectable on the meeting they were part of.
 const memberOptions = computed(() =>
-  mergeById(members.value, [...(meeting.value?.agenda.map((a) => a.presenter) ?? []), ...(meeting.value?.actions.map((a) => a.owner) ?? [])]),
+  mergeById(members.value, [
+    ...(meeting.value?.agenda.map((a) => a.presenter) ?? []), ...(meeting.value?.actions.map((a) => a.owner) ?? []), meeting.value?.recorder,
+  ]),
 )
+// Supervisors edit everything; the meeting's recorder (students take the minutes in turn) its minutes and action items.
+const isRecorder = computed(() => !!meeting.value?.recorder && meeting.value.recorder.id === auth.user?.id)
+const canEdit = computed(() => auth.isSupervisor || isRecorder.value)
 const today = toDateStr(new Date())
 const overdue = (a: ActionItem) => !a.done_at && !!a.due_date && a.due_date < today
 
-// ---- edit form (managers) ----
+// ---- edit form ----
 interface Row {
   id?: number
   person: number | null
@@ -46,8 +51,11 @@ interface Row {
 }
 // A new meeting's minutes start from this outline (edit or delete freely); it is not stored anywhere else.
 const MINUTES_OUTLINE = '本周进展：\n\n讨论：\n\n决定：\n\n下周安排：\n'
-const form = reactive({ date: today, title: '组会', minutes: '', agenda: [] as Row[], actions: [] as Row[] })
-const errors = useFieldErrors(['date', 'title', 'minutes', 'agenda', 'actions'])
+const form = reactive({
+  date: today, time: null as string | null, location: '', title: '组会', recorder: null as number | null, minutes: '',
+  agenda: [] as Row[], actions: [] as Row[],
+})
+const errors = useFieldErrors(['date', 'time', 'location', 'title', 'recorder_id', 'minutes', 'agenda', 'actions'])
 // Ask before leaving with unsaved changes while editing (startEdit() takes the snapshot).
 const { markSaved } = useUnsavedGuard(form, () => editing.value)
 
@@ -55,7 +63,10 @@ function startEdit() {
   const m = meeting.value
   Object.assign(form, {
     date: m?.date ?? today,
+    time: m?.time ?? null,
+    location: m?.location ?? '',
     title: m?.title ?? '组会',
+    recorder: m?.recorder?.id ?? null,
     minutes: m ? m.minutes : MINUTES_OUTLINE,
     agenda: m ? m.agenda.map((a) => ({ person: a.presenter.id, text: a.topic, due_date: null })) : [{ person: null, text: '', due_date: null }],
     actions: m ? m.actions.map((a) => ({ id: a.id, person: a.owner.id, text: a.content, due_date: a.due_date })) : [],
@@ -65,16 +76,23 @@ function startEdit() {
   markSaved()
 }
 
-function body(): MeetingWrite {
+function body(): Partial<MeetingWrite> {
   const filled = (r: Row) => r.person !== null || r.text.trim() // an untouched blank row is not sent
-  return {
-    date: form.date,
-    title: form.title,
+  const notes = {
     minutes: form.minutes,
-    agenda: form.agenda.filter(filled).map((r) => ({ presenter_id: r.person!, topic: r.text })),
     actions: form.actions
       .filter(filled)
       .map((r) => ({ id: r.id, owner_id: r.person!, content: r.text, due_date: r.due_date || null, carried_from: r.carried_from })),
+  }
+  if (!auth.isSupervisor) return notes // the recorder may send only these
+  return {
+    ...notes,
+    date: form.date,
+    time: form.time || null,
+    location: form.location,
+    title: form.title,
+    recorder_id: form.recorder,
+    agenda: form.agenda.filter(filled).map((r) => ({ presenter_id: r.person!, topic: r.text })),
   }
 }
 
@@ -82,7 +100,7 @@ async function save() {
   saving.value = true
   try {
     const source = router.currentRoute?.value
-    const saved = meeting.value ? await meetingsApi.update(meeting.value.id, body()) : await meetingsApi.create(body())
+    const saved = meeting.value ? await meetingsApi.update(meeting.value.id, body()) : await meetingsApi.create(body() as MeetingWrite)
     ElMessage.success('已保存')
     editing.value = false
     if (!meeting.value && source) void replaceSavedEditor(router, source, { name: 'meeting-detail', params: { id: saved.id } })
@@ -145,13 +163,13 @@ load()
 
 // ---- read view ----
 const presenting = computed(() => !!meeting.value?.agenda.some((a) => a.presenter.id === auth.user?.id))
-const canToggle = (a: ActionItem) => a.owner.id === auth.user?.id || auth.isManager
+const canToggle = (a: ActionItem) => a.owner.id === auth.user?.id || auth.isSupervisor
 
 async function toggle(a: ActionItem, done: boolean) {
   try {
     Object.assign(a, await meetingsApi.setDone(a.id, done))
   } catch (e) {
-    if (e instanceof ApiError && e.status === 403) ElMessage.error('只有负责人和管理员可以修改完成状态')
+    if (e instanceof ApiError && e.status === 403) ElMessage.error('只有负责人、导师和管理员可以修改完成状态')
     else showError(e)
   }
 }
@@ -176,19 +194,30 @@ async function reload() {
           </template>
           <template v-else-if="meeting">
             <IconButton :icon="Clock" label="修改历史" @click="historyOpen = true" />
-            <el-button v-if="auth.isSupervisor" type="primary" @click="startEdit">编辑</el-button>
+            <el-button v-if="canEdit" type="primary" @click="startEdit">{{ auth.isSupervisor ? '编辑' : '记录纪要' }}</el-button>
           </template>
         </PageHeader>
       </template>
       <el-form v-if="editing" class="form-page" label-position="top" @submit.prevent="save">
-        <div class="form-grid">
+        <div v-if="auth.isSupervisor" class="form-grid">
           <el-form-item label="日期" :error="errors.fe('date')" required>
             <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" />
           </el-form-item>
+          <el-form-item label="时间" :error="errors.fe('time')">
+            <el-time-select v-model="form.time" start="07:00" step="00:15" end="22:00" placeholder="如 19:00" />
+          </el-form-item>
           <el-form-item class="span-2" label="标题" :error="errors.fe('title')"><el-input v-model="form.title" /></el-form-item>
+          <el-form-item class="span-2" label="地点 / 会议号" :error="errors.fe('location')">
+            <el-input v-model="form.location" placeholder="会议室，或线上会议号" />
+          </el-form-item>
+          <el-form-item label="记录人" :error="errors.fe('recorder_id')">
+            <el-select v-model="form.recorder" filterable clearable placeholder="本组成员">
+              <el-option v-for="m in memberOptions" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
+          </el-form-item>
         </div>
 
-        <el-form-item label="议程" :error="errors.fe('agenda')">
+        <el-form-item v-if="auth.isSupervisor" label="议程" :error="errors.fe('agenda')">
           <div class="rows">
             <div v-for="(r, i) in form.agenda" :key="i" class="row">
               <el-select v-model="r.person" filterable placeholder="汇报人" aria-label="汇报人" class="person">
@@ -224,6 +253,11 @@ async function reload() {
         <el-alert v-for="msg in errors.others.value" :key="msg" :title="msg" type="error" :closable="false" />
       </el-form>
       <template v-else-if="meeting">
+        <p v-if="meeting.time || meeting.location || meeting.recorder" class="when">
+          <span v-if="meeting.time">{{ meeting.time }}</span>
+          <span v-if="meeting.location">{{ meeting.location }}</span>
+          <span v-if="meeting.recorder">记录人：{{ meeting.recorder.name }}</span>
+        </p>
         <div class="section-title">议程</div>
         <ol v-if="meeting.agenda.length" class="agenda">
           <li v-for="a in meeting.agenda" :key="a.id"><b>{{ a.presenter.name }}</b>：{{ a.topic }}</li>
@@ -277,12 +311,23 @@ async function reload() {
           @changed="reload"
         />
       </el-card>
-      <HistoryDrawer v-model="historyOpen" :load="() => meetingsApi.history(meeting!.id)" :labels="{ title: '标题' }" />
+      <HistoryDrawer
+        v-model="historyOpen"
+        :load="() => meetingsApi.history(meeting!.id)"
+        :labels="{ title: '标题', time: '时间', location: '地点 / 会议号', recorder: '记录人' }"
+      />
     </template>
   </template>
 </template>
 
 <style scoped>
+.when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 12px;
+  color: var(--lab-text-2);
+}
 .section-title {
   margin-bottom: 8px;
   font-weight: 600;

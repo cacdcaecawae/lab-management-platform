@@ -6,7 +6,7 @@ from accounts.serializers import UserBriefSerializer
 from core.exceptions import Conflict
 from core.permissions import scope_group
 
-from .models import Project, ProjectLog, Task
+from .models import Project, ProjectFile, ProjectLog, Task
 
 
 class ProjectBriefSerializer(serializers.ModelSerializer):
@@ -23,6 +23,18 @@ class ProjectLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectLog
         fields = ["id", "date", "content", "author", "created_at"]
+
+
+class ProjectFileSerializer(serializers.ModelSerializer):
+    uploaded_by = UserBriefSerializer(read_only=True)
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectFile
+        fields = ["id", "name", "size", "uploaded_by", "url", "created_at"]
+
+    def get_url(self, project_file):
+        return f"/api/project-files/{project_file.id}/file/"
 
 
 class GroupMemberField(serializers.PrimaryKeyRelatedField):
@@ -53,11 +65,13 @@ class ProjectSerializer(serializers.ModelSerializer):
     leader_id = GroupMemberField(source="leader", write_only=True)
     member_ids = GroupMemberField(source="members", many=True, write_only=True, required=False)
     latest_log = serializers.SerializerMethodField()
+    # Annotated by ProjectViewSet.get_queryset(); left out of the response to a create.
+    overdue_tasks = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Project
         fields = [
-            "id", "name", "leader", "members", "stage", "status", "description", "latest_log",
+            "id", "name", "leader", "members", "stage", "status", "description", "latest_log", "overdue_tasks",
             "created_at", "updated_at", "leader_id", "member_ids",
         ]
 

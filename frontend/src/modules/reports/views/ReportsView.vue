@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { reportsApi } from '@/modules/reports/api'
 import { membersApi } from '@/modules/members/api'
-import type { UserBrief, WeeklyReportDigest } from '@/api/types'
+import type { UserBrief, Verdict, WeeklyReport, WeeklyReportDigest } from '@/api/types'
 import { useOptions } from '@/composables/useOptions'
 import { usePagedList } from '@/composables/usePagedList'
 import { useLiveSearch } from '@/composables/useLiveSearch'
@@ -15,6 +15,7 @@ import { showError } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import PageToolbar from '@/components/PageToolbar.vue'
 import IconButton from '@/components/IconButton.vue'
+import AttachmentList from '@/components/AttachmentList.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -110,6 +111,38 @@ async function loadDigest() {
       digestController = null
       digestLoading.value = false
     }
+  }
+}
+
+// Quick review on a 本周汇总 card: 一键已阅, or a short comment with 已阅 / 需补充 (one card's box open at a time).
+const commenting = ref<number | null>(null)
+const comment = ref('')
+const reviewing = ref<number | null>(null)
+const canReview = (r: WeeklyReport) => r.status === 'submitted' && r.owner.id !== auth.user?.id
+
+function toggleComment(id: number) {
+  commenting.value = commenting.value === id ? null : id
+  comment.value = ''
+}
+
+async function review(r: WeeklyReport, verdict: Verdict) {
+  const content = commenting.value === r.id ? comment.value.trim() : ''
+  if (verdict === 'needs_revision' && !content) {
+    ElMessage.error('选择"需补充"时请写明需要补充的内容')
+    return
+  }
+  reviewing.value = r.id
+  try {
+    const saved = await reportsApi.feedback(r.id, { verdict, content })
+    const list = digest.value?.reports ?? []
+    const i = list.findIndex((x) => x.id === r.id) // another week may be on screen by now
+    if (i >= 0) list[i] = saved
+    if (commenting.value === r.id) commenting.value = null
+    ElMessage.success(verdict === 'reviewed' ? `${r.owner.name} 的周报已阅` : `已请 ${r.owner.name} 补充`)
+  } catch (e) {
+    showError(e)
+  } finally {
+    reviewing.value = null
   }
 }
 
@@ -229,10 +262,19 @@ onBeforeUnmount(() => {
                 <StatusTag :status="r.status" />
                 <span v-if="r.submitted_at" class="muted">{{ formatTime(r.submitted_at) }}</span>
               </div>
-              <RouterLink :to="{ name: 'report-edit', params: { id: r.id } }">
-                {{ r.status === 'submitted' ? '去反馈' : '查看详情' }}
-              </RouterLink>
+              <div v-if="canReview(r)" class="actions">
+                <el-button :disabled="reviewing === r.id" @click="toggleComment(r.id)">写评语</el-button>
+                <el-button type="primary" :loading="reviewing === r.id" @click="review(r, 'reviewed')">一键已阅</el-button>
+              </div>
+              <RouterLink v-else :to="{ name: 'report-edit', params: { id: r.id } }">查看详情</RouterLink>
             </header>
+            <div v-if="commenting === r.id" class="digest-comment">
+              <el-input v-model="comment" type="textarea" :autosize="{ minRows: 2 }" :aria-label="`给 ${r.owner.name} 的评语`" placeholder="评语；选需补充时写明要补充什么" />
+              <div class="actions">
+                <el-button :loading="reviewing === r.id" @click="review(r, 'needs_revision')">需补充</el-button>
+                <el-button type="primary" :loading="reviewing === r.id" @click="review(r, 'reviewed')">已阅</el-button>
+              </div>
+            </div>
             <template v-for="s in DIGEST_SECTIONS" :key="s.key">
               <section v-if="r[s.key]" class="digest-section">
                 <div class="digest-label">{{ s.label }}</div>
@@ -255,6 +297,7 @@ onBeforeUnmount(() => {
                 处理 {{ x.code }} {{ x.title }}
               </RouterLink>
             </div>
+            <AttachmentList v-if="r.files.length" :attachments="r.files" :with-kinds="false" :can-delete="() => false" :remove="reportsApi.removeFile" />
           </article>
         </template>
       </div>
@@ -363,6 +406,12 @@ onBeforeUnmount(() => {
 .digest-label {
   color: var(--lab-text-3);
   font-weight: 600;
+}
+.digest-comment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
 .digest-links {
   display: flex;

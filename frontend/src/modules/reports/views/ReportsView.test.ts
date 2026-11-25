@@ -41,6 +41,7 @@ function makeDigest(week_start: string, ownerName: string, done: string, missing
         datasets: [],
         runs: [],
         feedback: [],
+        files: [],
         created_at: `${week_start}T09:00:00+08:00`,
         updated_at: `${week_start}T18:00:00+08:00`,
       },
@@ -190,6 +191,50 @@ describe('ReportsView rapid week switching', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('本周未交甲')
     expect(wrapper.text()).not.toContain('上周未交乙')
+    wrapper.unmount()
+  })
+})
+
+describe('ReportsView 本周汇总 quick review', () => {
+  async function openDigest(sent: unknown[]) {
+    const digest = makeDigest('2026-11-16', '陈同学', '采集 3 组数据', '李同学')
+    const wrapper = await mountSupervisor(async (url, init) => {
+      if (url.startsWith('/api/reports/digest/')) return new Response(JSON.stringify(digest))
+      if (url === '/api/reports/101/feedback/') {
+        const body = JSON.parse(init!.body as string)
+        sent.push(body)
+        return new Response(JSON.stringify({ ...digest.reports[0], status: body.verdict }))
+      }
+      return new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }))
+    })
+    await wrapper.findAll('.el-tabs__item').find((t) => t.text() === '本周汇总')!.trigger('click')
+    await flushPromises()
+    const click = async (text: string) => {
+      await wrapper.findAll('button').find((b) => b.text() === text)!.trigger('click')
+      await flushPromises()
+    }
+    return { wrapper, click }
+  }
+
+  it('sends 已阅 without a comment from 一键已阅', async () => {
+    const sent: unknown[] = []
+    const { wrapper, click } = await openDigest(sent)
+    await click('一键已阅')
+    expect(sent).toEqual([{ verdict: 'reviewed', content: '' }])
+    expect(wrapper.text()).not.toContain('一键已阅') // no longer waiting for feedback
+    expect(wrapper.text()).toContain('查看详情')
+    wrapper.unmount()
+  })
+
+  it('wants a comment for 需补充', async () => {
+    const sent: unknown[] = []
+    const { wrapper, click } = await openDigest(sent)
+    await click('写评语')
+    await click('需补充')
+    expect(sent).toHaveLength(0)
+    await wrapper.find('.digest-comment textarea').setValue('补充波形图')
+    await click('需补充')
+    expect(sent).toEqual([{ verdict: 'needs_revision', content: '补充波形图' }])
     wrapper.unmount()
   })
 })

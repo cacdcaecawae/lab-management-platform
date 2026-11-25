@@ -4,10 +4,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError } from '@/api/client'
-import { datasetsApi } from '@/modules/datasets/api'
 import { experimentsApi, runsApi } from '@/modules/research/api'
 import { reportsApi } from '@/modules/reports/api'
-import type { DatasetBrief, ExperimentBrief, ReportWrite, RunBrief, Verdict, WeeklyReport } from '@/api/types'
+import type { ExperimentBrief, ReportWrite, RunBrief, Verdict, WeekRecords, WeeklyReport } from '@/api/types'
 import { useRemoteOptions } from '@/composables/useRemoteOptions'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime, mondayOf, notMonday, toDateStr } from '@/utils/format'
@@ -15,6 +14,7 @@ import { errorMessage, showError, useFieldErrors } from '@/utils/errors'
 import StatusTag from '@/components/StatusTag.vue'
 import HistoryDrawer from '@/components/HistoryDrawer.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import AttachmentList from '@/components/AttachmentList.vue'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 import { Clock } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
@@ -46,7 +46,7 @@ const form = reactive<ReportWrite>({
   findings: '',
   next_plan: '',
   experiment_ids: [],
-  dataset_ids: [],
+  dataset_ids: [], // no picker any more: sent back unchanged, so older reports keep their datasets
   run_ids: [],
 })
 const errors = useFieldErrors(Object.keys(form))
@@ -56,6 +56,8 @@ const isNew = computed(() => !route.params.id)
 const isOwner = computed(() => (record.value ? record.value.owner.id === auth.user?.id : isNew.value))
 const editable = computed(() => (record.value ? isOwner.value && ['draft', 'needs_revision'].includes(record.value.status) : isNew.value))
 const canDelete = computed(() => record.value?.status === 'draft' && isOwner.value)
+// taken back before an advisor has looked at it
+const canWithdraw = computed(() => record.value?.status === 'submitted' && isOwner.value)
 // Ask before leaving with unsaved changes (fill() takes the snapshot), the owner's report or a supervisor's feedback.
 const { markSaved } = useUnsavedGuard(
   form,
@@ -66,14 +68,16 @@ const canFeedback = computed(() => record.value?.status === 'submitted' && auth.
 const feedback = computed(() => [...(record.value?.feedback ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)))
 const revisionNote = computed(() => feedback.value.find((f) => f.verdict === 'needs_revision'))
 
-// Links are limited to the report owner's own records; whoever can edit is the owner.
+// Links are limited to the report owner's own records (the lists also hold teammates' shared ones); whoever can edit
+// is the owner.
 const mine = (search: string) => ({ owner: auth.user?.id, search, page_size: 20 })
 const experiments = useRemoteOptions<ExperimentBrief>((search) => experimentsApi.list(mine(search)))
-const datasets = useRemoteOptions<DatasetBrief>((search) => datasetsApi.list(mine(search)))
 const runs = useRemoteOptions<RunBrief>((search) => runsApi.list(mine(search)))
-const experimentOptions = computed(() => experiments.options([...form.experiment_ids, ...(record.value?.experiments ?? [])]))
-const datasetOptions = computed(() => datasets.options([...form.dataset_ids, ...(record.value?.datasets ?? [])]))
-const runOptions = computed(() => runs.options([...form.run_ids, ...(record.value?.runs ?? [])]))
+const brought = ref<WeekRecords>({ experiments: [], runs: [] }) // labels for what 一键带入本周记录 ticked
+const experimentOptions = computed(() =>
+  experiments.options([...form.experiment_ids, ...(record.value?.experiments ?? []), ...brought.value.experiments]),
+)
+const runOptions = computed(() => runs.options([...form.run_ids, ...(record.value?.runs ?? []), ...brought.value.runs]))
 
 function fill(r: WeeklyReport) {
   record.value = r
@@ -143,6 +147,29 @@ async function carryLastPlan() {
   }
 }
 
+// Ticks the owner's experiments and processing runs created or submitted in the report's week.
+const bringing = ref(false)
+async function bringWeekRecords() {
+  const week = form.week_start
+  bringing.value = true
+  try {
+    const found = await reportsApi.weekRecords(week)
+    if (form.week_start !== week) return
+    brought.value = found
+    const before = form.experiment_ids.length + form.run_ids.length
+    const add = (ids: number[], more: { id: number }[]) => [...new Set([...ids, ...more.map((x) => x.id)])]
+    form.experiment_ids = add(form.experiment_ids, found.experiments)
+    form.run_ids = add(form.run_ids, found.runs)
+    const added = form.experiment_ids.length + form.run_ids.length - before
+    if (added) ElMessage.success(`已带入 ${added} 条本周记录`)
+    else ElMessage.info(found.experiments.length + found.runs.length ? '本周的记录都已关联' : '这一周没有新建或提交的记录')
+  } catch (e) {
+    showError(e)
+  } finally {
+    bringing.value = false
+  }
+}
+
 async function save(): Promise<WeeklyReport | null> {
   saving.value = true
   try {
@@ -203,6 +230,37 @@ async function removeDraft() {
     showError(e)
   } finally {
     saving.value = false
+  }
+}
+
+async function withdraw() {
+  try {
+    await ElMessageBox.confirm('撤回后可以继续修改，改完需要重新提交。', '撤回修改', {
+      confirmButtonText: '撤回',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    fill(await reportsApi.withdraw(record.value!.id))
+    ElMessage.success('已撤回，可以修改了')
+  } catch (e) {
+    showError(e)
+  } finally {
+    saving.value = false
+  }
+}
+
+// Only the list of files: reloading the whole report would overwrite what is being typed.
+async function reloadFiles() {
+  const r = record.value
+  if (!r) return
+  try {
+    r.files = (await reportsApi.get(r.id)).files
+  } catch (e) {
+    showError(e)
   }
 }
 
@@ -269,6 +327,7 @@ if (route.params.id) load(Number(route.params.id))
           <template v-if="record" #tags><StatusTag :status="record.status" /></template>
           <IconButton v-if="record" :icon="Clock" label="修改历史" @click="historyOpen = true" />
           <el-button v-if="nextPendingId" type="primary" @click="goNextPending">下一份待反馈</el-button>
+          <el-button v-if="canWithdraw" :loading="saving" @click="withdraw">撤回修改</el-button>
           <template v-if="editable">
             <el-button v-if="isNew" :loading="carrying" @click="carryLastPlan">带入上周计划</el-button>
             <el-button v-if="canDelete" type="danger" plain :loading="saving" @click="removeDraft">删除草稿</el-button>
@@ -306,21 +365,22 @@ if (route.params.id) load(Number(route.params.id))
         <el-form-item v-for="s in SECTIONS" :key="s.key" :label="s.label" :error="errors.fe(s.key)">
           <el-input v-model="form[s.key]" type="textarea" :autosize="{ minRows: 4 }" />
         </el-form-item>
-        <el-form-item label="关联实验记录" :error="errors.fe('experiment_ids')">
-          <el-select v-model="form.experiment_ids" multiple filterable remote :remote-method="experiments.search" :loading="experiments.loading.value" placeholder="选择自己的实验记录">
+        <el-form-item label="关联实验与原始数据" :error="errors.fe('experiment_ids')">
+          <el-select v-model="form.experiment_ids" multiple filterable remote :remote-method="experiments.search" :loading="experiments.loading.value" placeholder="选择自己的实验与原始数据">
             <el-option v-for="x in experimentOptions" :key="x.id" :label="`${x.code} ${x.title}`" :value="x.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联数据集" :error="errors.fe('dataset_ids')">
-          <el-select v-model="form.dataset_ids" multiple filterable remote :remote-method="datasets.search" :loading="datasets.loading.value" placeholder="选择自己的数据集">
-            <el-option v-for="x in datasetOptions" :key="x.id" :label="`${x.code} ${x.name}`" :value="x.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="关联数据处理记录" :error="errors.fe('run_ids')">
+        <el-form-item label="关联数据处理" :error="errors.fe('run_ids')">
           <el-select v-model="form.run_ids" multiple filterable remote :remote-method="runs.search" :loading="runs.loading.value" placeholder="选择自己的数据处理记录">
             <el-option v-for="x in runOptions" :key="x.id" :label="`${x.code} ${x.title}`" :value="x.id" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="record?.datasets.length" label="关联数据集">
+          <div class="links">
+            <RouterLink v-for="x in record.datasets" :key="x.id" :to="{ name: 'dataset-detail', params: { id: x.id } }">{{ x.code }} {{ x.name }}</RouterLink>
+          </div>
+        </el-form-item>
+        <el-button :loading="bringing" @click="bringWeekRecords">一键带入本周记录</el-button>
       </el-form>
 
       <template v-else-if="record">
@@ -349,6 +409,19 @@ if (route.params.id) load(Number(route.params.id))
           </div>
         </section>
       </template>
+    </el-card>
+
+    <el-card v-if="record && (editable || record.files.length)" class="card" header="附图与附件">
+      <AttachmentList
+        :attachments="record.files"
+        :with-kinds="false"
+        accept=""
+        hint="本周进展的截图、曲线、照片等，任意类型，单个不超过 2 GB"
+        :upload="editable ? (file, _kind, onProgress) => reportsApi.upload(record!.id, file, onProgress) : undefined"
+        :can-delete="() => editable"
+        :remove="reportsApi.removeFile"
+        @changed="reloadFiles"
+      />
     </el-card>
 
     <el-card v-if="canFeedback" class="card" header="填写反馈">

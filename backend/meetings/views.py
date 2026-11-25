@@ -13,15 +13,18 @@ from core.files import checked_upload, delete_on_commit, download
 from core.filters import Search
 from core.history import serialize_history
 from core.params import day_param, plain_int
-from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_manager, is_supervisor, scope_group
+from core.permissions import IsActiveMember, IsManager, IsSupervisor, is_supervisor, scope_group
 
 from .models import ActionItem, AgendaItem, Meeting, MeetingFile, lock_meeting_group
 from .serializers import ActionItemSerializer, MeetingFileSerializer, MeetingSerializer, MyActionItemSerializer
 
+# What a meeting's recorder (a student taking the minutes in turn) may change on it.
+RECORDER_FIELDS = {"minutes", "actions"}
+
 
 class MeetingViewSet(viewsets.ModelViewSet):
-    """Group-wide read; advisors and managers create and edit meetings, only managers delete them; presenters on the
-    agenda upload their files."""
+    """Group-wide read; advisors and managers create and edit meetings, only managers delete them; the meeting's recorder
+    writes its minutes and action items; presenters on the agenda upload their files."""
 
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = MeetingSerializer
@@ -31,12 +34,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "destroy":
             return [IsActiveMember(), IsManager()]
-        if self.action in ("create", "partial_update"):
+        if self.action == "create":
             return [IsActiveMember(), IsSupervisor()]
-        return [IsActiveMember()]
+        return [IsActiveMember()]  # an edit by someone else than a supervisor is checked in partial_update
 
     def get_queryset(self):
-        meetings = scope_group(Meeting.objects.select_related("created_by"), self.request.user).prefetch_related(
+        meetings = scope_group(Meeting.objects.select_related("created_by", "recorder"), self.request.user).prefetch_related(
             Prefetch("agenda", AgendaItem.objects.select_related("presenter")),
             Prefetch("actions", ActionItem.objects.select_related("owner", "carried_to")),
             Prefetch("files", MeetingFile.objects.select_related("uploaded_by")),
@@ -54,6 +57,11 @@ class MeetingViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
         lock_meeting_group(request.user.group_id)
+        if not is_supervisor(request.user):
+            if self.get_object().recorder_id != request.user.id:  # another group's meeting: 404
+                raise PermissionDenied("仅导师、管理员或本场记录人可以编辑组会")
+            if set(request.data) - RECORDER_FIELDS:
+                raise PermissionDenied("记录人只能编辑纪要和行动项")
         return super().partial_update(request, *args, **kwargs)
 
     def perform_destroy(self, meeting):
@@ -120,8 +128,8 @@ class DoneSerializer(serializers.Serializer):
 
 
 class ActionItemViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """The group's items across meetings, most urgent first, and marking one done or not: the owner or a manager.
-    The rest is edited with the meeting."""
+    """The group's items across meetings, most urgent first, and marking one done or not: the owner, an advisor or a
+    manager. The rest is edited with the meeting."""
 
     serializer_class = MyActionItemSerializer
 
@@ -147,8 +155,8 @@ class ActionItemViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         with transaction.atomic():
             # locked: a carry-over of this item at the same moment either goes first (then this is refused) or waits
             item = ActionItem.objects.select_for_update(of=("self",)).select_related("carried_to").get(pk=self.get_object().pk)
-            if not (item.owner_id == request.user.id or is_manager(request.user)):
-                raise PermissionDenied("只有负责人和管理员可以修改完成状态")
+            if not (item.owner_id == request.user.id or is_supervisor(request.user)):
+                raise PermissionDenied("只有负责人、导师和管理员可以修改完成状态")
             if item.carried_to_id:  # its copy in the later meeting carries on; reopening this one would make two
                 raise Conflict(f"已转入 {item.carried_to.date} 的组会，请在那里勾选", code="invalid_state")
             item.done_at = timezone.now() if data.validated_data["done"] else None
